@@ -114,7 +114,7 @@ let dataFunctions: [BuiltinFunction] = [
         category: .data,
         signature: "filter(predicate, array)",
         summary: "Keeps the elements where the predicate returns nonzero (comparisons return 1/0, so x -> x > 10 reads naturally).",
-        examples: ["filter(x -> x > 1, [1, 2, 3])", "filter(x -> x % 2 == 0, [1, 2, 3, 4])"],
+        examples: ["filter(x -> x > 1, [1, 2, 3])", "filter(x -> mod(x, 2) == 0, [1, 2, 3, 4])"],
         arity: 2...2,
         applyHigherOrder: { arguments, apply in
             guard case .array(let items) = arguments[1] else {

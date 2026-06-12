@@ -234,7 +234,7 @@ From loosest to tightest. Each line binds tighter than the one above:
 | lambda | `x -> expr` · `(a, b) -> expr` | legal at every expression position |
 | comparison | `< <= > >= == !=` | **non-chaining**: `a < b < c` is a parse error |
 | additive | `+ -` | |
-| multiplicative | `* /` (`× ÷ ·`) and **implicit multiplication** | `2x`, `2(3+4)`, `(a)(b)`, `2 A:1`, `2pi` |
+| multiplicative | `* /` (`× ÷ ·`) and **implicit multiplication** | `2x`, `2(3+4)`, `(a)(b)`, `2 A:1`, `2pi` — a value against a **name/paren/cell**, NOT a bare number |
 | unary | `-` `+` `√` | prefix; `√x` ≡ `sqrt(x)` |
 | power | `^` | **right-associative**: `2^3^2` = `512`; exponent may carry its own sign: `2^-2` = `0.25` |
 | postfix | `expr[i]` · `expr.name` · `expr%` | binds tighter than `^`; chains freely |
@@ -245,6 +245,12 @@ Because unary minus binds **looser** than `^`: `-2^2` = `-4`.
 tighter than `^`, so `1 * 3%` is `1 * 0.03`, not `(1 * 3)%`. Modulo is the
 `mod(x, y)` function (the `%` symbol is percent, not modulo — bitwise stays
 functional too).
+
+**Implicit multiplication is a value against a name, paren, or cell — never a
+bare number.** `2x`, `2pi`, `2(3+4)`, `2 A:1` all multiply by juxtaposition, but
+two numbers in a row (`3 4`, or `3 % 4` — which is `3%` then `4`) is a **missing
+operator**, so it's a parse error nudging toward `*`, not a silent product. For
+`3` mod `4`, write `mod(3, 4)`.
 
 ## 4. The exactness model
 
@@ -652,7 +658,7 @@ lambda      = ( IDENT | "(" [ IDENT { "," IDENT } ] ")" ) "->" expression ;
 comparison  = additive [ compop additive ] ;          (* non-chaining *)
 compop      = "<" | "<=" | ">" | ">=" | "==" | "!=" ;
 additive    = term { ("+" | "-") term } ;
-term        = unary { ("*" | "/") unary | unary } ;   (* 2nd alt: implicit × *)
+term        = unary { ("*" | "/") unary | unary } ;   (* 2nd alt: implicit × — the juxtaposed factor is a name/paren/cell, not a bare NUMBER (`3 4` is an error) *)
 unary       = ("-" | "+" | "√") unary | power ;
 power       = postfix [ "^" unary ] ;                 (* right-assoc, signed exponent *)
 postfix     = primary { "[" expression "]" | "." IDENT [ "(" [ argument { "," argument } ] ")" ] | "%" } ;

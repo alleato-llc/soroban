@@ -114,7 +114,20 @@ Feature: The Anzan language itself
       | 100 + 5%    | 100.05 |
       | 50% * 2     | 1      |
       | (2 + 3)%    | 0.05   |
-      | 10 % 3      | 0.3    |
+
+  # docs/ANZAN.md §3 — implicit multiplication is a value against a NAME, paren,
+  # or cell (2x, 2pi, 2(3+4), 2 A:1) — NOT against a bare number. Two numbers in
+  # a row (3 4, or 3 % 4 = 3% then 4) is a missing operator, so it's an error,
+  # not a silent ×. Modulo is mod(3, 4).
+  Scenario Outline: A number can't directly follow another value
+    When I calculate "<expr>"
+    Then the calculation fails mentioning "operator"
+
+    Examples:
+      | expr   |
+      | 3 4    |
+      | 3 % 4  |
+      | (1) 2  |
 
   # docs/ANZAN.md §2 — truthiness is typed, never coerced.
   Scenario: A string is not a condition

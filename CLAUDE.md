@@ -151,7 +151,7 @@ A formula can inspect the workbook's own structure — `Workbook.worksheets[0].c
 - Errors are always `EngineError`; lex/parse errors carry character offsets that the UI renders as a caret under the offending column. Preserve positions when changing Lexer/Parser.
 - Finance functions follow the spreadsheet sign convention (outflows negative); `rate`/`irr`/`solve` solve numerically (Newton + bisection fallback) in the Double domain. Paired-series functions (correl/slope/intercept/forecast/sumproduct, like xnpv/xirr before them) SPLIT their flattened arguments evenly — two equal ranges read naturally; `percentile` takes p LAST for the same reason. Golden values in `FinanceTests` are spreadsheet-checked — don't "fix" them to match changed code without re-deriving.
 - Swift 6 strict concurrency is on: anything stored in a global (function lists, registry) must be `Sendable`; function closures are `@Sendable`.
-- The parser supports implicit multiplication (`2x`, `2(3+4)`) via the `term()` loop — additions to the token set must not break that (a new token kind that can start an expression needs a case there).
+- The parser supports implicit multiplication (`2x`, `2(3+4)`, `2 A:1`, `2pi`) via the `term()` loop — a value against a NAME/PAREN/CELL. A bare NUMBER as the right operand (`3 4`, or `3 % 4` = `3%` then `4`) is NOT implicit ×: `term()` throws "a number can't directly follow another value" (it's a missing operator; modulo is `mod()`). Additions to the token set must not break the name/paren/cell cases (a new token kind that can start an operand needs a case there).
 
 ### Cell formatting
 

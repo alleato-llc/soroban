@@ -339,9 +339,17 @@ package struct Parser {
             case .slash:
                 _ = advance()
                 lhs = .binary(.divide, lhs, try unary())
-            case .leftParen, .identifier, .number, .cellReference:
-                // Implicit multiplication: `2(3+4)`, `2x`, `(a)(b)`, `2 A:1`.
+            case .leftParen, .identifier, .cellReference:
+                // Implicit multiplication: `2(3+4)`, `2x`, `(a)(b)`, `2 A:1` —
+                // a value against a name, paren, or cell.
                 lhs = .binary(.multiply, lhs, try unary())
+            case .number:
+                // A number directly following another value (`3 4`, `3 % 4`) is
+                // almost always a missing operator, not implicit ×. Error toward
+                // it instead of silently multiplying.
+                throw EngineError.parseError(
+                    message: "a number can't directly follow another value — add an operator (e.g. 3 * 4)",
+                    position: current.position)
             default:
                 return lhs
             }

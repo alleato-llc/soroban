@@ -220,8 +220,8 @@ container) — including variables, functions, and layout.
 
 ### Numbers
 
-Arithmetic (`+ − × ÷`, integer `^`, `%` modulo, `sqrt`) is exact to 50
-significant digits. Transcendentals (`exp`, `ln`, `log`, trig, non-integer
+Arithmetic (`+ − × ÷`, integer `^`, postfix `%` percent, `mod()`) is exact to 50
+significant digits (`/` and `sqrt` round to that precision). Transcendentals (`exp`, `ln`, `log`, trig, non-integer
 powers) currently round-trip through Double (~15 significant digits); they're
 isolated behind one seam in `BigDecimal+Math.swift` for a future
 arbitrary-precision upgrade.
