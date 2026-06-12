@@ -1,0 +1,86 @@
+name: Deploy site
+
+# The landing page (site/) + the Living Specification / test report (generated
+# from the engine's Gherkin suite) deploy to the site host (soroban.alleato.dev).
+# Decoupled from release.yml so a copy tweak ships without cutting an app release.
+#
+# salpa (pulled from ghcr) owns the deploy: `salpa deploy` builds site/ (npm)
+# and publishes site/dist. We only regenerate the living spec/report first
+# (it's a soroban-specific pre-step).
+#
+# Auth is short-lived OIDC credentials (no stored keys).
+on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - "docs/ANZAN.md"
+      - "Engine/**" # spec/report are generated from the engine — keep them live
+      - "scripts/generate-living-spec.sh"
+      - "salpa.yaml"
+      - ".github/workflows/deploy-site.yml"
+  workflow_dispatch:
+
+permissions:
+  id-token: write # assume the deploy role via OIDC
+  contents: read
+  packages: read # pull salpa from ghcr
+
+concurrency:
+  group: deploy-site
+  cancel-in-progress: true
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+
+jobs:
+  deploy:
+    name: Deploy site (salpa)
+    runs-on: macos-26 # needs Swift (regenerates spec/report) + Node (Astro build)
+    steps:
+      - uses: actions/checkout@v5
+
+      # PickleKit (BDD generator for the living spec) needs Swift 6.2+.
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: "26.2"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+
+      # Runs the Gherkin suite → site/public/{spec,report}.html, so the
+      # published spec always matches the engine that built it. Must run BEFORE
+      # `salpa deploy` (its npm build folds public/ into dist/).
+      - name: Generate living spec + report
+        run: scripts/generate-living-spec.sh
+
+      - uses: oras-project/setup-oras@v1
+
+      - name: Fetch salpa
+        run: |
+          echo "${{ github.token }}" | oras login ghcr.io -u "${{ github.actor }}" --password-stdin
+          oras pull ghcr.io/${{ github.repository_owner }}/salpa:0.1.7
+          chmod +x salpa-darwin-arm64
+          sudo mv salpa-darwin-arm64 /usr/local/bin/salpa
+
+      # Mask the account id (from the deploy role) before it can print — the
+      # Actions logs are public. Read via env so the literal isn't echoed here.
+      - name: Mask account id
+        env:
+          ROLE_ARN: ${{ vars.AWS_SITE_ROLE_ARN }}
+        run: |
+          echo "::add-mask::$(printf '%s' "$ROLE_ARN" | cut -d: -f5)"
+
+      - name: Configure deploy credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_SITE_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Deploy
+        run: salpa deploy # npm build site/ → publish dist

@@ -1,0 +1,11 @@
+{
+  "name": "Solarized Dark",
+  "windowBackground": "#002B36",
+  "inputBackground": "#073642",
+  "expressionText": "#839496",
+  "resultText": "#FDF6E3",
+  "errorText": "#DC322F",
+  "secondaryText": "#586E75",
+  "accent": "#268BD2",
+  "fontSize": 14
+}

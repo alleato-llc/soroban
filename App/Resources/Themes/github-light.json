@@ -1,0 +1,11 @@
+{
+  "name": "GitHub Light",
+  "windowBackground": "#FFFFFF",
+  "inputBackground": "#F6F8FA",
+  "expressionText": "#57606A",
+  "resultText": "#1F2328",
+  "errorText": "#CF222E",
+  "secondaryText": "#8C959F",
+  "accent": "#0969DA",
+  "fontSize": 14
+}

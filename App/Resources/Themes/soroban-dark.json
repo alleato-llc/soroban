@@ -1,0 +1,11 @@
+{
+  "name": "Soroban Dark",
+  "windowBackground": "#1E1E28",
+  "inputBackground": "#2A2A38",
+  "expressionText": "#9DA5B4",
+  "resultText": "#E6E6F0",
+  "errorText": "#FF6B6B",
+  "secondaryText": "#6C7086",
+  "accent": "#7AA2F7",
+  "fontSize": 14
+}

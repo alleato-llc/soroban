@@ -1,0 +1,11 @@
+{
+  "name": "Nord",
+  "windowBackground": "#2E3440",
+  "inputBackground": "#3B4252",
+  "expressionText": "#81A1C1",
+  "resultText": "#ECEFF4",
+  "errorText": "#BF616A",
+  "secondaryText": "#4C566A",
+  "accent": "#88C0D0",
+  "fontSize": 14
+}

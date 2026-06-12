@@ -1,0 +1,48 @@
+# Release lifecycle for Soroban, driven by salpa (github.com/alleato-llc/salpa).
+# These keys INFORM each stage; the CI trigger decides whether a stage runs.
+#
+# build:  imports the Developer ID cert → xcodebuild (Release) → codesign → dmg
+#         → notarize/staple (salpa owns the ephemeral keychain; the workflow
+#         only passes BUILD_CERTIFICATE_BASE64 / P12_PASSWORD as env)
+# publish: the app — GitHub release with Soroban-<ver>.dmg AND a versionless
+#          Soroban.dmg (the stable "latest release" download — no cloud)
+# deploy:  the site — npm build of site/ → publish dist to the static host
+#
+# notarization reads APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID
+# from the environment.
+
+ecosystem: apple
+product: Soroban
+version: git # next semver from tags + #major/#minor in the head commit
+
+# Two suites, one per CI job (kept parallel): `salpa test engine` runs the
+# SwiftPM engine package; `salpa test session` runs the app's SheetModel
+# document-layer Gherkin target via xcodebuild. `salpa test` (no arg) runs both.
+#
+# engine is a plain command string (swift test isn't xcodebuild, so structure
+# buys nothing); session uses the Apple recipe's structured xcodebuild form —
+# project defaults to Soroban.xcodeproj and scheme to the product, so neither
+# is restated here (project.yml already owns them).
+test:
+  engine: "cd Engine && swift test"
+  session:
+    generate: true # xcodegen generate before the test (project.yml is the source)
+    destination: "platform=macOS"
+    settings:
+      CODE_SIGNING_ALLOWED: "NO" # a test build needs no signing identity
+
+build:
+  configuration: Release
+  sign: "Developer ID Application" # salpa imports the cert when this is set
+  notarize: true
+  staple: true
+  package: dmg # emits Soroban-<version>.dmg
+
+publish:
+  github: true # the GitHub Release IS the point of truth (no S3 dmg)
+  latest: true # also attach a versionless Soroban.dmg → stable latest-download URL
+
+deploy:
+  source: site # npm build; sync site/dist
+  bucket: soroban.alleato.dev # the site host
+  invalidate: true # bust the CDN cache after deploy

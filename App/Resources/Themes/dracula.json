@@ -1,0 +1,11 @@
+{
+  "name": "Dracula",
+  "windowBackground": "#282A36",
+  "inputBackground": "#343746",
+  "expressionText": "#BD93F9",
+  "resultText": "#F8F8F2",
+  "errorText": "#FF5555",
+  "secondaryText": "#6272A4",
+  "accent": "#FF79C6",
+  "fontSize": 14
+}

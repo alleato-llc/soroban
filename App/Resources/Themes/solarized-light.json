@@ -1,0 +1,11 @@
+{
+  "name": "Solarized Light",
+  "windowBackground": "#FDF6E3",
+  "inputBackground": "#EEE8D5",
+  "expressionText": "#657B83",
+  "resultText": "#073642",
+  "errorText": "#DC322F",
+  "secondaryText": "#93A1A1",
+  "accent": "#268BD2",
+  "fontSize": 14
+}

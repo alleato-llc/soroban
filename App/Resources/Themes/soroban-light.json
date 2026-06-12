@@ -1,0 +1,11 @@
+{
+  "name": "Soroban Light",
+  "windowBackground": "#FAFAF7",
+  "inputBackground": "#FFFFFF",
+  "expressionText": "#5C6166",
+  "resultText": "#1C1E21",
+  "errorText": "#C41E3A",
+  "secondaryText": "#9A9FA6",
+  "accent": "#3B6EA8",
+  "fontSize": 14
+}

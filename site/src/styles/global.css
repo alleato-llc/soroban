@@ -1,0 +1,844 @@
+/* Palette lifted verbatim from the app's own themes
+   (App/Resources/Themes/solarized-light.json / dracula.json) so the
+   site IS the app's design. `data-theme` is set before first paint by the
+   inline script in Layout.astro; with no stored choice it follows the
+   system. */
+
+:root,
+:root[data-theme="light"] {
+  --bg: #fdf6e3;          /* windowBackground */
+  --surface: #eee8d5;     /* inputBackground */
+  --text: #073642;        /* resultText */
+  --muted: #657b83;       /* expressionText */
+  --faint: #93a1a1;       /* secondaryText */
+  --accent: #268bd2;      /* accent */
+  --error: #dc322f;       /* errorText */
+  --border: rgba(7, 54, 66, 0.12);
+  --shadow: rgba(7, 54, 66, 0.06);
+}
+
+:root[data-theme="dark"] {
+  --bg: #282a36;          /* windowBackground */
+  --surface: #343746;     /* inputBackground */
+  --text: #f8f8f2;        /* resultText */
+  --muted: #bd93f9;       /* expressionText */
+  --faint: #6272a4;       /* secondaryText */
+  --accent: #ff79c6;      /* accent */
+  --error: #ff5555;       /* errorText */
+  --border: rgba(248, 248, 242, 0.1);
+  --shadow: rgba(0, 0, 0, 0.3);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  /* clip on the root constrains the viewport itself (body-level clip doesn't
+     reliably propagate), absorbing the hero-shot's centered breakout. clip,
+     not hidden, so it never becomes a scroll container that breaks sticky. */
+  overflow-x: clip;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  transition: background 0.2s ease, color 0.2s ease;
+  /* clip (not hidden) contains the hero-shot's centered breakout without
+     creating a scroll container — so the sticky header keeps working. */
+  overflow-x: clip;
+}
+
+code,
+pre,
+.mono {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.92em;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+.wrap {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 0 1.25rem;
+}
+
+/* ---------- header ---------- */
+
+header.site {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: color-mix(in srgb, var(--bg) 85%, transparent);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border);
+}
+
+header.site .wrap {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  height: 3.25rem;
+}
+
+.wordmark {
+  font-weight: 650;
+  color: var(--text);
+  letter-spacing: 0.01em;
+}
+
+.wordmark:hover {
+  text-decoration: none;
+}
+
+header.site nav {
+  display: flex;
+  gap: 1.1rem;
+  margin-left: auto;
+  font-size: 0.92rem;
+}
+
+header.site nav a {
+  color: var(--muted);
+}
+
+.theme-toggle {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  border-radius: 8px;
+  width: 2rem;
+  height: 2rem;
+  font-size: 0.95rem;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.theme-toggle:hover {
+  color: var(--text);
+}
+
+/* On phones the five nav links won't share a row with the wordmark and
+   toggle, so the nav drops to its own centered line and the toggle pins
+   right of the wordmark. */
+@media (max-width: 600px) {
+  header.site .wrap {
+    flex-wrap: wrap;
+    height: auto;
+    gap: 0.5rem;
+    padding-top: 0.55rem;
+    padding-bottom: 0.55rem;
+  }
+
+  .wordmark {
+    white-space: nowrap;
+  }
+
+  .theme-toggle {
+    margin-left: auto;
+  }
+
+  header.site nav {
+    order: 3;
+    width: 100%;
+    margin-left: 0;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 0.5rem 1.1rem;
+  }
+}
+
+/* ---------- hero ---------- */
+
+.hero {
+  padding: 4.5rem 0 3rem;
+  text-align: center;
+}
+
+.hero h1 {
+  font-size: clamp(2.1rem, 5vw, 3rem);
+  margin: 0 0 0.6rem;
+  letter-spacing: -0.015em;
+}
+
+.hero h1 .kanji {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.hero p.tag {
+  font-size: 1.2rem;
+  color: var(--muted);
+  margin: 0 auto 1rem;
+  max-width: 34em;
+}
+
+.hero p.sub {
+  color: var(--faint);
+  max-width: 40em;
+  margin: 0 auto 2rem;
+}
+
+.cta {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.button {
+  display: inline-block;
+  padding: 0.6rem 1.25rem;
+  border-radius: 10px;
+  font-weight: 550;
+  font-size: 0.95rem;
+  border: 1px solid var(--border);
+}
+
+.button.primary {
+  background: var(--accent);
+  color: var(--bg);
+  border-color: transparent;
+}
+
+.button.primary:hover {
+  text-decoration: none;
+  filter: brightness(1.08);
+}
+
+.button.quiet {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.button.quiet:hover {
+  text-decoration: none;
+  border-color: var(--faint);
+}
+
+.hero .fine {
+  margin-top: 1rem;
+  font-size: 0.85rem;
+  color: var(--faint);
+}
+
+/* ---------- showcase (the fake app window) ---------- */
+
+.window {
+  margin: 1.5rem auto 0;
+  max-width: 700px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 12px 40px var(--shadow);
+  overflow: hidden;
+  text-align: left;
+}
+
+.window .titlebar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 0.8rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.window .dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--faint);
+  opacity: 0.45;
+}
+
+.window .titlebar span {
+  margin-left: 0.4rem;
+  font-size: 0.8rem;
+  color: var(--faint);
+}
+
+.tabs {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.5rem 0.8rem 0;
+}
+
+.tabs button {
+  border: none;
+  background: none;
+  color: var(--faint);
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: 7px 7px 0 0;
+  cursor: pointer;
+}
+
+.tabs button[aria-selected="true"] {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.pane {
+  padding: 1rem 1.1rem 1.2rem;
+  min-height: 270px;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.86rem;
+  line-height: 1.75;
+  overflow-x: auto;
+}
+
+.pane .in {
+  color: var(--muted);
+}
+
+.pane .out {
+  color: var(--text);
+}
+
+.pane .cm {
+  color: var(--faint);
+}
+
+.pane .ac {
+  color: var(--accent);
+}
+
+.pane .er {
+  color: var(--error);
+}
+
+/* fake grid */
+.pane table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.pane th,
+.pane td {
+  border: 1px solid var(--border);
+  padding: 0.25rem 0.55rem;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.pane th {
+  color: var(--faint);
+  font-weight: 500;
+  background: color-mix(in srgb, var(--faint) 7%, transparent);
+}
+
+.pane td.num {
+  text-align: right;
+}
+
+/* fake controls */
+.fakeslider {
+  display: inline-block;
+  width: 110px;
+  height: 3px;
+  background: color-mix(in srgb, var(--faint) 40%, transparent);
+  border-radius: 2px;
+  position: relative;
+  vertical-align: middle;
+  margin-right: 0.6rem;
+}
+
+.fakeslider i {
+  position: absolute;
+  top: -3.5px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.fakeslider b {
+  position: absolute;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+/* ---------- hero screenshot (real app, theme-matched) ---------- */
+
+/* The screenshot leads the hero. On phones it simply fills the text column;
+   on wider screens it breaks out past the 880px wrap, centered on the page.
+   (The breakout's centering trick leaves phantom layout width the transform
+   can't clip — body { overflow-x: clip } absorbs it.) */
+.hero-shot {
+  width: 100%;
+  max-width: none;
+  margin: 2rem 0 0;
+}
+
+@media (min-width: 940px) {
+  .hero-shot {
+    width: min(1040px, 94vw);
+    margin-left: 50%;
+    transform: translateX(-50%);
+  }
+}
+
+/* The slides are stacked and crossfaded; the box reserves the image's
+   aspect ratio so there's no layout shift. */
+.hero-shot .shots {
+  position: relative;
+  aspect-ratio: 3056 / 1970;
+  cursor: pointer;
+}
+
+.hero-shot .shot {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  box-shadow: 0 12px 40px var(--shadow);
+  opacity: 0;
+  transition: opacity 0.7s ease;
+  pointer-events: none; /* clicks fall through to .shots (pause toggle) */
+}
+
+/* Only the current theme's slides participate; among those, the active
+   index is faded in. The non-matching theme is removed entirely. */
+:root[data-theme="dark"] .hero-shot .shot-light {
+  display: none;
+}
+
+:root[data-theme="light"] .hero-shot .shot-dark {
+  display: none;
+}
+
+:root[data-theme="dark"] .hero-shot .shot-dark.is-active,
+:root[data-theme="light"] .hero-shot .shot-light.is-active {
+  opacity: 1;
+}
+
+.hero-shot .dots {
+  display: flex;
+  gap: 0.45rem;
+  justify-content: center;
+  margin-top: 0.85rem;
+}
+
+.hero-shot .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  background: color-mix(in srgb, var(--faint) 45%, transparent);
+  transition: background 0.2s ease;
+}
+
+.hero-shot .dot.is-active {
+  background: var(--accent);
+}
+
+/* Maximize: a full-screen lightbox of the current shot. */
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 4vmin;
+  background: rgba(0, 0, 0, 0.82);
+  cursor: zoom-out;
+}
+
+.lightbox.open {
+  display: flex;
+}
+
+.lightbox-img {
+  max-width: 96vw;
+  max-height: 92vh;
+  width: auto;
+  height: auto;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
+  cursor: default;
+}
+
+/* ---------- sections ---------- */
+
+section {
+  padding: 3rem 0;
+}
+
+section h2 {
+  font-size: 1.5rem;
+  margin: 0 0 1.5rem;
+  letter-spacing: -0.01em;
+}
+
+.features {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(245px, 1fr));
+  gap: 0.9rem;
+}
+
+.card {
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.1rem 1.2rem;
+}
+
+/* Where the feature lives: log, grid, or both — upper right of each card. */
+.card .scope {
+  flex: none;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  font-size: 0.64rem;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--faint);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.18rem 0.5rem;
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+}
+
+.card .scope svg {
+  width: 0.7rem;
+  height: 0.7rem;
+  color: var(--accent);
+}
+
+/* Title + scope badge share a row, so the badge never overlaps the title —
+   the title shrinks/wraps beside it regardless of how many scopes show. */
+.card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.6rem;
+  margin-bottom: 0.4rem;
+}
+
+.card h3 {
+  margin: 0;
+  font-size: 1rem;
+  min-width: 0;
+}
+
+.card p {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.card code {
+  color: var(--accent);
+  font-size: 0.85em;
+}
+
+/* ---------- prose (the Anzan spec page, rendered from docs/ANZAN.md) ---------- */
+
+/* Two columns on wide screens: sticky table of contents + the document.
+   The spec page widens past the standard 880px wrap to make room. */
+.spec-layout {
+  max-width: 1120px;
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 3rem;
+  align-items: start;
+}
+
+.spec-toc {
+  position: sticky;
+  top: 3.25rem; /* header height */
+  padding: 2.5rem 0 1.5rem;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+/* Scrolling lives on the inner nav, not the sticky element (Safari dislikes
+   sticky+overflow on one box), and overscroll-behavior keeps a wheel over
+   the rail from yanking it to its bottom before the page moves. The active
+   link is kept in view by the script on the page. */
+.spec-toc nav {
+  max-height: calc(100vh - 3.25rem - 4rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.spec-toc ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* The rail line lives on the top-level list only — nested subsection lists
+   don't draw a second border. */
+.spec-toc nav > ul {
+  border-left: 1px solid var(--border);
+}
+
+.spec-toc li {
+  margin: 0;
+}
+
+.spec-toc a {
+  display: block;
+  padding: 0.22rem 0 0.22rem 0.85rem;
+  color: var(--faint);
+  border-left: 2px solid transparent;
+  margin-left: -1px;
+}
+
+/* Sections (h2) read as the spine — brighter and a touch heavier; the row
+   carries an expand chevron when the section has subsections. */
+.toc-row {
+  display: flex;
+  align-items: center;
+}
+
+.toc-row > a {
+  flex: 1 1 auto;
+  color: var(--muted);
+  font-weight: 550;
+}
+
+.toc-toggle {
+  flex: 0 0 auto;
+  appearance: none;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  color: var(--faint);
+  padding: 0.22rem 0.5rem;
+  line-height: 1;
+}
+
+.toc-toggle::before {
+  content: "\25B8"; /* ▸ */
+  display: inline-block;
+  font-size: 0.7rem;
+  transition: transform 0.15s ease;
+}
+
+.spec-toc li.depth-2.expanded .toc-toggle::before {
+  transform: rotate(90deg);
+}
+
+.toc-toggle:hover {
+  color: var(--text);
+}
+
+/* Subsections (h3): collapsed by default, indented and quiet when shown. */
+.toc-sub {
+  display: none;
+}
+
+.spec-toc li.depth-2.expanded > .toc-sub {
+  display: block;
+}
+
+.spec-toc li.depth-3 a {
+  padding-left: 1.8rem;
+  font-size: 0.97em;
+}
+
+.spec-toc a:hover {
+  color: var(--text);
+  text-decoration: none;
+}
+
+.spec-toc a[aria-current] {
+  color: var(--accent);
+  border-left-color: var(--accent);
+}
+
+@media (max-width: 900px) {
+  /* minmax(0, 1fr) — NOT 1fr (= minmax(auto,1fr)). The `auto` minimum sizes
+     the column to its widest content (a code block, a wide table), pushing
+     .prose past the viewport where `overflow-x: clip` then HIDES the overflow
+     — the "text cut off on mobile" bug. The 0 minimum lets the column shrink
+     to viewport width so inner pre/table overflow-x:auto can scroll instead. */
+  .spec-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+
+  /* No room for a side rail on a phone, but readers still need to navigate —
+     so show the contents as a bounded, scrollable block at the top instead of
+     hiding it. Drop the sticky positioning (it has nothing to stick beside). */
+  .spec-toc {
+    position: static;
+    top: auto;
+    padding: 1.25rem 0 0.75rem;
+    margin-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .spec-toc nav {
+    max-height: 45vh;
+    overflow-y: auto;
+  }
+
+  /* Wide spec tables and long inline code must scroll/wrap, not get clipped by
+     the page-level overflow-x:clip (which was hiding text on mobile). */
+  .prose table {
+    display: block;
+    overflow-x: auto;
+  }
+  .prose :not(pre) > code {
+    overflow-wrap: anywhere;
+  }
+}
+
+.prose {
+  padding: 2.5rem 0 3.5rem;
+  font-size: 0.97rem;
+}
+
+/* Anchored headings land below the sticky header, not under it. */
+.prose :is(h1, h2, h3)[id],
+.prose h2,
+.prose h3 {
+  scroll-margin-top: 4.25rem;
+}
+
+.prose h1 {
+  font-size: 1.9rem;
+  letter-spacing: -0.015em;
+  margin: 0 0 1rem;
+}
+
+.prose h2 {
+  font-size: 1.35rem;
+  letter-spacing: -0.01em;
+  margin: 2.2rem 0 0.8rem;
+  padding-top: 1.2rem;
+  border-top: 1px solid var(--border);
+}
+
+.prose h3 {
+  font-size: 1.12rem;
+  font-weight: 650;
+  letter-spacing: -0.005em;
+  color: var(--accent);
+  margin: 1.7rem 0 0.5rem;
+}
+
+.prose p,
+.prose li {
+  color: var(--muted);
+  overflow-wrap: break-word; /* a long token can't push the column past the viewport */
+}
+
+.prose strong {
+  color: var(--text);
+}
+
+.prose table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1rem 0;
+  font-size: 0.9rem;
+}
+
+.prose th,
+.prose td {
+  border: 1px solid var(--border);
+  padding: 0.35rem 0.65rem;
+  text-align: left;
+}
+
+.prose th {
+  color: var(--faint);
+  font-weight: 550;
+  background: color-mix(in srgb, var(--faint) 7%, transparent);
+}
+
+.prose pre {
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow-x: auto;
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+
+.prose :not(pre) > code {
+  background: color-mix(in srgb, var(--faint) 12%, transparent);
+  border-radius: 5px;
+  padding: 0.08em 0.35em;
+}
+
+.prose-footnote {
+  margin-top: 2.5rem;
+  padding-top: 1.2rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.85rem;
+  color: var(--faint);
+}
+
+/* Shiki dual themes (astro.config.mjs sets defaultColor:false, so blocks
+   carry --shiki-light/--shiki-dark variables; pick per site theme). */
+.astro-code,
+.astro-code span {
+  color: var(--shiki-light);
+  background-color: var(--shiki-light-bg);
+}
+
+:root[data-theme="dark"] .astro-code,
+:root[data-theme="dark"] .astro-code span {
+  color: var(--shiki-dark);
+  background-color: var(--shiki-dark-bg);
+}
+
+/* ---------- open source / donate ---------- */
+
+.support {
+  border-top: 1px solid var(--border);
+}
+
+.support .cols {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 2rem;
+}
+
+.support p {
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+footer.site {
+  border-top: 1px solid var(--border);
+  padding: 1.6rem 0 2.2rem;
+  font-size: 0.85rem;
+  color: var(--faint);
+  display: flow-root;
+}
+
+footer.site .wrap {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}

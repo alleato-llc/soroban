@@ -1,0 +1,39 @@
+{
+  "format" : "soroban-workbook",
+  "version" : 1,
+  "activeSheet" : "Loan",
+  "sheets" : [
+    {
+      "name" : "Loan",
+      "cells" : {
+        "A:1" : "Loan amount",
+        "A:2" : "APR",
+        "A:3" : "Years",
+        "A:5" : "Monthly payment",
+        "A:6" : "Total paid",
+        "A:7" : "Total interest",
+        "B:1" : "350000",
+        "B:2" : "0.065",
+        "B:3" : "30",
+        "B:5" : "round(monthly(B:2, B:3, B:1), 2)",
+        "B:6" : "round(-B:5 * B:3 * 12, 2)",
+        "B:7" : "round(B:6 - B:1, 2)"
+      },
+      "columnWidths" : { "A" : 150, "B" : 110 }
+    },
+    {
+      "name" : "What If",
+      "cells" : {
+        "A:1" : "Payment at +1% APR",
+        "A:2" : "Extra cost per month",
+        "B:1" : "round(monthly(Loan!B:2 + 0.01, Loan!B:3, Loan!B:1), 2)",
+        "B:2" : "round(Loan!B:5 - B:1, 2)"
+      },
+      "columnWidths" : { "A" : 170, "B" : 110 }
+    }
+  ],
+  "variables" : { },
+  "functions" : {
+    "monthly" : "monthly(apr, years, principal) = pmt(apr / 12, years * 12, principal) # monthly loan payment for an APR over a term"
+  }
+}

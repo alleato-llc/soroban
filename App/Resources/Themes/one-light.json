@@ -1,0 +1,11 @@
+{
+  "name": "One Light",
+  "windowBackground": "#FAFAFA",
+  "inputBackground": "#EAEAEB",
+  "expressionText": "#696C77",
+  "resultText": "#383A42",
+  "errorText": "#E45649",
+  "secondaryText": "#A0A1A7",
+  "accent": "#4078F2",
+  "fontSize": 14
+}

@@ -1,0 +1,340 @@
+---
+import Layout from "../layouts/Layout.astro";
+import Card from "../components/Card.astro";
+
+const links = {
+    // The notarized dmg, served straight from the latest GitHub Release.
+    // salpa publish attaches a versionless Soroban.dmg, so this URL is stable
+    // across versions (GitHub redirects /latest/ to the newest release).
+    download: "https://github.com/alleato-llc/soroban/releases/latest/download/Soroban.dmg",
+    source: "https://github.com/alleato-llc/soroban",
+    donate: "https://buymeacoffee.com/alleato",
+    // The Anzan language spec — /anzan renders the repo's canonical
+    // docs/ANZAN.md at build time (see src/content.config.ts), so the site
+    // can never drift from the engine.
+    spec: "/anzan",
+    // The Living Specification — every behavior as verified Given/When/Then
+    // prose, generated from the engine's Gherkin suite (scripts/
+    // generate-living-spec.sh), with the full test report one click deeper.
+    verified: "/spec.html",
+};
+---
+
+<Layout
+    title="Soroban・算盤 — an exact calculator with a spreadsheet attached"
+    description="An exact calculator for macOS with a mini-spreadsheet attached, built on a 50-digit exact decimal engine. 0.1 + 0.2 is exactly 0.3. Free and open source."
+>
+    <div class="wrap">
+        <section class="hero">
+            <h1>Soroban<span class="kanji">・算盤</span></h1>
+            <p class="tag">An exact calculator with a spreadsheet attached.</p>
+            <p class="sub">
+                Type expressions into a scrolling log, or flip to a 26×1,000
+                grid where cells hold formulas, controls, and definitions.
+                Underneath: an arbitrary-precision decimal engine — <code
+                    >0.1 + 0.2</code
+                > is exactly
+                <code>0.3</code>, and money math never picks up floating-point
+                drift.
+            </p>
+            <div class="cta">
+                <a class="button primary" href={links.download}
+                    >Download for macOS</a
+                >
+                <a class="button quiet" href={links.source}>View source</a>
+            </div>
+            <p class="fine">
+                Free &amp; open source · macOS 14+ · saves plain, diffable files
+            </p>
+            <p class="fine">
+                Every behavior is a written, <a href={links.verified}
+                    >continuously-verified specification</a
+                >.
+            </p>
+
+            <!-- Real app screenshots in a theme-matched carousel: every shot
+                 for the current theme cycles (dark has more than light), the
+                 page-theme set is shown via CSS. Single click pauses/plays;
+                 double click maximizes (Esc / click-away / double-click to
+                 exit). Dots are built per theme. Honors reduced-motion. -->
+            <div class="hero-shot" data-carousel>
+                <div class="shots">
+                    <img class="shot shot-dark is-active" data-slide="0"
+                        src="/screenshots/log-dark.png"
+                        alt="Soroban's calculation log with computed results"
+                        width="3056" height="1970" loading="eager" />
+                    <img class="shot shot-dark" data-slide="1"
+                        src="/screenshots/log-inspector-dark.png"
+                        alt="Soroban's calculation log with the environment inspector and autocomplete"
+                        width="3056" height="1970" loading="lazy" />
+                    <img class="shot shot-dark" data-slide="2"
+                        src="/screenshots/grid-dark.png"
+                        alt="Soroban's spreadsheet grid: a mortgage model with formulas and controls"
+                        width="3056" height="1970" loading="lazy" />
+                    <img class="shot shot-light is-active" data-slide="0"
+                        src="/screenshots/log-light.png"
+                        alt="Soroban's calculation log with computed results"
+                        width="3056" height="1970" loading="eager" />
+                    <img class="shot shot-light" data-slide="1"
+                        src="/screenshots/grid-light.png"
+                        alt="Soroban's spreadsheet grid: a mortgage model with formulas and controls"
+                        width="3056" height="1970" loading="lazy" />
+                    <img class="shot shot-light" data-slide="2"
+                        src="/screenshots/grid-inspector-light.png"
+                        alt="Soroban's spreadsheet grid with the environment inspector"
+                        width="3056" height="1970" loading="lazy" />
+                </div>
+                <div class="dots" aria-label="Screenshot navigation"></div>
+            </div>
+            <div class="lightbox" aria-hidden="true">
+                <img class="lightbox-img" alt="" />
+            </div>
+
+            <script>
+                // Theme-aware screenshot carousel. It cycles every shot for
+                // the CURRENT theme (CSS hides the other theme), rebuilding
+                // its dots when the theme toggles. Single click = pause/play;
+                // double click = maximize; Esc / click-away / double-click
+                // exits. Reduced-motion users start paused.
+                const root = document.querySelector<HTMLElement>(".hero-shot[data-carousel]");
+                const lightbox = document.querySelector<HTMLElement>(".lightbox");
+                if (root && lightbox) {
+                    const shots = root.querySelector<HTMLElement>(".shots")!;
+                    const dotsWrap = root.querySelector<HTMLElement>(".dots")!;
+                    const lightImg = lightbox.querySelector<HTMLImageElement>(".lightbox-img")!;
+                    let index = 0;
+                    let timer: number | undefined;
+                    let clickTimer: number | undefined;
+                    let wasPaused = false;
+                    let paused = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+                    const theme = () =>
+                        document.documentElement.dataset.theme === "light" ? "light" : "dark";
+                    const slides = () =>
+                        [...root.querySelectorAll<HTMLImageElement>(`.shot-${theme()}`)].sort(
+                            (a, b) => Number(a.dataset.slide) - Number(b.dataset.slide),
+                        );
+
+                    const render = () => {
+                        const list = slides();
+                        index = ((index % list.length) + list.length) % list.length;
+                        root.querySelectorAll(".shot").forEach((s) => s.classList.remove("is-active"));
+                        list[index]?.classList.add("is-active");
+                        [...dotsWrap.children].forEach((d, k) =>
+                            d.classList.toggle("is-active", k === index),
+                        );
+                    };
+                    const buildDots = () => {
+                        dotsWrap.innerHTML = "";
+                        slides().forEach((_, k) => {
+                            const b = document.createElement("button");
+                            b.className = "dot" + (k === index ? " is-active" : "");
+                            b.setAttribute("aria-label", `Show screenshot ${k + 1}`);
+                            b.addEventListener("click", (e) => {
+                                e.stopPropagation();
+                                pause();
+                                index = k;
+                                render();
+                            });
+                            dotsWrap.appendChild(b);
+                        });
+                    };
+                    const stop = () => {
+                        if (timer) clearInterval(timer);
+                        timer = undefined;
+                    };
+                    const play = () => {
+                        stop();
+                        if (!paused)
+                            timer = window.setInterval(() => {
+                                index += 1;
+                                render();
+                            }, 5500);
+                    };
+                    const pause = () => {
+                        paused = true;
+                        root.classList.add("is-paused");
+                        stop();
+                    };
+                    const togglePlay = () => {
+                        paused = !paused;
+                        root.classList.toggle("is-paused", paused);
+                        paused ? stop() : play();
+                    };
+
+                    const maximize = () => {
+                        const list = slides();
+                        lightImg.src = list[index].src;
+                        lightImg.alt = list[index].alt;
+                        lightbox.classList.add("open");
+                        lightbox.setAttribute("aria-hidden", "false");
+                        wasPaused = paused;
+                        pause();
+                    };
+                    const exitMax = () => {
+                        if (!lightbox.classList.contains("open")) return;
+                        lightbox.classList.remove("open");
+                        lightbox.setAttribute("aria-hidden", "true");
+                        paused = wasPaused;
+                        root.classList.toggle("is-paused", paused);
+                        play();
+                    };
+
+                    // Single click pauses/plays; a double click cancels the
+                    // pending single action and maximizes instead.
+                    shots.addEventListener("click", () => {
+                        clearTimeout(clickTimer);
+                        clickTimer = window.setTimeout(togglePlay, 250);
+                    });
+                    shots.addEventListener("dblclick", () => {
+                        clearTimeout(clickTimer);
+                        maximize();
+                    });
+
+                    lightbox.addEventListener("click", (e) => {
+                        if (e.target === lightbox) exitMax(); // click away (backdrop)
+                    });
+                    lightbox.addEventListener("dblclick", exitMax);
+                    document.addEventListener("keydown", (e) => {
+                        if (e.key === "Escape") exitMax();
+                    });
+
+                    new MutationObserver(() => {
+                        buildDots();
+                        render();
+                    }).observe(document.documentElement, {
+                        attributes: true,
+                        attributeFilter: ["data-theme"],
+                    });
+
+                    buildDots();
+                    render();
+                    play();
+                }
+            </script>
+        </section>
+
+        <section id="features">
+            <h2>Built around one idea: be exact, then stay out of the way</h2>
+            <div class="features">
+                <Card title="Exact by construction" scopes={["log", "grid", "cli"]}>
+                    Arbitrary-precision decimals: <code>+ − ×</code> and integer
+                    powers are exact, division carries 50 significant digits. Machin's
+                    1706 formula recovers π to 51 places — in three typed lines.
+                </Card>
+                <Card title="Log and grid, one engine" scopes={["log", "grid"]}>
+                    The calculator log and the spreadsheet share variables and
+                    functions. Reference <code>B:1</code> from the log, use
+                    <code>rate</code> in a cell, sum a column with
+                    <code>sum(A:1..A:9)</code> — across worksheets too.
+                </Card>
+                <Card title="Custom functions" scopes={["log", "grid", "cli"]}>
+                    Need a custom function? Add it. <code>f(x) = x * 2</code> registers
+                    <code>f(x)</code> as a valid function. Custom functions support
+                    recursion, LaTeX-style <code>∑</code>/<code>∏</code>, and user-defined
+                    documentation.
+                </Card>
+                <Card title="Programmer friendly" scopes={["log", "cli"]}>
+                    <a href={links.spec}>Anzan</a> — Soroban's expression
+                    language — comes with data structure support including
+                    arrays, maps, strings, and booleans. We also support
+                    higher-order functions, lambdas, and a
+                    <a href={links.spec}>full language spec</a>.
+                </Card>
+                <Card title="Live what-if controls" scopes={["grid"]}>
+                    <code>rate = slider(0.08, 0, 0.2)</code> renders as a draggable
+                    slider in its cell — plus steppers, checkboxes, dropdowns. The
+                    whole model recalculates as you drag; one undo step on release.
+                </Card>
+                <Card title="Named Cells" scopes={["grid"]}>
+                    Name a cell and write <code>'Projected Rate' * 12</code> instead
+                    of <code>B:7</code>. Sheet-scoped definitions render as
+                    <code>λ</code> and <code>𝑖</code> cells. Renames update every
+                    referencing formula.
+                </Card>
+                <Card title="Read your own workbook" scopes={["grid"]}>
+                    A formula can inspect the workbook itself —
+                    <code>Workbook.worksheets["Budget"].cell("B", 1).value</code>
+                    or the shorthand <code>cell("A", 1).value</code>,
+                    <code>sheetNames()</code>. Reads are live; log commands like
+                    <code>updateCell</code> and <code>addWorksheet</code> change
+                    it, one undo step each.
+                </Card>
+                <Card title="Data sheets that scale" scopes={["grid"]}>
+                    Import 100,000-row CSVs into SQLite-backed sheets inside the
+                    document — formulas reach every row (<code
+                        >sum(Sales!C:2..C:100000)</code
+                    >), opens stay instant.
+                </Card>
+                <Card title="Common formulas built in" scopes={["log", "grid", "cli"]}>
+                    Support for common formulas across domains: statistics (<code
+                        >median</code
+                    >, <code>stdev</code>), algebra (<code>sqrt</code>, <code
+                        >gcd</code
+                    >), logic (<code>if</code>,
+                    <code>and</code>, <code>or</code>), finance (<code>pmt</code>,
+                    <code>irr</code>, <code>xirr</code>), and dates (<code
+                        >edate</code
+                    >, <code>days</code>).
+                </Card>
+                <Card title="A simple file format" scopes={["log", "grid"]}>
+                    <code>.soroban</code> is a documented package of pretty-printed
+                    JSON (+ SQLite for data) — diffable, scriptable, hand-editable.
+                    CSV in and out.
+                </Card>
+                <Card title="Lives in your terminal" scopes={["cli"]}>
+                    The full language ships as a <code>soroban</code> CLI: an
+                    Anzan REPL with tab completion, signature hints, and
+                    persistent history — or pipe it
+                    (<code>echo "fact(25)" | soroban</code>) and script against
+                    real exit codes.
+                </Card>
+                <Card title="Documentation built in" scopes={["log", "grid", "cli"]}>
+                    <code>man(pmt)</code> explains any built-in; ⌘/ opens a
+                    searchable reference. Your own functions get man pages from a
+                    trailing <code># comment</code> — and every documented example
+                    is evaluated by the test suite, so the docs can't rot.
+                </Card>
+                <Card title="Make it yours">
+                    Ten built-in themes — Solarized, Dracula, Nord, gruvbox… — or
+                    drop a small JSON theme in Application Support to make your
+                    own. This site is wearing two of them.
+                </Card>
+            </div>
+        </section>
+
+        <section class="support" id="source">
+            <div class="cols">
+                <div>
+                    <h2>Open source</h2>
+                    <p>
+                        Soroban is developed in the open — the calculation
+                        engine is a standalone, UI-free Swift package with
+                        hundreds of tests and executable Gherkin specs,
+                        including the mathematical identities that certify it
+                        (π via Machin, Nicomachus, the Gregorian leap rule…).
+                        Read it, audit it, build it yourself.
+                    </p>
+                    <p>
+                        <a class="button quiet" href={links.source}
+                            >Source &amp; issues</a
+                        >
+                    </p>
+                </div>
+                <div id="donate">
+                    <h2>Donations</h2>
+                    <p>
+                        The app is free and always will be. If it earns a place
+                        in your workflow, a donation keeps the work moving — and
+                        is genuinely appreciated.
+                    </p>
+                    <p style="display:flex; gap:0.6rem; flex-wrap:wrap">
+                        <a class="button primary" href={links.donate}
+                            >Buy me a coffee</a
+                        >
+                    </p>
+                </div>
+            </div>
+        </section>
+    </div>
+</Layout>

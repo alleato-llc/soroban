@@ -1,0 +1,11 @@
+{
+  "name": "Gruvbox Dark",
+  "windowBackground": "#282828",
+  "inputBackground": "#3C3836",
+  "expressionText": "#BDAE93",
+  "resultText": "#EBDBB2",
+  "errorText": "#FB4934",
+  "secondaryText": "#7C6F64",
+  "accent": "#FABD2F",
+  "fontSize": 14
+}

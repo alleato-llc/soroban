@@ -1,0 +1,127 @@
+---
+import { getEntry, render } from "astro:content";
+import Layout from "../layouts/Layout.astro";
+
+// Rendered from the canonical docs/ANZAN.md (see src/content.config.ts).
+const entry = await getEntry("docs", "anzan");
+if (!entry) throw new Error("docs/ANZAN.md not found — did it move?");
+const { Content, headings } = await render(entry);
+
+// Sidebar: h2 sections, each carrying its h3 subsections as collapsible
+// children (hidden by default, expanded for the section you're reading). The
+// h1 is the page itself.
+const sections: { text: string; slug: string; children: { text: string; slug: string }[] }[] = [];
+for (const h of headings) {
+    if (h.depth === 2) sections.push({ text: h.text, slug: h.slug, children: [] });
+    else if (h.depth === 3 && sections.length) sections.at(-1)!.children.push({ text: h.text, slug: h.slug });
+}
+---
+
+<Layout
+    title="Anzan・暗算 — the Soroban language specification"
+    description="The specification of Anzan, Soroban's exact expression language: lexical structure, values, operator precedence, the exactness model, functions, lambdas, reductions, and grammar."
+>
+    <div class="wrap spec-layout">
+        <aside class="spec-toc" aria-label="Contents">
+            <nav>
+                <ul>
+                    {
+                        sections.map((s) => (
+                            <li class="depth-2">
+                                <div class="toc-row">
+                                    <a href={`#${s.slug}`}>{s.text}</a>
+                                    {s.children.length > 0 && (
+                                        <button
+                                            class="toc-toggle"
+                                            type="button"
+                                            aria-expanded="false"
+                                            aria-controls={`toc-${s.slug}`}
+                                            aria-label={`Toggle ${s.text} subsections`}
+                                        />
+                                    )}
+                                </div>
+                                {s.children.length > 0 && (
+                                    <ul class="toc-sub" id={`toc-${s.slug}`}>
+                                        {s.children.map((c) => (
+                                            <li class="depth-3">
+                                                <a href={`#${c.slug}`}>{c.text}</a>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                )}
+                            </li>
+                        ))
+                    }
+                </ul>
+            </nav>
+        </aside>
+        <article class="prose">
+            <Content />
+            <p class="prose-footnote">
+                This page is rendered from the canonical
+                <a
+                    href="https://github.com/alleato-llc/soroban/blob/main/docs/ANZAN.md"
+                    >docs/ANZAN.md</a
+                >
+                at build time — and its promises are executable: <code
+                    >anzan.feature</code
+                > pins the grammar in CI.
+            </p>
+        </article>
+    </div>
+</Layout>
+
+<script is:inline>
+    // Highlight the section under the reader: the observed band sits in the
+    // upper third of the viewport, so the current heading lights up as it
+    // crosses where eyes actually are.
+    const links = [...document.querySelectorAll(".spec-toc a")];
+    const byId = new Map(links.map((a) => [a.getAttribute("href").slice(1), a]));
+    const rail = document.querySelector(".spec-toc nav");
+
+    // Collapsible sections: h3s hide by default and open per section. A
+    // chevron toggles manually; scrolling into a section opens it (and closes
+    // the others — accordion), so the rail shows the subsections of where you
+    // actually are.
+    const sectionLis = [...document.querySelectorAll(".spec-toc li.depth-2")];
+    const setExpanded = (li, on) => {
+        li.classList.toggle("expanded", on);
+        li.querySelector(".toc-toggle")?.setAttribute("aria-expanded", on ? "true" : "false");
+    };
+    document.querySelectorAll(".spec-toc .toc-toggle").forEach((btn) => {
+        btn.addEventListener("click", (e) => {
+            e.preventDefault();
+            const li = btn.closest("li.depth-2");
+            setExpanded(li, !li.classList.contains("expanded"));
+        });
+    });
+    // Keep the active link visible WITHIN the rail when it overflows on
+    // short windows — adjust the rail's own scrollTop only (scrollIntoView
+    // would scroll the page as well).
+    const reveal = (link) => {
+        if (!link || rail.scrollHeight <= rail.clientHeight) return;
+        const r = link.getBoundingClientRect();
+        const n = rail.getBoundingClientRect();
+        if (r.top < n.top) rail.scrollTop -= n.top - r.top;
+        else if (r.bottom > n.bottom) rail.scrollTop += r.bottom - n.bottom;
+    };
+    const observer = new IntersectionObserver(
+        (entries) => {
+            for (const e of entries) {
+                if (!e.isIntersecting) continue;
+                links.forEach((l) => l.removeAttribute("aria-current"));
+                const active = byId.get(e.target.id);
+                active?.setAttribute("aria-current", "true");
+                // Open the section you're in, close the rest, then make sure
+                // the active link sits in view (it's now displayed).
+                const li = active?.closest("li.depth-2");
+                sectionLis.forEach((s) => setExpanded(s, s === li));
+                reveal(active);
+            }
+        },
+        { rootMargin: "-15% 0px -75% 0px" },
+    );
+    document
+        .querySelectorAll(".prose h2[id], .prose h3[id]")
+        .forEach((h) => observer.observe(h));
+</script>

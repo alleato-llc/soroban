@@ -1,0 +1,130 @@
+name: Soroban
+options:
+  bundleIdPrefix: com.alleato
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+
+packages:
+  SorobanEngine:
+    path: Engine
+  PickleKit:
+    url: https://github.com/alleato-llc/pickle-kit.git
+    # Revision-pinned (no upstream tags yet) — keep in sync with
+    # Engine/Package.swift when bumping.
+    revision: da664a59b56691b3a29d0e702b2e9df2ed2c5db9
+
+targets:
+  Soroban:
+    type: application
+    platform: macOS
+    sources:
+      - App/Sources
+      - path: App/Resources
+        buildPhase: resources
+    dependencies:
+      - package: SorobanEngine
+        product: SorobanEngine
+    # App icon PNGs are derived artifacts (gitignored) — scripts/generate_icon.py
+    # is the source of truth and regenerates them before every build.
+    preBuildScripts:
+      - name: Generate App Icon
+        script: |
+          # Xcode script phases get a minimal PATH — search the usual Homebrew
+          # locations for a python3 that has Pillow. If none does, keep any
+          # previously generated PNGs and just warn (CI builds the dmg from a
+          # clean checkout, so there the script must succeed).
+          for PY in python3 /opt/homebrew/bin/python3 /usr/local/bin/python3; do
+            if command -v "$PY" &>/dev/null && "$PY" -c 'import PIL' &>/dev/null; then
+              exec "$PY" "${PROJECT_DIR}/scripts/generate_icon.py"
+            fi
+          done
+          if ls "${PROJECT_DIR}/App/Resources/Assets.xcassets/AppIcon.appiconset/"*.png &>/dev/null; then
+            echo "warning: no python3 with Pillow found — reusing existing icon PNGs"
+          else
+            echo "error: no python3 with Pillow found and no generated icons present (pip3 install Pillow)"
+            exit 1
+          fi
+        basedOnDependencyAnalysis: false
+        outputFiles:
+          - $(PROJECT_DIR)/App/Resources/Assets.xcassets/AppIcon.appiconset/icon_512@2x.png
+    entitlements:
+      path: App/Soroban.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.files.user-selected.read-write: true
+    info:
+      path: App/Resources/Info.plist
+      properties:
+        LSApplicationCategoryType: public.app-category.utilities
+        NSHumanReadableCopyright: ""
+        # 算盤 — the Japanese abacus the app is named for, set off with the
+        # interpunct (・nakaguro), Japanese typography's word-pair separator.
+        # CFBundleName titles the application menu; the display name covers
+        # Finder/About.
+        CFBundleName: Soroban・算盤
+        CFBundleDisplayName: Soroban・算盤
+        # .soroban is a document PACKAGE (directory shown as one file);
+        # legacy flat JSON files share the extension and still open.
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Soroban Workbook
+            CFBundleTypeRole: Editor
+            LSItemContentTypes: [com.alleato.soroban.workbook]
+            LSHandlerRank: Owner
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: com.alleato.soroban.workbook
+            UTTypeDescription: Soroban Workbook
+            UTTypeConformsTo: [com.apple.package]
+            UTTypeTagSpecification:
+              public.filename-extension: [soroban]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.alleato.Soroban
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "6.0"
+        ENABLE_HARDENED_RUNTIME: true
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_STYLE: Automatic
+        SWIFT_EMIT_LOC_STRINGS: false
+
+  # Gherkin specs for the SESSION layer (SheetModel: undo, named-cell
+  # rewriting, control commits, CSV export). SheetModel compiles directly
+  # into this bundle — no host app, no UI automation; PickleKit drives it
+  # the same way the engine features run.
+  SorobanSessionTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - App/Sources/Session/SheetModel # the model + its per-concern extensions
+      - App/Sources/Session/LogStore.swift # the UI-free log model (History reflection)
+      - App/Sources/Session/HistoryEntry.swift # a log entry (LogStore's element)
+      - path: App/Tests/Session
+        excludes: [Features]
+      - path: App/Tests/Session/Features
+        type: folder
+        buildPhase: resources
+    dependencies:
+      - package: SorobanEngine
+        product: SorobanEngine
+      - package: PickleKit
+        product: PickleKit
+    settings:
+      base:
+        SWIFT_VERSION: "6.0"
+        GENERATE_INFOPLIST_FILE: YES
+
+schemes:
+  Soroban:
+    build:
+      targets:
+        Soroban: all
+        SorobanSessionTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets: [SorobanSessionTests]
+    archive:
+      config: Release

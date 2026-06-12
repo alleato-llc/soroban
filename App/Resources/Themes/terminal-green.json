@@ -1,0 +1,11 @@
+{
+  "name": "Terminal Green",
+  "windowBackground": "#0C0C0C",
+  "inputBackground": "#161616",
+  "expressionText": "#33AA33",
+  "resultText": "#55FF55",
+  "errorText": "#FF5555",
+  "secondaryText": "#1F7A1F",
+  "accent": "#55FF55",
+  "fontSize": 14
+}

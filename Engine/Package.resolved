@@ -1,0 +1,49 @@
+{
+  "originHash" : "4d1a5d9309c8e168e7d09907da4b26bc02fa412780d7b30e8abab7029ddda99f",
+  "pins" : [
+    {
+      "identity" : "bigint",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/attaswift/BigInt.git",
+      "state" : {
+        "revision" : "e07e00fa1fd435143a2dcf8b7eec9a7710b2fdfe",
+        "version" : "5.7.0"
+      }
+    },
+    {
+      "identity" : "kumi",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/alleato-llc/kumi.git",
+      "state" : {
+        "revision" : "7d395f763e6b7040efd1b7b15d6c0b98693bb116",
+        "version" : "0.4.0"
+      }
+    },
+    {
+      "identity" : "linenoise-swift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/andybest/linenoise-swift.git",
+      "state" : {
+        "revision" : "cbf0a35c6e159e4fe6a03f76c8a17ef08e907b0e"
+      }
+    },
+    {
+      "identity" : "nimble",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/Quick/Nimble.git",
+      "state" : {
+        "revision" : "7a46a5fc86cb917f69e3daf79fcb045283d8f008",
+        "version" : "8.1.2"
+      }
+    },
+    {
+      "identity" : "pickle-kit",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/alleato-llc/pickle-kit.git",
+      "state" : {
+        "revision" : "da664a59b56691b3a29d0e702b2e9df2ed2c5db9"
+      }
+    }
+  ],
+  "version" : 3
+}

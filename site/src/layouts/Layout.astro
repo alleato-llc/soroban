@@ -1,0 +1,65 @@
+---
+import "../styles/global.css";
+import ThemeToggle from "../components/ThemeToggle.tsx";
+
+interface Props {
+  title: string;
+  description: string;
+}
+
+const { title, description } = Astro.props;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <script is:inline>
+      // Resolve the theme BEFORE first paint: stored choice wins, otherwise
+      // follow the system — and keep following it live until the user picks.
+      (() => {
+        const saved = localStorage.getItem("soroban-theme");
+        const media = matchMedia("(prefers-color-scheme: dark)");
+        const apply = (mode) => (document.documentElement.dataset.theme = mode);
+        apply(saved ?? (media.matches ? "dark" : "light"));
+        media.addEventListener("change", (e) => {
+          if (!localStorage.getItem("soroban-theme")) {
+            apply(e.matches ? "dark" : "light");
+          }
+        });
+      })();
+    </script>
+  </head>
+  <body>
+    <header class="site">
+      <div class="wrap">
+        <a class="wordmark" href="/">Soroban<span style="color: var(--accent)">・</span>算盤</a>
+        <nav>
+          <a href="/#features">Features</a>
+          <a href="/anzan">Anzan</a>
+          <a href="/spec.html">Verified</a>
+          <a href="/#source">Source</a>
+          <a href="/#donate">Donate</a>
+        </nav>
+        <ThemeToggle client:load />
+      </div>
+    </header>
+
+    <main id="top">
+      <slot />
+    </main>
+
+    <footer class="site">
+      <div class="wrap">
+        <span>Soroban・算盤 — named for the Japanese abacus</span>
+        <span>Free, open source, exact.</span>
+      </div>
+    </footer>
+  </body>
+</html>
