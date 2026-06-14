@@ -100,6 +100,24 @@ public indirect enum DataFieldType: Equatable, Sendable {
         }
     }
 
+    /// Within a `namespace`, qualify a sibling record-type reference: an
+    /// unqualified `Point` whose name is declared in the namespace becomes
+    /// `Bits::Point`; an already-qualified (`Other::T`) or global name is left
+    /// alone. Recurses into list/map element types.
+    func qualified(namespace: String, siblings: Set<String>) -> DataFieldType {
+        switch self {
+        case .number, .string, .boolean:
+            return self
+        case .record(let name):
+            guard !name.contains("::"), siblings.contains(name.lowercased()) else { return self }
+            return .record("\(namespace)::\(name)")
+        case .list(let element):
+            return .list(element.qualified(namespace: namespace, siblings: siblings))
+        case .map(let valueType):
+            return .map(valueType.qualified(namespace: namespace, siblings: siblings))
+        }
+    }
+
     /// Validates a value against this type, recursing into list/map elements.
     /// Booleans are the engine's 1/0, but a Boolean field is strict (exactly 0/1,
     /// so `active: 7` is caught). Records are already-validated immutable

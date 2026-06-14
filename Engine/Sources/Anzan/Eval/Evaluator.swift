@@ -260,6 +260,31 @@ struct Evaluator {
             }
             environment.define(DataType(name: name, fields: fields, source: ""))
             return .number(.zero)
+
+        case .namespaceDefinition(let name, let members):
+            // 2a-i: members are data declarations. They register under qualified
+            // names (`Bits::BitField`), and a field referencing a sibling type
+            // is qualified to match — so `Bits::BitFormat` instances nest
+            // `Bits::BitField` instances. (Functions/constants: a later slice.)
+            var declared: Set<String> = []
+            for member in members {
+                guard case .dataDefinition(let typeName, _) = member else {
+                    throw EngineError.domainError(
+                        message: "namespace \(name) currently holds only data declarations")
+                }
+                declared.insert(typeName.lowercased())
+            }
+            for case .dataDefinition(let typeName, let fields) in members {
+                let qualified = "\(name)::\(typeName)"
+                guard environment.function(named: qualified) == nil else {
+                    throw EngineError.domainError(message: "'\(qualified)' is already a function")
+                }
+                let qualifiedFields = fields.map {
+                    DataField(name: $0.name, type: $0.type.qualified(namespace: name, siblings: declared))
+                }
+                environment.define(DataType(name: qualified, fields: qualifiedFields, source: ""))
+            }
+            return .number(.zero)
         }
     }
 

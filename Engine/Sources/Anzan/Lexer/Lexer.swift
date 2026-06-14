@@ -73,6 +73,7 @@ package struct Lexer {
                 "<<": .shiftLeft, ">>": .shiftRight, // before the single-char `<`/`>`
                 "..": .dotDot, // before the number scanner grabs the first '.'
                 "->": .arrow,  // before '-' lexes as minus
+                "::": .colonColon, // namespace qualifier, before the single ':'
             ]
             if let kind = twoChar[pair] {
                 index += 2

@@ -1,6 +1,9 @@
 # Modules — generic data types, namespaces, and imports (design)
 
-> **Status: DESIGN AGREED — phased, not yet implemented.** A foundational
+> **Status: IN PROGRESS.** Phase 1 (generic data field types) and phase 2a-i
+> (namespaced *data types* with qualified resolution) are **implemented and
+> tested**; namespaced functions/constants, imports, the builtin module reorg,
+> and persistence are still ahead. A foundational
 > language initiative, specced before code (like `docs/MODES.md` /
 > `docs/DECIMAL.md`). It is **the largest single direction proposed for the
 > language**, and the design has deliberately taken the *expansive* option on
@@ -146,12 +149,17 @@ host-neutral `BinaryView` stays sheet/workbook-agnostic.
 
 ## Phasing (each lands green on its own)
 
-1. **Generic data field types** — lists, nested lists, map fields. Parser,
+1. ✅ **Generic data field types** — lists, nested lists, map fields. Parser,
    recursive validation, description/JSON/codec, `datatypes.feature`, `ANZAN.md §7`.
-2. **Namespaces + imports** — `::` token, `namespace` blocks, resolution,
-   `import`, persistence; `ANZAN.md` grammar appendix + a new `modules.feature`.
-3. **Builtins → modules + prelude** — registry reorg, `Module::name` aliases,
-   prelude; docs.
+2. **Namespaces + imports**, split:
+   - ✅ **2a-i — namespaced data types** — `::` token, `namespace` blocks
+     (data members), qualified resolution + qualified type identity + sibling
+     field-type qualification; `modules.feature`. *(No runtime context needed.)*
+   - **2a-ii — namespaced functions + constants** — the home-context resolver
+     (members resolve siblings unqualified when called later), reopening, nesting.
+   - **2b — imports** (`import NAME`, unqualified access, loud conflicts).
+   - **2c — persistence** (workbook `namespaces`/`imports`, restore order).
+3. **Builtins → modules + prelude** — registry reorg, `Module::name` aliases, prelude.
 4. **The `Bits` module** — `BitFormat` / `BitField`.
 5. **Binary editor** — builder emits/consumes `Bits::BitFormat`; viewer renders
    enum labels (the work paused for this design).

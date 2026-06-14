@@ -53,6 +53,9 @@ package struct Parser {
             index += 2
             return .assignment(name: name, value: try comparison())
         }
+        if let namespaceDefinition = try namespaceDefinition() {
+            return namespaceDefinition
+        }
         if let dataDefinition = try dataDefinition() {
             return dataDefinition
         }
@@ -60,6 +63,45 @@ package struct Parser {
             return definition
         }
         return try comparison()
+    }
+
+    /// `namespace Bits { data BitField { … }  data BitFormat { … } }`. Like
+    /// `data`, a CONTEXTUAL keyword — committed only by `namespace Ident {`.
+    /// In 2a-i the body holds `data` declarations (docs/MODULES.md); other
+    /// members are rejected by the evaluator with a clear message.
+    private mutating func namespaceDefinition() throws(EngineError) -> Expression? {
+        guard case .identifier(let keyword) = current.kind, keyword.lowercased() == "namespace",
+              index + 2 < tokens.count,
+              case .identifier(let name) = tokens[index + 1].kind,
+              case .leftBrace = tokens[index + 2].kind else { return nil }
+        let namePosition = tokens[index + 1].position
+        index += 3 // past `namespace Name {`
+
+        guard let first = name.first, first.isUppercase else {
+            throw EngineError.parseError(
+                message: "namespace names start with a capital letter — e.g. namespace Bits { … }",
+                position: namePosition)
+        }
+        guard !ReservedNames.contains(name.lowercased()), !Parser.isReductionName(name) else {
+            throw EngineError.parseError(message: "cannot define '\(name)'", position: namePosition)
+        }
+
+        var members: [Expression] = []
+        while true {
+            if case .rightBrace = current.kind { break }
+            if case .end = current.kind {
+                throw EngineError.parseError(message: "expected '}' to close namespace \(name)",
+                                             position: current.position)
+            }
+            members.append(try statement())
+        }
+        _ = advance() // '}'
+        guard !members.isEmpty else {
+            throw EngineError.parseError(
+                message: "a namespace needs at least one declaration — e.g. namespace \(name) { data Point { x: Number } }",
+                position: namePosition)
+        }
+        return .namespaceDefinition(name: name, members: members)
     }
 
     /// `data Person { name: String, age: Number, active: Boolean }`.
@@ -566,6 +608,10 @@ package struct Parser {
             // Budget!A:1 — unquoted sheet qualifier.
             return try qualifiedReference(sheet: name, at: token.position)
 
+        case .identifier(let name) where isColonColon(current.kind):
+            // Bits::BitFormat — namespace-qualified reference / constructor call.
+            return try qualifiedName(namespace: name, position: token.position)
+
         case .identifier(let name):
             // ∑/∏: a plain call is the variadic function (sum/product); the
             // subscript form is the indexed reduction. Typed `sigma_i` arrives
@@ -817,6 +863,29 @@ package struct Parser {
     private func isBang(_ kind: Token.Kind) -> Bool {
         if case .bang = kind { return true }
         return false
+    }
+
+    private func isColonColon(_ kind: Token.Kind) -> Bool {
+        if case .colonColon = kind { return true }
+        return false
+    }
+
+    /// `Bits::BitFormat` — a namespace-qualified reference; with `(` it's a
+    /// qualified call (the constructor of a namespaced type). The qualified name
+    /// flows as one string ("Bits::BitFormat") that the evaluator resolves.
+    private mutating func qualifiedName(namespace: String, position: Int) throws(EngineError) -> Expression {
+        _ = advance() // '::'
+        guard case .identifier(let member) = current.kind else {
+            throw EngineError.parseError(
+                message: "expected a name after '::' — e.g. \(namespace)::Point", position: current.position)
+        }
+        _ = advance()
+        let qualified = "\(namespace)::\(member)"
+        guard case .leftParen = current.kind else {
+            return .variable(qualified)
+        }
+        _ = advance()
+        return .call(name: qualified, arguments: try argumentList())
     }
 
     /// After a sheet name: `!` then a cell reference, range, or 'named cell'.

@@ -86,6 +86,10 @@ extension Expression {
             return "data \(name) { "
                 + fields.map { "\($0.name): \($0.type.label)" }.joined(separator: ", ")
                 + " }"
+        case .namespaceDefinition(let name, let members):
+            return "namespace \(name) { "
+                + members.map { sub($0) }.joined(separator: " ")
+                + " }"
         }
     }
 

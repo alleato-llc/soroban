@@ -716,6 +716,9 @@ is the **canonical (Normal-dialect)** grammar; Programmer mode adds a bitwise
 operator band (`|` · `^` · `&` · `<< >>`, between comparison and additive) plus
 prefix `~`, parsing to the same canonical bitwise functions — see
 [MODES.md](https://github.com/alleato-llc/soroban/blob/main/docs/MODES.md).
+The **module system** — `namespace Name { … }` blocks and `Name::member`
+qualified names (the `::` token), plus imports — is an extension specced in
+[MODULES.md](https://github.com/alleato-llc/soroban/blob/main/docs/MODULES.md).
 
 ```
 line        = datadef | definition | assignment | expression ;
