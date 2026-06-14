@@ -887,17 +887,21 @@ package struct Parser {
         return false
     }
 
-    /// `Bits::BitFormat` — a namespace-qualified reference; with `(` it's a
-    /// qualified call (the constructor of a namespaced type). The qualified name
-    /// flows as one string ("Bits::BitFormat") that the evaluator resolves.
+    /// `Bits::BitFormat`, `A::B::c` — a namespace-qualified reference (nesting
+    /// chains `::`); with `(` it's a qualified call (the constructor of a
+    /// namespaced type). The whole qualified name flows as one string
+    /// ("A::B::c") that the evaluator resolves.
     private mutating func qualifiedName(namespace: String, position: Int) throws(EngineError) -> Expression {
-        _ = advance() // '::'
-        guard case .identifier(let member) = current.kind else {
-            throw EngineError.parseError(
-                message: "expected a name after '::' — e.g. \(namespace)::Point", position: current.position)
-        }
-        _ = advance()
-        let qualified = "\(namespace)::\(member)"
+        var qualified = namespace
+        repeat {
+            _ = advance() // '::'
+            guard case .identifier(let member) = current.kind else {
+                throw EngineError.parseError(
+                    message: "expected a name after '::' — e.g. \(namespace)::Point", position: current.position)
+            }
+            _ = advance()
+            qualified += "::\(member)"
+        } while isColonColon(current.kind)
         guard case .leftParen = current.kind else {
             return .variable(qualified)
         }

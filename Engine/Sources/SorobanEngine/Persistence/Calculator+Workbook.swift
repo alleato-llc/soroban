@@ -14,6 +14,7 @@ extension Calculator {
         environment.replaceUserDataTypes([:])
         environment.clearImports()
         environment.clearNamespaceSources()
+        environment.clearNamespaceVariables()
         for source in workbook.namespaces {
             _ = evaluate(source) // re-registers the namespace's members; re-records the source
         }

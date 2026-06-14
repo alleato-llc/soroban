@@ -104,10 +104,9 @@ struct Evaluator {
                 return value
             }
             // Inside a namespaced member, an unqualified name resolves a sibling
-            // first (`Bits::TAU`, a sibling function/type as a value), before
-            // sheet scope and globals.
-            if let ns = environment.currentNamespace, !name.contains("::") {
-                let qualified = "\(ns)::\(name)"
+            // first (a sibling constant, function, or type as a value), walking
+            // up the nesting chain, before sheet scope and globals.
+            for qualified in Self.siblingCandidates(of: name, in: environment.currentNamespace) {
                 if let value = environment[qualified] { return value }
                 if environment.function(named: qualified) != nil || environment.dataType(named: qualified) != nil {
                     return .function(FunctionValue(kind: .user(name: qualified)))
@@ -145,9 +144,11 @@ struct Evaluator {
             if registry.contains(name: name) {
                 return .function(FunctionValue(kind: .builtin(name)))
             }
-            // An imported namespace's function/type as a bare value (`map(area, …)`
+            // An imported namespace's member as a bare name. A constant resolves
+            // to its value; a function/type to a function value (`map(area, …)`
             // after `import Geo`). Last fallback; re-resolves by qualified name.
             if let qualified = environment.importedName(name) {
+                if let value = environment[qualified] { return value }
                 return .function(FunctionValue(kind: .user(name: qualified)))
             }
             // A qualified builtin as a value — `map(Finance::pmt, …)`.
@@ -281,48 +282,7 @@ struct Evaluator {
             return .number(.zero)
 
         case .namespaceDefinition(let name, let members):
-            // Members register under qualified names (`Bits::BitField`,
-            // `Geometry::area`). A data field referencing a sibling TYPE is
-            // qualified to match at declaration; a FUNCTION body resolves its
-            // siblings unqualified at call time via the home-namespace context
-            // (see apply(user:)). 2a-ii: data + function members; constants and
-            // nested namespaces are later slices.
-            var declaredTypes: Set<String> = []
-            for member in members {
-                switch member {
-                case .dataDefinition(let typeName, _): declaredTypes.insert(typeName.lowercased())
-                case .functionDefinition: break
-                default:
-                    throw EngineError.domainError(message:
-                        "namespace \(name) holds data and function declarations (constants and nesting come later)")
-                }
-            }
-            for member in members {
-                switch member {
-                case .dataDefinition(let typeName, let fields):
-                    let qualified = "\(name)::\(typeName)"
-                    guard environment.function(named: qualified) == nil else {
-                        throw EngineError.domainError(message: "'\(qualified)' is already a function")
-                    }
-                    let qualifiedFields = fields.map {
-                        DataField(name: $0.name, type: $0.type.qualified(namespace: name, siblings: declaredTypes))
-                    }
-                    environment.define(DataType(name: qualified, fields: qualifiedFields, source: ""))
-                case .functionDefinition(let funcName, let parameters, let body):
-                    let qualified = "\(name)::\(funcName)"
-                    guard environment.dataType(named: qualified) == nil else {
-                        throw EngineError.domainError(message: "'\(qualified)' is already a data type")
-                    }
-                    // Qualify sibling type annotations so dispatch matches the
-                    // namespace's qualified instances (`p: Point` → `p: Geo::Point`).
-                    let qualifiedParams = parameters.map {
-                        Parameter(name: $0.name, type: $0.type?.qualified(namespace: name, siblings: declaredTypes))
-                    }
-                    environment.define(UserFunction(name: qualified, parameters: qualifiedParams, body: body, source: ""))
-                default:
-                    break
-                }
-            }
+            try registerNamespace(name, members: members, in: environment, depth: depth)
             return .number(.zero)
 
         case .importDirective(let name):
@@ -362,6 +322,71 @@ struct Evaluator {
     // builds the switch's one frame holds every case's locals, and the
     // recursion budget (maxCallDepth × frame size) must fit Swift Testing's
     // small cooperative stacks. Keep new fat cases extracted too.
+
+    /// Registers a namespace's members under `prefix::`, recursing into nested
+    /// namespaces (`A::B::member`). A data field or function parameter type that
+    /// references a sibling TYPE is qualified to the prefix (so dispatch matches
+    /// the namespace's instances); a function body resolves its siblings
+    /// unqualified at call time via the home-namespace context (see
+    /// apply(user:)); a constant evaluates EAGERLY under that context, so it may
+    /// reference earlier sibling constants/functions. (docs/MODULES.md)
+    private func registerNamespace(_ prefix: String, members: [Expression],
+                                   in environment: EvaluationEnvironment, depth: Int,
+                                   typeScope enclosing: [String: String] = [:]) throws {
+        // This level's type names, mapped to their qualified form, ON TOP of the
+        // enclosing scope — so a member may name a sibling OR a parent's type
+        // unqualified; nesting shadows the parent.
+        var scope = enclosing
+        for member in members {
+            switch member {
+            case .dataDefinition(let typeName, _):
+                scope[typeName.lowercased()] = "\(prefix)::\(typeName)"
+            case .functionDefinition, .assignment, .namespaceDefinition: break
+            default:
+                throw EngineError.domainError(message:
+                    "namespace \(prefix) holds data, function, constant, and nested namespace declarations")
+            }
+        }
+        for member in members {
+            switch member {
+            case .dataDefinition(let typeName, let fields):
+                let qualified = "\(prefix)::\(typeName)"
+                guard environment.function(named: qualified) == nil else {
+                    throw EngineError.domainError(message: "'\(qualified)' is already a function")
+                }
+                let qualifiedFields = fields.map {
+                    DataField(name: $0.name, type: $0.type.qualified(using: scope))
+                }
+                environment.define(DataType(name: qualified, fields: qualifiedFields, source: ""))
+            case .functionDefinition(let funcName, let parameters, let body):
+                let qualified = "\(prefix)::\(funcName)"
+                guard environment.dataType(named: qualified) == nil else {
+                    throw EngineError.domainError(message: "'\(qualified)' is already a data type")
+                }
+                let qualifiedParams = parameters.map {
+                    Parameter(name: $0.name, type: $0.type?.qualified(using: scope))
+                }
+                environment.define(UserFunction(name: qualified, parameters: qualifiedParams, body: body, source: ""))
+            case .assignment(let varName, let valueExpr):
+                let qualified = "\(prefix)::\(varName)"
+                guard environment.function(named: qualified) == nil,
+                      environment.dataType(named: qualified) == nil else {
+                    throw EngineError.domainError(message: "'\(qualified)' is already defined")
+                }
+                environment.enterNamespace(prefix)
+                let value: Value
+                do { value = try evaluate(valueExpr, in: environment, locals: [:], depth: depth) }
+                catch { environment.leaveNamespace(); throw error }
+                environment.leaveNamespace()
+                environment[qualified] = value
+            case .namespaceDefinition(let innerName, let innerMembers):
+                try registerNamespace("\(prefix)::\(innerName)", members: innerMembers,
+                                      in: environment, depth: depth, typeScope: scope)
+            default:
+                break
+            }
+        }
+    }
 
     private func arrayValue(_ items: [Expression], in environment: EvaluationEnvironment,
                             locals: [String: Value], depth: Int) throws -> Value {
@@ -454,9 +479,9 @@ struct Evaluator {
             }
         }
         // Inside a namespaced member, an unqualified call resolves a sibling
-        // (function or type constructor) first — `Bits::area` calling `width`.
-        if let ns = environment.currentNamespace, !name.contains("::") {
-            let qualified = "\(ns)::\(name)"
+        // (function or type constructor) first — `Bits::area` calling `width` —
+        // walking up the nesting chain.
+        for qualified in Self.siblingCandidates(of: name, in: environment.currentNamespace) {
             if let function = environment.function(named: qualified) {
                 return try apply(user: function, arguments: arguments,
                                  captures: [:], in: environment, depth: depth)

@@ -60,7 +60,20 @@ public final class EvaluationEnvironment {
     /// Replaces all user variables wholesale — used when opening a workbook
     /// (variables otherwise only enter one at a time through assignment).
     public func replaceUserVariables(_ newVariables: [String: Value]) {
-        variables = newVariables
+        // Namespace constants (qualified `M::c` names) are owned by namespace
+        // replay, not the flat variable map — preserve them across a wholesale
+        // replace, so restoring the flat map doesn't wipe a just-replayed
+        // namespace's constants. `clearNamespaceVariables()` drops stale ones.
+        let qualified = variables.filter { $0.key.contains("::") }
+        variables = newVariables.merging(qualified) { incoming, _ in incoming }
+        changeCount += 1
+    }
+
+    /// Drops every namespace-qualified constant (`M::c`) — called at session
+    /// restore before namespaces replay, so a removed namespace's constants
+    /// don't linger (mirrors clearing functions/types).
+    public func clearNamespaceVariables() {
+        variables = variables.filter { !$0.key.contains("::") }
         changeCount += 1
     }
 
@@ -176,8 +189,8 @@ public final class EvaluationEnvironment {
     func recordNamespaceSource(_ source: String) { namespaceSourceLines.append(source); changeCount += 1 }
     public func clearNamespaceSources() { namespaceSourceLines.removeAll() }
 
-    /// The simple member names (types + functions) declared in a namespace —
-    /// for the import conflict check.
+    /// The simple member names (types + functions + constants) declared in a
+    /// namespace — for the import conflict check.
     func memberNames(ofNamespace namespace: String) -> [String] {
         let prefix = namespace.lowercased() + "::"
         // Derive from the values' names (original case), not the lowercased keys.
@@ -189,6 +202,9 @@ public final class EvaluationEnvironment {
             for function in list where function.name.lowercased().hasPrefix(prefix) {
                 names.append(String(function.name.dropFirst(prefix.count)))
             }
+        }
+        for key in variables.keys where key.lowercased().hasPrefix(prefix) {
+            names.append(String(key.dropFirst(prefix.count)))
         }
         return names
     }
@@ -209,7 +225,8 @@ public final class EvaluationEnvironment {
         guard !name.contains("::") else { return nil }
         for namespace in imports {
             let qualified = "\(namespace)::\(name)"
-            if function(named: qualified) != nil || dataType(named: qualified) != nil {
+            if function(named: qualified) != nil || dataType(named: qualified) != nil
+                || variables[qualified] != nil {
                 return qualified
             }
         }

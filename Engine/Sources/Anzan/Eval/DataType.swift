@@ -100,21 +100,22 @@ public indirect enum DataFieldType: Equatable, Sendable {
         }
     }
 
-    /// Within a `namespace`, qualify a sibling record-type reference: an
-    /// unqualified `Point` whose name is declared in the namespace becomes
-    /// `Bits::Point`; an already-qualified (`Other::T`) or global name is left
-    /// alone. Recurses into list/map element types.
-    func qualified(namespace: String, siblings: Set<String>) -> DataFieldType {
+    /// Within a `namespace`, qualify a record-type reference: an unqualified
+    /// `Point` mapped by `scope` (a simple lowercased name → its qualified form,
+    /// accumulated from the enclosing namespaces) becomes `Bits::Point`; an
+    /// already-qualified (`Other::T`) or out-of-scope global name is left alone.
+    /// Recurses into list/map element types.
+    func qualified(using scope: [String: String]) -> DataFieldType {
         switch self {
         case .number, .string, .boolean:
             return self
         case .record(let name):
-            guard !name.contains("::"), siblings.contains(name.lowercased()) else { return self }
-            return .record("\(namespace)::\(name)")
+            guard !name.contains("::"), let qualified = scope[name.lowercased()] else { return self }
+            return .record(qualified)
         case .list(let element):
-            return .list(element.qualified(namespace: namespace, siblings: siblings))
+            return .list(element.qualified(using: scope))
         case .map(let valueType):
-            return .map(valueType.qualified(namespace: namespace, siblings: siblings))
+            return .map(valueType.qualified(using: scope))
         }
     }
 

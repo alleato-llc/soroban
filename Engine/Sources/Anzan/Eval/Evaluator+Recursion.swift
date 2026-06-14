@@ -126,11 +126,30 @@ extension Evaluator {
         }
     }
 
-    /// The namespace a qualified name lives in — `Bits::area` → `Bits`, a plain
-    /// name → nil. (Flat namespaces for now; the prefix before the first `::`.)
+    /// The namespace a qualified name lives in — `Bits::area` → `Bits`,
+    /// `A::B::area` → `A::B`, a plain name → nil. The prefix before the LAST
+    /// `::`, so a nested member's home is its immediate (innermost) namespace.
     static func homeNamespace(of name: String) -> String? {
-        guard let separator = name.range(of: "::") else { return nil }
+        guard let separator = name.range(of: "::", options: .backwards) else { return nil }
         return String(name[..<separator.lowerBound])
+    }
+
+    /// Qualified candidates for an unqualified `name` seen inside `namespace`,
+    /// walking UP the nesting chain: in `A::B`, `c` is tried as `A::B::c` then
+    /// `A::c` (then the caller falls through to global). Empty when there's no
+    /// home context or the name is already qualified. The single source of
+    /// truth for sibling resolution — `.variable`, `call(name:)`, and
+    /// `tailStep` all iterate it, so they stay in sync.
+    static func siblingCandidates(of name: String, in namespace: String?) -> [String] {
+        guard let namespace, !name.contains("::") else { return [] }
+        var candidates: [String] = []
+        var prefix = Substring(namespace)
+        while true {
+            candidates.append("\(prefix)::\(name)")
+            guard let separator = prefix.range(of: "::", options: .backwards) else { break }
+            prefix = prefix[..<separator.lowerBound]
+        }
+        return candidates
     }
 
     /// Walks tail positions: through the taken branch of if(), down to a
@@ -150,9 +169,9 @@ extension Evaluator {
         case .call(let name, let argumentExprs) where !registry.contains(name: name):
             let arguments = try arguments(of: argumentExprs, in: environment,
                                           locals: locals, depth: depth)
-            // Mirror call(name:)'s namespace-sibling resolution (home-context).
-            if let ns = environment.currentNamespace, !name.contains("::") {
-                let qualified = "\(ns)::\(name)"
+            // Mirror call(name:)'s namespace-sibling resolution (home-context),
+            // walking up the nesting chain.
+            for qualified in Self.siblingCandidates(of: name, in: environment.currentNamespace) {
                 if let function = environment.function(named: qualified) {
                     return .call(function, arguments, captures: [:])
                 }

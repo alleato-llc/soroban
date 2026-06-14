@@ -114,12 +114,16 @@ public enum TypeAnnotation: Equatable, Sendable {
         }
     }
 
-    /// Within a namespace, qualify a sibling type annotation (`p: Point` →
+    /// Within a namespace, qualify a type annotation (`p: Point` →
     /// `p: Bits::Point`) so typed dispatch matches the qualified instances.
-    func qualified(namespace: String, siblings: Set<String>) -> TypeAnnotation {
+    /// `scope` maps a simple type name (lowercased) to its qualified form,
+    /// accumulated from the enclosing namespaces — so a nested member can name
+    /// a parent's type unqualified. An already-qualified or out-of-scope name
+    /// is left alone.
+    func qualified(using scope: [String: String]) -> TypeAnnotation {
         guard case .named(let name) = self, !name.contains("::"),
-              siblings.contains(name.lowercased()) else { return self }
-        return .named("\(namespace)::\(name)")
+              let qualified = scope[name.lowercased()] else { return self }
+        return .named(qualified)
     }
 }
 

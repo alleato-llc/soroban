@@ -100,9 +100,9 @@ public struct Workbook: Codable, Equatable, Sendable {
         self.version = Self.currentVersion
         self.sheets = sheets
         self.activeSheet = activeSheet
-        self.variables = variables.mapValues(\.description)
-        // Namespace members carry qualified names + empty source; they restore
-        // via `namespaces`, so keep them out of the flat function/type maps.
+        // Namespace members carry qualified names; they restore via `namespaces`,
+        // so keep them out of the flat variable/function/type maps.
+        self.variables = variables.filter { !$0.key.contains("::") }.mapValues(\.description)
         self.functions = functions.filter { !$0.name.contains("::") }.map(\.source)
         self.dataTypes = Dictionary(uniqueKeysWithValues:
             dataTypes.values.filter { !$0.name.contains("::") }.map { ($0.name, $0.source) })

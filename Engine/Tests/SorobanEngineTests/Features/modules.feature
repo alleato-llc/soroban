@@ -68,9 +68,55 @@ Feature: Namespaces group declarations under a qualified name
     When I calculate "namespace Bad { data A { x: Number } data B { y: Number } }"
     Then the calculation fails mentioning "separate namespace declarations with ';'"
 
-  Scenario: Constants and nesting are not in a namespace yet
-    When I calculate "namespace Bad { x = 5 }"
-    Then the calculation fails mentioning "constants and nesting come later"
+  # docs/MODULES.md: a namespace may also hold CONSTANTS (`c = expr`), stored
+  # under the qualified name and reachable as Name::c (or unqualified after import).
+
+  Scenario: A namespace exposes a constant by qualified name
+    Given I calculate "namespace Phys { c = 299792458 }"
+    When I calculate "Phys::c"
+    Then the result is "299792458"
+
+  Scenario: A namespaced function uses a sibling constant unqualified
+    Given I calculate "namespace Circle { k = 3.14159; area(r) = k * r * r }"
+    When I calculate "Circle::area(10)"
+    Then the result is "314.159"
+
+  Scenario: An imported namespace's constant resolves unqualified
+    Given I calculate "namespace Phys { c = 299792458 }"
+    And I calculate "import Phys"
+    When I calculate "c"
+    Then the result is "299792458"
+
+  Scenario: Importing a constant that collides with a global is loud
+    Given I calculate "speed = 5"
+    And I calculate "namespace V { data Q { x: Number }; speed = 10 }"
+    When I calculate "import V"
+    Then the calculation fails mentioning "would shadow 'speed'"
+
+  # docs/MODULES.md: namespaces NEST — `namespace A { namespace B { … } }`,
+  # reached as A::B::member. An inner member may name a parent's type/constant/
+  # function unqualified (resolution walks up the nesting chain).
+
+  Scenario: A nested namespace resolves by its full qualified name
+    Given I calculate "namespace A { data Point { x: Number, y: Number }; namespace B { dist(p: Point) = sqrt(p.x^2 + p.y^2) } }"
+    When I calculate "A::B::dist(A::Point(x: 3, y: 4))"
+    Then the result is "5"
+
+  Scenario: An inner member uses a parent constant and function unqualified
+    Given I calculate "namespace A { base = 10; twice(n) = n * 2; namespace B { f(x) = twice(x) + base } }"
+    When I calculate "A::B::f(5)"
+    Then the result is "20"
+
+  Scenario: A nested record renders and re-parses with its full qualified name
+    Given I calculate "namespace A { namespace B { data Point { x: Number, y: Number } } }"
+    When I calculate "A::B::Point(x: 3, y: 4)"
+    Then the result is "A::B::Point(x: 3, y: 4)"
+
+  Scenario: A nested namespace survives save and reopen
+    Given I calculate "namespace A { k = 7; namespace B { triple(n) = n * 3 } }"
+    When the workbook is saved and reopened
+    And I calculate "A::B::triple(A::k)"
+    Then the result is "21"
 
   # docs/MODULES.md 2b: `import Name` brings a namespace's members into scope
   # unqualified; the qualified form always works; conflicts are loud.
@@ -138,3 +184,11 @@ Feature: Namespaces group declarations under a qualified name
     Then the result is "5"
     When I calculate "dist(Point(x: 6, y: 8))"
     Then the result is "10"
+
+  Scenario: A namespaced constant survives save and reopen
+    Given I calculate "namespace Phys { c = 299792458; energy(m) = m * c * c }"
+    When the workbook is saved and reopened
+    And I calculate "Phys::c"
+    Then the result is "299792458"
+    When I calculate "Phys::energy(2)"
+    Then the result is "179751035747363528"
