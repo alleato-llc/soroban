@@ -44,7 +44,10 @@ struct InputBarView: View {
                 .foregroundStyle(theme.resultText.color)
                 .focused($focused)
                 .onSubmit { session.submit() }
-                .onChange(of: session.input) {
+                .onChange(of: session.input) { old, new in
+                    // A leading operator on an empty line prepends `ans`
+                    // (SpeedCrunch-style); that rewrite handles its own refresh.
+                    if session.applyAnsPrefixIfNeeded(old: old, new: new) { return }
                     session.refreshSuggestions()
                 }
                 // ↑/↓ navigate the suggestion list when it's open,

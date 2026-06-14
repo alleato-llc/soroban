@@ -31,6 +31,11 @@ struct ContentView: View {
             switch session.activeView {
             case .log:
                 HistoryLogView()
+                // Binary bit-editor — Programmer mode only, toggle with ⌥⌘B.
+                if session.mode == .programmer && session.binaryEditorShown {
+                    Divider()
+                    BinaryEditorView()
+                }
                 if !session.suggestions.isEmpty {
                     Divider()
                     SuggestionsView()

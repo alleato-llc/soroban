@@ -370,6 +370,28 @@ extension Calculator {
         return false
     }
 
+    /// SpeedCrunch-style continuation: when the user starts a line with a binary
+    /// operator (the previous result is the implied left operand), prefix `ans`,
+    /// so `+5` reads as `ans+5`. Returns the rewritten line, or nil when no
+    /// operator leads. Mode-aware: `%` is binary modulo and `& | << >>` are
+    /// operators only in `.programmer`; in `.normal`/`.finance` `%` is postfix
+    /// percent and the bit glyphs aren't operators, so those don't lead.
+    /// (Hosts apply this only when the field was empty — a fresh continuation —
+    /// never on a programmatic rewrite like history recall.)
+    public static func ansPrefixed(_ input: String, mode: LanguageMode) -> String? {
+        let body = input.drop { $0 == " " }
+        guard !body.isEmpty else { return nil }
+        // Two-char operators first (so `<<` isn't read as a lone `<`).
+        let leads: [String]
+        if mode == .programmer {
+            leads = ["<<", ">>", "+", "-", "*", "/", "^", "%", "&", "|", "×", "÷", "·"]
+        } else {
+            leads = ["+", "-", "*", "/", "^", "×", "÷", "·"]
+        }
+        guard leads.contains(where: { body.hasPrefix($0) }) else { return nil }
+        return "ans" + body
+    }
+
     /// The identifier fragment at the end of an input line — the thing
     /// autocomplete should complete and replace.
     public static func trailingIdentifier(of line: String) -> String {

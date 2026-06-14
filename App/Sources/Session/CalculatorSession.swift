@@ -50,6 +50,62 @@ final class CalculatorSession {
     var input = ""
     var activeView: MainView = .log
 
+    // MARK: Binary bit-editor (Programmer mode)
+
+    /// Whether the binary overlay is shown. Only ever visible in Programmer
+    /// mode (the view gates on it). Defaults ON the first time (discoverable),
+    /// then your choice sticks — the ✕ on the overlay, ⌥⌘B, or the View menu
+    /// hide/show it, and it won't force itself back open on each mode switch.
+    var binaryEditorShown: Bool = {
+        UserDefaults.standard.object(forKey: "binaryEditorShown") as? Bool ?? true
+    }() {
+        didSet { UserDefaults.standard.set(binaryEditorShown, forKey: "binaryEditorShown") }
+    }
+    /// Display width for a plain integer in the bit grid (a fixed-width int uses
+    /// its own). One of `BinaryView.editableWidths`; persisted.
+    var binaryWidth: Int = {
+        let stored = UserDefaults.standard.integer(forKey: "binaryWidth")
+        return BinaryView.editableWidths.contains(stored) ? stored : 32
+    }() {
+        didSet { UserDefaults.standard.set(binaryWidth, forKey: "binaryWidth") }
+    }
+    /// The live, uncommitted value while you click bits — nil means the overlay
+    /// tracks `ans`. Cleared on any submit (a new result re-syncs the grid).
+    private(set) var binaryDraft: Value?
+
+    /// The previous result the overlay edits (the implied register).
+    var ans: Value { calculator.environment.ans }
+
+    /// The bit view the overlay renders: the live draft if editing, else `ans`.
+    var binaryView: Result<BinaryView, BinaryView.Unavailable> {
+        BinaryView.make(for: binaryDraft ?? ans, preferredWidth: binaryWidth)
+    }
+    /// True when there are uncommitted bit flips (the commit affordance shows).
+    var binaryHasEdits: Bool { binaryDraft != nil }
+
+    /// Flip bit `index` (0 = LSB) of the working value, staging it as a draft
+    /// (no log entry — that waits for `commitBinary`).
+    func flipBinaryBit(_ index: Int) {
+        guard case .success(let view) = binaryView else { return }
+        binaryDraft = view.flippingBit(index).value
+    }
+
+    /// Insert the current (possibly bit-edited) value into the input line as a
+    /// literal — you fold it into an expression and submit when ready, rather
+    /// than it landing in the log on its own. A plain integer inserts as a `0b…`
+    /// binary literal (you were editing bits); a typed `Int…` inserts its
+    /// canonical constructor (which carries the type and sign).
+    func useBinaryValue() {
+        guard case .success(let view) = binaryView else { return }
+        switch view.kind {
+        case .plain: insert(value: "0b" + String(view.pattern, radix: 2))
+        case .fixed: insert(value: view.value.description)
+        }
+    }
+
+    /// Reset the grid to `ans`, discarding staged bit edits.
+    func cancelBinaryEdits() { binaryDraft = nil }
+
     // MARK: Function reference
 
     /// Set when autocomplete's ⌘/ asks for a specific entry; the reference
@@ -318,6 +374,7 @@ final class CalculatorSession {
         input = ""
         historyCursor = nil
         draft = ""
+        binaryDraft = nil // a new result re-syncs the binary overlay to ans
 
         // The line may have (re)defined variables/functions that cells use.
         sheet.recalculate()
@@ -347,6 +404,22 @@ final class CalculatorSession {
     }
 
     // MARK: Autocomplete
+
+    /// SpeedCrunch-style continuation: when the field was empty and the user
+    /// just typed a leading binary operator, prepend `ans` so `+5` becomes
+    /// `ans+5`. Returns true if it rewrote (the caller then skips the normal
+    /// suggestion refresh — the rewrite re-enters onChange and handles it).
+    /// Only fires on genuine typing from an empty field, never on a programmatic
+    /// set (history recall / accept set `suppressNextSuggestionRefresh` first).
+    func applyAnsPrefixIfNeeded(old: String, new: String) -> Bool {
+        guard !suppressNextSuggestionRefresh,
+              old.allSatisfy({ $0 == " " }),
+              let rewritten = Calculator.ansPrefixed(new, mode: mode), rewritten != new
+        else { return false }
+        suppressNextSuggestionRefresh = true // the re-entrant onChange won't pop suggestions
+        input = rewritten
+        return true
+    }
 
     /// Recomputes suggestions for the identifier being typed at the caret
     /// (end of input). Called from the input field's onChange.

@@ -77,6 +77,13 @@ struct SorobanApp: App {
                     session.inspectorVisible.toggle()
                 }
                 .keyboardShortcut("0", modifiers: [.command, .option])
+                // Binary bit-editor (Programmer mode) — switch to Programmer
+                // first; ⌥⌘B then hides/shows it.
+                Button(session.binaryEditorShown ? "Hide Binary Editor" : "Show Binary Editor") {
+                    session.binaryEditorShown.toggle()
+                }
+                .keyboardShortcut("b", modifiers: [.command, .option])
+                .disabled(session.mode != .programmer)
                 Divider()
                 Button("Zoom In") {
                     themeManager.fontSizeOverride =
