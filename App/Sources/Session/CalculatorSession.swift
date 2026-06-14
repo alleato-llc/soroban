@@ -180,18 +180,88 @@ final class CalculatorSession {
         fitWidthToFormat()
     }
 
-    /// Persist the active format as `name = {…}` — an ordinary log assignment, so
-    /// it lives in the workbook and reappears in `savedFormats`. Preserves any
-    /// in-progress input line.
-    func saveFormat(named name: String) {
-        guard let format = activeFormat else { return }
-        let trimmed = name.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty else { return }
+    /// The `Bits` module schema — a typed home for saved formats (docs/MODULES.md
+    /// phases 4–5). Emitted once per workbook, before the first saved format, so
+    /// formats persist as typed records (`Bits::BitFormat`) rather than loose maps.
+    /// A field's `kind` is "numeric", "flags" (per-bit names), or "enum" (value
+    /// labels); the unused list is empty.
+    static let bitsNamespaceSource =
+        "namespace Bits { data BitField { name: String, bits: Number, kind: String, "
+        + "flags: [String], values: [String] }; data BitFormat { fields: [BitField] } }"
+
+    /// A layout rendered as a `Bits::BitFormat(...)` constructor call — the typed,
+    /// re-parseable form the binary editor saves.
+    private static func bitFormatSource(_ layout: [BinaryView.FieldSpec]) -> String {
+        func list(_ strings: [String]) -> String {
+            strings.map { "\"\($0)\"" }.joined(separator: ", ")
+        }
+        let fields = layout.map { spec -> String in
+            let kind: String, flags: [String], values: [String]
+            if let f = spec.flags, !f.isEmpty {
+                kind = "flags"; flags = f; values = []
+            } else if let v = spec.values, !v.isEmpty {
+                kind = "enum"; flags = []; values = v
+            } else {
+                kind = "numeric"; flags = []; values = []
+            }
+            return "Bits::BitField(name: \"\(spec.name)\", bits: \(spec.width), "
+                + "kind: \"\(kind)\", flags: [\(list(flags))], values: [\(list(values))])"
+        }.joined(separator: ", ")
+        return "Bits::BitFormat(fields: [\(fields)])"
+    }
+
+    /// Defines the `Bits` schema once per workbook (a one-time log line),
+    /// preserving any in-progress input. A no-op once `Bits::BitFormat` exists.
+    private func ensureBitsSchema() {
+        guard calculator.environment.dataType(named: "Bits::BitFormat") == nil else { return }
         let stash = input
-        input = "\(trimmed) = \(format.description)"
+        input = Self.bitsNamespaceSource
         submit()
         suppressNextSuggestionRefresh = true
         input = stash
+    }
+
+    /// Persists a layout as a typed `name = Bits::BitFormat(...)` log assignment,
+    /// so it lives in the workbook and reappears in `savedFormats`; re-points the
+    /// active format at the saved record (a map and a record never compare equal,
+    /// so the menu would otherwise read "Custom"). Preserves the input line.
+    private func persistFormat(_ layout: [BinaryView.FieldSpec], named name: String) {
+        let stash = input
+        ensureBitsSchema()
+        input = "\(name) = \(Self.bitFormatSource(layout))"
+        submit()
+        if let saved = calculator.environment.userVariables[name] { activeFormat = saved }
+        suppressNextSuggestionRefresh = true
+        input = stash
+    }
+
+    /// Persist the active format under a name (the "Save current…" path).
+    func saveFormat(named name: String) {
+        guard let layout = activeLayout else { return }
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+        persistFormat(layout, named: trimmed)
+    }
+
+    // MARK: Binary bit-editor — visual format builder
+
+    /// Apply a freshly-built layout WITHOUT saving it (transient session state,
+    /// like a preset). Defines the schema if needed, then evaluates the typed
+    /// constructor off the log (`evaluateFormula` never logs or touches `ans`).
+    func applyBuiltFormat(_ layout: [BinaryView.FieldSpec]) {
+        guard !layout.isEmpty else { return }
+        ensureBitsSchema()
+        if case .success(let value) = calculator.evaluateFormula(Self.bitFormatSource(layout)) {
+            applyFormat(value)
+        }
+    }
+
+    /// Save a freshly-built layout under a name (persists + applies).
+    func saveBuiltFormat(_ layout: [BinaryView.FieldSpec], named name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard !layout.isEmpty, !trimmed.isEmpty else { return }
+        persistFormat(layout, named: trimmed)
+        fitWidthToFormat()
     }
 
     /// The current binary value decoded into the active format's fields.

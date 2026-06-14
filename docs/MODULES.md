@@ -1,21 +1,26 @@
 # Modules — generic data types, namespaces, and imports (design)
 
-> **Status: IN PROGRESS.** Phase 1 (generic data field types), phase 2a-i
+> **Status: COMPLETE.** Phase 1 (generic data field types), phase 2a-i
 > (namespaced *data types*), and phase 2a-ii (namespaced *functions* with the
 > home-namespace resolver — siblings resolve unqualified at call time, incl.
 > typed-parameter dispatch and recursion), phase 2b (`import` — unqualified
 > access with loud conflicts), phase 2c (workbook persistence of namespaces and
-> imports), and phase 3 (builtins reachable as `Module::name` behind the global
-> prelude) are **implemented and tested** — so **phases 1–3 are complete**. Only
-> the payoff remains: phase 4 (`Bits` module) and phase 5 (binary-editor
-> builder). Constants-in-namespaces and nested namespaces stay deferred. A
-> foundational
-> language initiative, specced before code (like `docs/MODES.md` /
-> `docs/DECIMAL.md`). It is **the largest single direction proposed for the
-> language**, and the design has deliberately taken the *expansive* option on
-> every axis (decisions below). It is sequenced into independently shippable
-> phases; phase 1 is the cheapest and most broadly useful. No customers exist
-> yet, so reorganizing existing builtins is on the table.
+> imports), phase 3 (builtins reachable as `Module::name` behind the global
+> prelude), phase 4 (the `Bits` module — `BitFormat`/`BitField`), and phase 5
+> (the binary editor saves/reads typed `Bits::BitFormat` records) are all
+> **implemented and tested**, as are the formerly-deferred extensions —
+> **namespaced constants** (`namespace M { c = expr }`), **nested namespaces**
+> (`A::B::c`, with sibling resolution walking up the chain and parent-type
+> references qualified), and **enum bit-fields** (`kind: "enum"` + a `values`
+> label list, decoded in the viewer as a labeled picker). Only the `at:`
+> explicit-position field stays deferred (positions are implied by field order).
+> A foundational language
+> initiative, specced before code (like `docs/MODES.md` / `docs/DECIMAL.md`). It
+> is **the largest single direction proposed for the language**, and the design
+> deliberately took the *expansive* option on every axis (decisions below). It
+> shipped as independently green phases; phase 1 was the cheapest and most
+> broadly useful. No customers exist yet, so reorganizing existing builtins was
+> on the table.
 
 ## Motivation
 
@@ -126,27 +131,43 @@ every builtin is *also* reachable as `Module::name` (`Finance::pmt`,
 
 ## 5 — The `Bits` module + binary editor  *(phases 4–5)*
 
+The shipped schema carries an explicit `kind` ("numeric" / "flags" / "enum") plus
+the two label lists (`at:` explicit positioning stays deferred — positions follow
+field order):
+
 ```
 namespace Bits {
-    data BitField  { name: String, bits: Number, at: Number, kind: String,
-                     flags: [String], values: [String] }   # kind: numeric|flags|enum
+    data BitField  { name: String, bits: Number, kind: String,
+                     flags: [String], values: [String] };
     data BitFormat { fields: [BitField] }
 }
 ```
 
-The builder, on Save, emits to the log:
+Three field flavors, by `kind`: a **numeric** field of `bits` width; a **flags**
+field whose `flags` name each bit high→low (`r-x`); or an **enum** field whose
+unsigned value indexes the `values` label list (value 1 of
+`["idle","run","halt","max"]` → "run"). When `kind` is absent (a hand-built
+record), the reader derives it from which list is non-empty.
+
+The binary editor's Save (`CalculatorSession.saveFormat`) emits the `Bits` schema
+once per workbook (when `Bits::BitFormat` isn't yet defined), then the format as
+a typed assignment:
 
 ```
-import Bits
-perms = BitFormat(fields: [
-    BitField(name: "owner", bits: 3, at: 6, kind: "flags", flags: ["r","w","x"], values: []),
-    BitField(name: "mode",  bits: 2, at: 3, kind: "enum",  flags: [], values: ["idle","run","halt","max"]) ])
+namespace Bits { data BitField { name: String, bits: Number, kind: String, flags: [String], values: [String] }; data BitFormat { fields: [BitField] } }
+perms = Bits::BitFormat(fields: [
+    Bits::BitField(name: "owner", bits: 3, kind: "flags", flags: ["r", "w", "x"], values: []),
+    Bits::BitField(name: "mode",  bits: 2, kind: "enum",  flags: [], values: ["idle", "run", "halt", "max"]) ])
 ```
 
 Typed, persisted, fully manipulable (`perms.fields`, edit a `BitField`, re-run),
 and `BitFormat` never pollutes the global namespace. The engine reads a
-`BitFormat` record into its `[FieldSpec]` (structurally, by field name), so the
-host-neutral `BinaryView` stays sheet/workbook-agnostic.
+`BitFormat` record into its `[FieldSpec]` (structurally, by field name, in
+`BinaryView.layout(from:)` alongside the loose-map form), so the host-neutral
+`BinaryView` stays sheet/workbook-agnostic and `savedFormats`/`applyFormat`
+handle records for free. The viewer (`BinaryEditorView`) renders an enum field
+as a labeled `Picker`, a flags field as its decoded string, and a numeric field
+as an editable value.
 
 ## Backward compatibility & persistence
 
@@ -167,8 +188,17 @@ host-neutral `BinaryView` stays sheet/workbook-agnostic.
    - ✅ **2a-ii — namespaced functions** — `;`-separated members, the
      home-namespace resolver (siblings resolve unqualified at call time, via
      `EvaluationEnvironment.currentNamespace`, mirrored in `call(name:)` and
-     `tailStep`), qualified parameter-type dispatch, recursion. *(Constants and
-     nesting still deferred.)*
+     `tailStep`), qualified parameter-type dispatch, recursion.
+   - ✅ **2d — constants & nesting** — a namespace may hold CONSTANTS
+     (`c = expr`, stored under `M::c`, evaluated eagerly in home context) and
+     NESTED namespaces (`A::B::c`). Registration recurses (`registerNamespace`);
+     sibling resolution walks UP the chain (`siblingCandidates`, the one source
+     of truth for `.variable`/`call`/`tailStep`); type references qualify against
+     an accumulated `typeScope` so a nested member can name a parent's type;
+     `homeNamespace` is the prefix before the LAST `::`. Constants ride the
+     namespace source-line replay (filtered out of the flat variable map;
+     `clearNamespaceVariables` + a qualified-preserving `replaceUserVariables`
+     keep restore sound).
    - ✅ **2b — imports** — `import NAME` brings a namespace's members into scope
      unqualified (a final-fallback resolution, so any builtin/user/host name
      wins); conflicts with a builtin/global/another import are a loud error at
@@ -182,14 +212,19 @@ host-neutral `BinaryView` stays sheet/workbook-agnostic.
    validated against the builtin's category; the bare name stays global (the
    prelude — nothing renamed, all existing programs unchanged). `import` of a
    builtin module is a no-op (already in the prelude).
-4. **The `Bits` module** — `BitFormat` / `BitField`.
-5. **Binary editor** — builder emits/consumes `Bits::BitFormat`; viewer renders
-   enum labels (the work paused for this design).
+4. ✅ **The `Bits` module** — `BitFormat` / `BitField` with `kind`-tagged
+   numeric / flags / enum fields (`{ name, bits, kind, flags, values }`). The
+   engine reads such a record into `[FieldSpec]` via `BinaryView.layout(from:)`
+   (`.record` case, choosing by `kind`), `BinaryViewTests`
+   (`layoutParsesATypedBitFormatRecord`, `enumFieldDecodesItsValueToALabel`).
+5. ✅ **Binary editor** — `CalculatorSession.saveFormat` emits the schema (once
+   per workbook) + a typed `Bits::BitFormat(...)` assignment; `savedFormats` /
+   `applyFormat` / `activeLayout` consume records for free through
+   `layout(from:)`; the viewer renders enum fields as labeled pickers.
 
 ## Honest scope note
 
-This is a multi-phase language platform, undertaken for a niche (programmer-mode)
-feature but justified as general language growth. **Phase 1 is independently
-valuable and the right place to start**; phases 2–4 are the heavy, foundational
-ones and should be confirmed as you reach them rather than treated as a single
-commitment. The binary editor (phase 5) is small once the platform exists.
+This was a multi-phase language platform, undertaken for a niche (programmer-mode)
+feature but justified as general language growth. **Phase 1 was independently
+valuable and the right place to start**; phases 2–4 were the heavy, foundational
+ones. The binary editor (phase 5) was small once the platform existed.

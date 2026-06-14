@@ -165,6 +165,47 @@ struct BitFieldTests {
         #expect(layout?.first?.width == 3)
         #expect(layout?.first?.flags == ["r", "w", "x"])
     }
+
+    @Test func layoutParsesATypedBitFormatRecord() {
+        // The phase-4 bridge: a Bits::BitFormat record reads structurally into a
+        // layout — a flags field, an enum field, and a numeric field, chosen by
+        // `kind`.
+        let calculator = Calculator()
+        _ = calculator.evaluate(CalculatorSessionBitsSchema.source)
+        let value = try! calculator.evaluate(
+            "Bits::BitFormat(fields: ["
+            + "Bits::BitField(name: \"owner\", bits: 3, kind: \"flags\", flags: [\"r\", \"w\", \"x\"], values: []), "
+            + "Bits::BitField(name: \"mode\", bits: 2, kind: \"enum\", flags: [], values: [\"idle\", \"run\", \"halt\", \"max\"]), "
+            + "Bits::BitField(name: \"rest\", bits: 3, kind: \"numeric\", flags: [], values: [])])").get()
+        guard case .value(let record) = value else { Issue.record("not a value"); return }
+        let layout = BinaryView.layout(from: record)
+        #expect(layout?.map(\.name) == ["owner", "mode", "rest"])
+        #expect(layout?.map(\.width) == [3, 2, 3])
+        #expect(layout?.first?.flags == ["r", "w", "x"])
+        #expect(layout?[1].values == ["idle", "run", "halt", "max"])
+        #expect(layout?.last?.flags == nil && layout?.last?.values == nil) // numeric
+    }
+
+    @Test func enumFieldDecodesItsValueToALabel() {
+        // owner=rwx(7) mode=10(2 = "halt") rest=101(5).  0b111_10_101 = 501.
+        let layout = [BinaryView.FieldSpec(name: "owner", width: 3, flags: ["r", "w", "x"]),
+                      BinaryView.FieldSpec(name: "mode", width: 2,
+                                           values: ["idle", "run", "halt", "max"]),
+                      BinaryView.FieldSpec(name: "rest", width: 3)]
+        let fields = view("501").fields(layout)
+        #expect(fields.map(\.label) == ["rwx", "halt", "5"])
+        // A value past the label list shows the raw number.
+        let two = [BinaryView.FieldSpec(name: "x", width: 3, values: ["a", "b"])]
+        #expect(view("5").fields(two).first?.enumString == "5")
+    }
+}
+
+/// The `Bits` schema the app's binary editor emits — duplicated here so the
+/// engine test of the record bridge doesn't reach into the app target.
+private enum CalculatorSessionBitsSchema {
+    static let source =
+        "namespace Bits { data BitField { name: String, bits: Number, kind: String, "
+        + "flags: [String], values: [String] }; data BitFormat { fields: [BitField] } }"
 }
 
 @Suite("ans-prefix continuation")

@@ -106,15 +106,18 @@ public struct BinaryView: Sendable, Equatable {
 // MARK: - Bit-field formats (named bit ranges)
 
 extension BinaryView {
-    /// A field in a format: a named bit range, optionally with per-bit FLAG names
-    /// (high→low, count == width) that give each bit a meaning — `owner` as
-    /// `["r","w","x"]`. `flags == nil` is a plain numeric field.
+    /// A field in a format: a named bit range. Three flavors, mutually exclusive:
+    /// a plain NUMERIC field (`flags == nil`, `values == nil`); a FLAGS field with
+    /// per-bit names (high→low, count == width) giving each bit a meaning —
+    /// `owner` as `["r","w","x"]`; or an ENUM field whose unsigned value indexes a
+    /// label list — `mode` as `["idle","run","halt","max"]` (value 1 → "run").
     public struct FieldSpec: Sendable, Equatable {
         public let name: String
         public let width: Int
         public let flags: [String]?
-        public init(name: String, width: Int, flags: [String]? = nil) {
-            self.name = name; self.width = width; self.flags = flags
+        public let values: [String]?
+        public init(name: String, width: Int, flags: [String]? = nil, values: [String]? = nil) {
+            self.name = name; self.width = width; self.flags = flags; self.values = values
         }
     }
 
@@ -124,13 +127,14 @@ extension BinaryView {
     public struct Field: Sendable, Equatable {
         public let name: String
         public let width: Int
-        public let lowBit: Int      // 0 = LSB
-        public let value: BigInt    // the field's unsigned value
-        public let flags: [String]? // per-bit flag names (high→low), nil = numeric
+        public let lowBit: Int       // 0 = LSB
+        public let value: BigInt     // the field's unsigned value
+        public let flags: [String]?  // per-bit flag names (high→low), nil = not flags
+        public let values: [String]? // enum value labels (value indexes them), nil = not enum
 
         /// The decoded meaning of a flag field: single-char flags read
         /// positionally with `-` for clear bits (`r-x`); multi-char flags list
-        /// only the set ones (`ACK SYN`, or `—` when none). nil for numeric.
+        /// only the set ones (`ACK SYN`, or `—` when none). nil for non-flags.
         public var flagString: String? {
             guard let flags else { return nil }
             if flags.allSatisfy({ $0.count == 1 }) {
@@ -144,37 +148,101 @@ extension BinaryView {
             return set.isEmpty ? "—" : set.joined(separator: " ")
         }
 
+        /// The decoded label of an ENUM field: the value indexes the label list
+        /// (`mode` value 2 of `["idle","run","halt","max"]` → "halt"). A value
+        /// past the list shows the raw number. nil for non-enum.
+        public var enumString: String? {
+            guard let values else { return nil }
+            guard let index = Int(exactly: value), index >= 0, index < values.count else {
+                return String(value)
+            }
+            return values[index]
+        }
+
+        /// The field's human-readable decode — enum label, flag string, or the
+        /// plain number — whichever applies.
+        public var label: String {
+            enumString ?? flagString ?? String(value)
+        }
+
         /// Is the flag at position `i` (0 = the field's high bit) set?
         public func isSet(bitFromTop i: Int) -> Bool {
             (value >> BigInt(width - 1 - i)) & 1 == 1
         }
     }
 
-    /// Parse a layout from a map value. Each entry's value is either a positive
-    /// integer bit WIDTH (`owner: 3`) or an array of per-bit FLAG names
-    /// (`owner: ["r","w","x"]`, width = count); insertion order is preserved
-    /// (first = highest field). Returns nil if any entry is neither.
+    /// Parse a layout from either a MAP — each entry's value a positive integer
+    /// bit WIDTH (`owner: 3`) or an array of per-bit FLAG names
+    /// (`owner: ["r","w","x"]`, width = count) — OR a typed `Bits::BitFormat`
+    /// RECORD with a `fields` list of `BitField` records (`name`, `bits`,
+    /// `flags`), read structurally by field name. Insertion order is preserved
+    /// (first = highest field). Returns nil if it's neither shape.
     public static func layout(from value: Value) -> [FieldSpec]? {
-        guard case .map(let entries) = value, !entries.isEmpty else { return nil }
-        var layout: [FieldSpec] = []
-        for entry in entries {
-            switch entry.value {
-            case .number(let n):
-                guard n.isInteger, let width = n.intValue, width >= 1 else { return nil }
-                layout.append(FieldSpec(name: entry.key, width: width))
-            case .array(let items):
-                guard !items.isEmpty else { return nil }
-                var names: [String] = []
-                for item in items {
-                    guard case .string(let name) = item else { return nil }
-                    names.append(name)
+        switch value {
+        case .map(let entries):
+            guard !entries.isEmpty else { return nil }
+            var layout: [FieldSpec] = []
+            for entry in entries {
+                switch entry.value {
+                case .number(let n):
+                    guard n.isInteger, let width = n.intValue, width >= 1 else { return nil }
+                    layout.append(FieldSpec(name: entry.key, width: width))
+                case .array(let items):
+                    guard !items.isEmpty else { return nil }
+                    var names: [String] = []
+                    for item in items {
+                        guard case .string(let name) = item else { return nil }
+                        names.append(name)
+                    }
+                    layout.append(FieldSpec(name: entry.key, width: names.count, flags: names))
+                default:
+                    return nil
                 }
-                layout.append(FieldSpec(name: entry.key, width: names.count, flags: names))
-            default:
-                return nil
             }
+            return layout
+
+        case .record(let record):
+            // A BitFormat-shaped record: a `fields` list of BitField records. Each
+            // field is a flags / enum / numeric field — chosen by `kind` when the
+            // record carries it, else derived from which list is non-empty.
+            guard case .array(let fieldValues)? = member(record, "fields"), !fieldValues.isEmpty
+            else { return nil }
+            var layout: [FieldSpec] = []
+            for fieldValue in fieldValues {
+                guard case .record(let field) = fieldValue,
+                      case .string(let name)? = member(field, "name") else { return nil }
+                let kind: String? = if case .string(let k)? = member(field, "kind") { k } else { nil }
+                let flags = stringList(member(field, "flags"))
+                let values = stringList(member(field, "values"))
+                if (kind == "flags" || kind == nil), let flags, !flags.isEmpty {
+                    layout.append(FieldSpec(name: name, width: flags.count, flags: flags))
+                } else if (kind == "enum" || kind == nil), let values, !values.isEmpty,
+                          case .number(let bits)? = member(field, "bits"),
+                          bits.isInteger, let width = bits.intValue, width >= 1 {
+                    layout.append(FieldSpec(name: name, width: width, values: values))
+                } else if case .number(let bits)? = member(field, "bits"),
+                          bits.isInteger, let width = bits.intValue, width >= 1 {
+                    layout.append(FieldSpec(name: name, width: width))
+                } else {
+                    return nil
+                }
+            }
+            return layout
+
+        default:
+            return nil
         }
-        return layout
+    }
+
+    private static func member(_ record: Value.RecordValue, _ key: String) -> Value? {
+        record.entries.first { $0.key == key }?.value
+    }
+
+    private static func stringList(_ value: Value?) -> [String]? {
+        guard case .array(let items)? = value else { return nil }
+        var names: [String] = []
+        for item in items { guard case .string(let name) = item else { return nil }; names.append(name) }
+        return names
     }
 
     /// Build a format map from numeric (name, width) pairs — the inverse of
@@ -205,7 +273,8 @@ extension BinaryView {
             top = low
             let mask = (BigInt(1) << f.width) - 1
             let value = low >= 0 ? (pattern >> low) & mask : BigInt(0)
-            return Field(name: f.name, width: f.width, lowBit: max(low, 0), value: value, flags: f.flags)
+            return Field(name: f.name, width: f.width, lowBit: max(low, 0), value: value,
+                         flags: f.flags, values: f.values)
         }
     }
 
