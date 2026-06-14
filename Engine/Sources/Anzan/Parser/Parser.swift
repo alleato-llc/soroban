@@ -100,15 +100,8 @@ package struct Parser {
                         message: "expected ':' after field '\(fieldName)' — e.g. \(fieldName): Number",
                         position: current.position)
                 }
-                _ = advance()
-                guard case .identifier(let typeName) = current.kind,
-                      let type = DataFieldType(parsing: typeName) else {
-                    throw EngineError.parseError(
-                        message: "field types are Number, String, Boolean, or a declared data "
-                            + "type — e.g. \(fieldName): Number",
-                        position: current.position)
-                }
-                _ = advance()
+                _ = advance() // consume ':'
+                let type = try parseFieldType(field: fieldName)
                 guard !fields.contains(where: {
                     $0.name.lowercased() == fieldName.lowercased()
                 }) else {
@@ -134,6 +127,52 @@ package struct Parser {
         }
         _ = advance() // '}'
         return .dataDefinition(name: name, fields: fields)
+    }
+
+    /// A field type: a leaf (Number/String/Boolean/a data type), a list `[T]`,
+    /// or a string-keyed map `{String: T}` — recursive, so `[[Number]]` and
+    /// `{String: [Point]}` work.
+    private mutating func parseFieldType(field fieldName: String) throws(EngineError) -> DataFieldType {
+        switch current.kind {
+        case .leftBracket:
+            _ = advance()
+            let element = try parseFieldType(field: fieldName)
+            guard case .rightBracket = current.kind else {
+                throw EngineError.parseError(message: "expected ']' to close the list type — e.g. [String]",
+                                             position: current.position)
+            }
+            _ = advance()
+            return .list(element)
+        case .leftBrace:
+            _ = advance()
+            guard case .identifier(let key) = current.kind, key.lowercased() == "string" else {
+                throw EngineError.parseError(
+                    message: "map field keys are String — e.g. {String: Number}", position: current.position)
+            }
+            _ = advance()
+            guard case .colon = current.kind else {
+                throw EngineError.parseError(
+                    message: "expected ':' in the map type — e.g. {String: Number}", position: current.position)
+            }
+            _ = advance()
+            let valueType = try parseFieldType(field: fieldName)
+            guard case .rightBrace = current.kind else {
+                throw EngineError.parseError(message: "expected '}' to close the map type — e.g. {String: Number}",
+                                             position: current.position)
+            }
+            _ = advance()
+            return .map(valueType)
+        case .identifier(let typeName):
+            guard let type = DataFieldType(parsing: typeName) else { break }
+            _ = advance()
+            return type
+        default:
+            break
+        }
+        throw EngineError.parseError(
+            message: "field types are Number, String, Boolean, a declared data type, or a list/map "
+                + "of those ([T], {String: T}) — e.g. \(fieldName): Number",
+            position: current.position)
     }
 
     /// One comparison level: `additive (op additive)?`. Single comparison

@@ -55,53 +55,28 @@ public struct DataField: Equatable, Sendable {
         self.type = type
     }
 
-    /// Checks a constructor argument against the declared type. Booleans are
-    /// the engine's 1/0 truth values, but a Boolean FIELD is strict — exactly
-    /// 0 or 1, so `active: 7` is caught instead of silently truthy.
+    /// Checks a constructor argument against the declared type (recursing into
+    /// list/map element types).
     func validated(_ value: Value, in typeName: String) throws -> Value {
-        switch type {
-        case .number:
-            guard case .number = value else {
-                throw EngineError.domainError(
-                    message: "'\(name)' of \(typeName) is a Number — got \(value.kindName)")
-            }
-        case .string:
-            guard case .string = value else {
-                throw EngineError.domainError(
-                    message: "'\(name)' of \(typeName) is a String — got \(value.kindName)")
-            }
-        case .boolean:
-            guard case .number(let flag) = value, flag == .zero || flag == .one else {
-                throw EngineError.domainError(
-                    message: "'\(name)' of \(typeName) is a Boolean — use true or false")
-            }
-        case .record(let expected):
-            // The value is already a validated instance (records are immutable
-            // and only made by their constructor), so a type-name check is
-            // enough — no recursive re-validation, no cycle risk.
-            guard case .record(let record) = value,
-                  record.typeName.lowercased() == expected.lowercased() else {
-                throw EngineError.domainError(
-                    message: "'\(name)' of \(typeName) is a \(expected) — got \(value.kindName)")
-            }
-        }
-        return value
+        try type.validate(value, field: name, in: typeName)
     }
 }
 
 /// A field's type: a built-in scalar (Boolean fields hold the engine's 1/0 but
-/// render/serialize as true/false), or `.record(name)` — another declared
-/// data type, so records nest (`data Line { a: Point, b: Point }`). No Int
-/// refinement and no list types yet.
-public enum DataFieldType: Equatable, Sendable {
+/// render/serialize as true/false), `.record(name)` — another declared data
+/// type, so records nest (`data Line { a: Point, b: Point }`) — or the composite
+/// `.list(T)` (`[String]`, `[[Number]]`) and `.map(T)` (`{String: Number}`, a
+/// string-keyed map of `T`). `indirect` so list/map can wrap any field type.
+public indirect enum DataFieldType: Equatable, Sendable {
     case number
     case string
     case boolean
-    case record(String) // a declared data type, e.g. Point
+    case record(String)        // a declared data type, e.g. Point
+    case list(DataFieldType)   // [T]
+    case map(DataFieldType)    // {String: T} — string-keyed map of T
 
-    /// Declarations accept any casing for the scalars (`boolean`, `NUMBER`, …);
-    /// anything else that starts with a capital names a data type (existence
-    /// checked at construction). Returns nil for a non-type token.
+    /// Parses a LEAF type from a single token (scalar or a data-type name); the
+    /// parser handles the composite `[…]` / `{…}` forms. Returns nil otherwise.
     public init?(parsing text: String) {
         switch text.lowercased() {
         case "number": self = .number
@@ -113,13 +88,49 @@ public enum DataFieldType: Equatable, Sendable {
         }
     }
 
-    /// Canonical spelling — `Number` / `Point`.
+    /// Canonical spelling — `Number` / `Point` / `[String]` / `{String: Number}`.
     public var label: String {
         switch self {
         case .number: return "Number"
         case .string: return "String"
         case .boolean: return "Boolean"
         case .record(let name): return name
+        case .list(let element): return "[\(element.label)]"
+        case .map(let valueType): return "{String: \(valueType.label)}"
         }
+    }
+
+    /// Validates a value against this type, recursing into list/map elements.
+    /// Booleans are the engine's 1/0, but a Boolean field is strict (exactly 0/1,
+    /// so `active: 7` is caught). Records are already-validated immutable
+    /// instances, so a type-name check suffices (no re-validation, no cycles).
+    func validate(_ value: Value, field: String, in typeName: String) throws -> Value {
+        func mismatch() -> EngineError {
+            .domainError(message: "'\(field)' of \(typeName) is a \(label) — got \(value.kindName)")
+        }
+        switch self {
+        case .number:
+            guard case .number = value else { throw mismatch() }
+        case .string:
+            guard case .string = value else { throw mismatch() }
+        case .boolean:
+            guard case .number(let flag) = value, flag == .zero || flag == .one else {
+                throw EngineError.domainError(
+                    message: "'\(field)' of \(typeName) is a Boolean — use true or false")
+            }
+        case .record(let expected):
+            guard case .record(let record) = value,
+                  record.typeName.lowercased() == expected.lowercased() else { throw mismatch() }
+        case .list(let element):
+            guard case .array(let items) = value else { throw mismatch() }
+            return .array(try items.map { try element.validate($0, field: field, in: typeName) })
+        case .map(let valueType):
+            guard case .map(let entries) = value else { throw mismatch() }
+            return .map(try entries.map {
+                Value.MapEntry(key: $0.key,
+                               value: try valueType.validate($0.value, field: field, in: typeName))
+            })
+        }
+        return value
     }
 }

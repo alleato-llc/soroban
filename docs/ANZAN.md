@@ -393,14 +393,19 @@ Type names start with a capital letter; the declaration registers the name
 as a **constructor** in the function namespace (case-insensitive calls;
 collisions with built-ins and your functions are rejected both ways;
 redeclaring your own type is allowed). Field types are `Number`, `String`,
-`Boolean` (any casing), or **another declared data type** — so records nest:
-`data Line { a: Point, b: Point }`. A nested field is checked at construction
-(the value must be a record of that type); the field type need not be declared
-before the type that uses it, but you'll need it to build an instance. There
-are no list-typed fields in v1 (compose with arrays/maps for that). Nesting
-depth is bounded only by what you can construct (bottom-up) and the evaluation
-stack; there's no cheap-to-hit fixed cap, and validation is O(1) per field
-(records are immutable and already-validated, so no recursive re-checking).
+`Boolean` (any casing), **another declared data type** (so records nest:
+`data Line { a: Point, b: Point }`), or a **composite**: a list `[T]` (and
+nested `[[T]]`) or a string-keyed map `{String: T}`, where `T` is any field type
+in turn — `data BitField { name: String, flags: [String] }`,
+`data Grid { rows: [[Number]] }`, `data Config { opts: {String: Number} }`. A
+nested field is checked at construction (a record must be of that type; a list
+must be an array whose every element matches, a map a map whose every value
+matches — validation recurses into composites). The element/field type need not
+be declared before the type that uses it, but you'll need it to build an
+instance. Nesting depth is bounded only by what you can construct (bottom-up)
+and the evaluation stack; there's no cheap-to-hit fixed cap, and validation is
+O(n) over a container's elements (records inside are immutable and already
+validated, so they're a type-name check — no deep re-validation, no cycle risk).
 The trailing `# comment` is the type's documentation, exactly like functions.
 
 ### Constructing and reading
@@ -719,7 +724,10 @@ definition  = ( IDENT | OPSYM ) "(" [ param { "," param } ] ")" "=" expression [
 param       = IDENT [ ":" TYPENAME ] ;     (* typed params dispatch by argument type *)
 OPSYM       = "+" | "-" | "*" | "/" | "^" ;  (* operator overload; needs ≥1 data-type param *)
 datadef     = "data" TYPENAME "{" field { "," field } "}" [ COMMENT ] ;
-field       = IDENT ":" ( "Number" | "String" | "Boolean" | TYPENAME ) ;  (* scalar casing free; TYPENAME = a data type *)
+field       = IDENT ":" fieldType ;
+fieldType   = "Number" | "String" | "Boolean" | TYPENAME    (* scalar casing free; TYPENAME = a data type *)
+            | "[" fieldType "]"                              (* list, nests *)
+            | "{" "String" ":" fieldType "}" ;               (* string-keyed map *)
 
 expression  = lambda | comparison ;
 lambda      = ( IDENT | "(" [ IDENT { "," IDENT } ] ")" ) "->" expression ;

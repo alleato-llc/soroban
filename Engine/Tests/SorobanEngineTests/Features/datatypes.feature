@@ -273,3 +273,49 @@ Feature: Data types — declared records with named construction
     When the workbook is saved and reopened
     And I calculate "seg.b.x - seg.a.x"
     Then the result is "3"
+
+  Scenario: A field can be a list of scalars
+    Given I calculate "data Tags { items: [String] }"
+    When I calculate "Tags(items: ["a", "b", "c"])"
+    Then the result is "Tags(items: ["a", "b", "c"])"
+    When I calculate "len(Tags(items: ["a", "b"]).items)"
+    Then the result is "2"
+
+  Scenario: A field can be a list of records, nested freely
+    Given I calculate "data Point { x: Number, y: Number }"
+    And I calculate "data Path { points: [Point] }"
+    And I calculate "p = Path(points: [Point(x: 1, y: 2), Point(x: 3, y: 4)])"
+    When I calculate "p.points[1].y"
+    Then the result is "4"
+    When I calculate "len(p.points)"
+    Then the result is "2"
+
+  Scenario: A field can be a nested list
+    Given I calculate "data Grid { rows: [[Number]] }"
+    When I calculate "Grid(rows: [[1, 2], [3, 4]]).rows[1][0]"
+    Then the result is "3"
+
+  Scenario: A field can be a string-keyed map
+    Given I calculate "data Config { opts: {String: Number} }"
+    When I calculate "Config(opts: {a: 1, b: 2}).opts.b"
+    Then the result is "2"
+
+  Scenario Outline: List and map fields validate their elements
+    Given I calculate "data Tags { items: [String] }"
+    And I calculate "data Config { opts: {String: Number} }"
+    When I calculate "<expr>"
+    Then the calculation fails mentioning "<message>"
+
+    Examples:
+      | expr                   | message       |
+      | Tags(items: [1, 2])    | is a String   |
+      | Tags(items: "x")       | is a [String] |
+      | Config(opts: {a: "x"}) | is a Number   |
+
+  Scenario: List and map fields survive save and reopen
+    Given I calculate "data Point { x: Number, y: Number }"
+    And I calculate "data Path { points: [Point] }"
+    And I calculate "route = Path(points: [Point(x: 1, y: 1), Point(x: 5, y: 9)])"
+    When the workbook is saved and reopened
+    And I calculate "route.points[1].x"
+    Then the result is "5"
