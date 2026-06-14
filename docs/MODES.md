@@ -9,7 +9,9 @@
 > re-skin* described under "Switching modes" is **deferred** (it needs canonical
 > storage of every entry plus recall/copy changes plus comment/error/def
 > handling — disproportionate for a cosmetic effect on an inert tape). Fixed-width
-> integer types are a *separate* feature — see `docs/FIXED-WIDTH.md`.
+> integer types are a *separate* feature — see `docs/FIXED-WIDTH.md`. The app's
+> binary bit editor and bit-field formats that build on this mode are covered in
+> `docs/PROGRAMMER.md`.
 
 ## The one-sentence model
 

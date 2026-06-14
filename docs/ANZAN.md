@@ -396,7 +396,7 @@ redeclaring your own type is allowed). Field types are `Number`, `String`,
 `Boolean` (any casing), **another declared data type** (so records nest:
 `data Line { a: Point, b: Point }`), or a **composite**: a list `[T]` (and
 nested `[[T]]`) or a string-keyed map `{String: T}`, where `T` is any field type
-in turn — `data BitField { name: String, flags: [String] }`,
+in turn — `data Tag { name: String, aliases: [String] }`,
 `data Grid { rows: [[Number]] }`, `data Config { opts: {String: Number} }`. A
 nested field is checked at construction (a record must be of that type; a list
 must be an array whose every element matches, a map a map whose every value
@@ -716,8 +716,9 @@ is the **canonical (Normal-dialect)** grammar; Programmer mode adds a bitwise
 operator band (`|` · `^` · `&` · `<< >>`, between comparison and additive) plus
 prefix `~`, parsing to the same canonical bitwise functions — see
 [MODES.md](https://github.com/alleato-llc/soroban/blob/main/docs/MODES.md).
-The **module system** — `namespace Name { … }` blocks and `Name::member`
-qualified names (the `::` token), plus imports — is an extension specced in
+The **module system** — `namespace Name { … }` blocks holding data types,
+functions, and constants (nesting too: `A::B::member`), `Name::member` qualified
+names (the `::` token), and `import Name` — is an extension specced in
 [MODULES.md](https://github.com/alleato-llc/soroban/blob/main/docs/MODULES.md).
 
 ```

@@ -9,17 +9,21 @@ type Scope = "log" | "grid" | "cli";
 interface Props {
   title: string;
   scopes?: Scope[];
+  /** When set, the card becomes a LINK (a summary card that jumps to its
+   *  full feature section); otherwise it's a plain div. */
+  href?: string;
 }
 
-const { title, scopes = [] } = Astro.props;
+const { title, scopes = [], href } = Astro.props;
 const everywhere = (["log", "grid", "cli"] as Scope[]).every((s) =>
   scopes.includes(s),
 );
 const label = everywhere ? "everywhere" : scopes.join(" · ");
 const tooltip = everywhere ? "log, grid, and the CLI" : label;
+const Tag = href ? "a" : "div";
 ---
 
-<div class="card">
+<Tag class:list={["card", { "card-link": href }]} href={href}>
   <div class="card-head">
     <h3>{title}</h3>
     {
@@ -66,4 +70,4 @@ const tooltip = everywhere ? "log, grid, and the CLI" : label;
     }
   </div>
   <p><slot /></p>
-</div>
+</Tag>

@@ -556,6 +556,88 @@ section h2 {
   font-size: 0.85em;
 }
 
+/* ---------- feature summary + detail (nine areas, one sticky in-page nav) ---------- */
+
+.section-lede {
+  color: var(--muted);
+  margin: -0.8rem 0 1.4rem;
+  font-size: 0.95rem;
+}
+
+/* Summary cards jump to their full section below. */
+.card-link {
+  display: block;
+  color: inherit;
+  transition:
+    border-color 0.15s ease,
+    transform 0.15s ease;
+}
+.card-link:hover {
+  border-color: var(--accent);
+  text-decoration: none;
+  transform: translateY(-2px);
+}
+.card-link h3 {
+  color: var(--text);
+}
+
+/* A sticky rail of the nine feature names, riding just under the header. */
+.feature-nav {
+  position: sticky;
+  top: 3.25rem; /* header height */
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  padding: 0.6rem 0;
+  margin-bottom: 0.5rem;
+  background: color-mix(in srgb, var(--bg) 85%, transparent);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.82rem;
+}
+.feature-nav a {
+  color: var(--faint);
+  padding: 0.2rem 0.62rem;
+  border-radius: 999px;
+}
+.feature-nav a:hover {
+  color: var(--text);
+  background: var(--surface);
+  text-decoration: none;
+}
+.feature-nav a[aria-current="true"] {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.feature {
+  scroll-margin-top: 6.2rem; /* clear the header + the sticky feature nav */
+  max-width: 760px;
+  padding: 2.2rem 0;
+  border-top: 1px solid var(--border);
+}
+.feature h2 {
+  font-size: 1.35rem;
+  margin: 0 0 0.9rem;
+}
+.feature p {
+  color: var(--muted);
+  line-height: 1.6;
+  margin: 0 0 0.9rem;
+}
+.feature code {
+  color: var(--accent);
+  font-size: 0.88em;
+}
+
+/* Top-level anchored sections only need to clear the header. */
+#features,
+#source,
+#donate {
+  scroll-margin-top: 4rem;
+}
+
 /* ---------- prose (the Anzan spec page, rendered from docs/ANZAN.md) ---------- */
 
 /* Two columns on wide screens: sticky table of contents + the document.

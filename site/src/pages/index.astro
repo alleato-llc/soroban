@@ -216,117 +216,248 @@ const links = {
 
         <section id="features">
             <h2>Built around one idea: be exact, then stay out of the way</h2>
-            <div class="features">
-                <Card title="Exact by construction" scopes={["log", "grid", "cli"]}>
-                    Arbitrary-precision decimals: <code>+ − ×</code> and integer
-                    powers are exact, division carries 50 significant digits. Machin's
-                    1706 formula recovers π to 51 places — in three typed lines.
+            <p class="section-lede">
+                Nine things Soroban does well. Tap a card to jump to the
+                details.
+            </p>
+            <div class="features summary">
+                <Card title="Exact arithmetic" href="#feat-exact" scopes={["log", "grid", "cli"]}>
+                    A 50-digit exact decimal engine — <code>0.1 + 0.2</code> is
+                    exactly <code>0.3</code> — plus a money type and checked
+                    fixed-width integers.
                 </Card>
-                <Card title="Log and grid, one engine" scopes={["log", "grid"]}>
-                    The calculator log and the spreadsheet share variables and
-                    functions. Reference <code>B:1</code> from the log, use
-                    <code>rate</code> in a cell, sum a column with
-                    <code>sum(A:1..A:9)</code> — across worksheets too.
+                <Card title="The Anzan language" href="#feat-language" scopes={["log", "grid", "cli"]}>
+                    Custom functions, recursion, data structures, lambdas, and
+                    namespaces — a real little language, fully specified.
                 </Card>
-                <Card title="Custom functions" scopes={["log", "grid", "cli"]}>
-                    Need a custom function? Add it. <code>f(x) = x * 2</code> registers
-                    <code>f(x)</code> as a valid function. Custom functions support
-                    recursion, LaTeX-style <code>∑</code>/<code>∏</code>, and user-defined
-                    documentation.
+                <Card title="Log + grid, one engine" href="#feat-grid" scopes={["log", "grid"]}>
+                    A scrolling calculator log and a 26×1,000 grid that share
+                    every variable, function, and cell reference.
                 </Card>
-                <Card title="Programmer friendly" scopes={["log", "cli"]}>
-                    <a href={links.spec}>Anzan</a> — Soroban's expression
-                    language — comes with data structure support including
-                    arrays, maps, strings, and booleans. We also support
-                    higher-order functions, lambdas, and a
-                    <a href={links.spec}>full language spec</a>.
+                <Card title="Programmer mode & bit editor" href="#feat-bits" scopes={["log", "grid", "cli"]}>
+                    A C-style dialect and a clickable binary bit editor with
+                    reusable, color-coded bit-field formats.
                 </Card>
-                <Card title="Speaks your dialect" scopes={["log", "cli"]}>
-                    Flip the log to <strong>Programmer mode</strong> and the glyphs
-                    read like C: <code>^</code> is XOR, <code>&amp;</code> <code>|</code>
-                    <code>&lt;&lt;</code> <code>&gt;&gt;</code> <code>~</code> are bitwise,
-                    <code>%</code> is modulo. It's a display <em>dialect</em>, not a
-                    semantic switch — the stored formula stays canonical, so it can
-                    never mean two things. <code>:mode programmer</code> in the CLI; a
-                    picker in the app.
+                <Card title="Live what-if controls" href="#feat-controls" scopes={["grid"]}>
+                    Sliders, steppers, checkboxes, and dropdowns right in the
+                    cells — the model recalculates as you drag.
                 </Card>
-                <Card title="Fixed-width integers" scopes={["log", "grid", "cli"]}>
-                    <code>Int32(255)</code>, <code>UInt8(8)</code> — bounded
-                    integers at 8–256 bits, signed or unsigned (or
-                    <code>Int(255, 32)</code> with the width as an argument). Still
-                    exact, but <em>checked</em>: <code>Int8(100) + Int8(100)</code> is
-                    an overflow error, never a silent wraparound. Mixed widths promote
-                    to the wider type; signed and unsigned never mix.
+                <Card title="Data sheets at scale" href="#feat-data" scopes={["grid"]}>
+                    Import 100,000-row CSVs into SQLite-backed sheets; formulas
+                    reach every row, opens stay instant.
                 </Card>
-                <Card title="Money-grade decimals" scopes={["log", "grid", "cli"]}>
-                    <code>Decimal(10.5, 5, 2)</code> is <code>10.50</code> — SQL
-                    <code>DECIMAL(p, s)</code>, the money type: rounds to the scale,
-                    checks the precision (overflow errors, never silently drops
-                    digits). Banker's rounding by default, or
-                    <code>Rounding.HalfUp</code>. Or just <code>Decimal(0.5)</code> to
-                    capture a value exactly.
+                <Card title="In your terminal" href="#feat-cli" scopes={["cli"]}>
+                    The whole language ships as a <code>soroban</code> CLI:
+                    REPL, pipes, and real exit codes.
                 </Card>
-                <Card title="Live what-if controls" scopes={["grid"]}>
-                    <code>rate = slider(0.08, 0, 0.2)</code> renders as a draggable
-                    slider in its cell — plus steppers, checkboxes, dropdowns. The
-                    whole model recalculates as you drag; one undo step on release.
+                <Card title="A plain file format" href="#feat-file" scopes={["log", "grid"]}>
+                    <code>.soroban</code> is documented JSON (+ SQLite) —
+                    diffable, scriptable, hand-editable. CSV in and out.
                 </Card>
-                <Card title="Named Cells" scopes={["grid"]}>
-                    Name a cell and write <code>'Projected Rate' * 12</code> instead
-                    of <code>B:7</code>. Sheet-scoped definitions render as
-                    <code>λ</code> and <code>𝑖</code> cells. Renames update every
-                    referencing formula.
-                </Card>
-                <Card title="Read your own workbook" scopes={["grid"]}>
-                    A formula can inspect the workbook itself —
-                    <code>Workbook.worksheets["Budget"].cell("B", 1).value</code>
-                    or the shorthand <code>cell("A", 1).value</code>,
-                    <code>sheetNames()</code>. Reads are live; log commands like
-                    <code>updateCell</code> and <code>addWorksheet</code> change
-                    it, one undo step each.
-                </Card>
-                <Card title="Data sheets that scale" scopes={["grid"]}>
-                    Import 100,000-row CSVs into SQLite-backed sheets inside the
-                    document — formulas reach every row (<code
-                        >sum(Sales!C:2..C:100000)</code
-                    >), opens stay instant.
-                </Card>
-                <Card title="Common formulas built in" scopes={["log", "grid", "cli"]}>
-                    Support for common formulas across domains: statistics (<code
-                        >median</code
-                    >, <code>stdev</code>), algebra (<code>sqrt</code>, <code
-                        >gcd</code
-                    >), logic (<code>if</code>,
-                    <code>and</code>, <code>or</code>), finance (<code>pmt</code>,
-                    <code>irr</code>, <code>xirr</code>), and dates (<code
-                        >edate</code
-                    >, <code>days</code>).
-                </Card>
-                <Card title="A simple file format" scopes={["log", "grid"]}>
-                    <code>.soroban</code> is a documented package of pretty-printed
-                    JSON (+ SQLite for data) — diffable, scriptable, hand-editable.
-                    CSV in and out.
-                </Card>
-                <Card title="Lives in your terminal" scopes={["cli"]}>
-                    The full language ships as a <code>soroban</code> CLI: an
-                    Anzan REPL with tab completion, signature hints, and
-                    persistent history — or pipe it
-                    (<code>echo "fact(25)" | soroban</code>) and script against
-                    real exit codes.
-                </Card>
-                <Card title="Documentation built in" scopes={["log", "grid", "cli"]}>
-                    <code>man(pmt)</code> explains any built-in; ⌘/ opens a
-                    searchable reference. Your own functions get man pages from a
-                    trailing <code># comment</code> — and every documented example
-                    is evaluated by the test suite, so the docs can't rot.
-                </Card>
-                <Card title="Make it yours">
-                    Ten built-in themes — Solarized, Dracula, Nord, gruvbox… — or
-                    drop a small JSON theme in Application Support to make your
-                    own. This site is wearing two of them.
+                <Card title="Make it yours" href="#feat-themes">
+                    Ten built-in themes, or drop in your own. This very site is
+                    wearing two of them.
                 </Card>
             </div>
         </section>
+
+        <div class="feature-detail">
+            <nav class="feature-nav" aria-label="Features">
+                <a href="#feat-exact">Exact</a>
+                <a href="#feat-language">Language</a>
+                <a href="#feat-grid">Log + grid</a>
+                <a href="#feat-bits">Programmer</a>
+                <a href="#feat-controls">Controls</a>
+                <a href="#feat-data">Data</a>
+                <a href="#feat-cli">CLI</a>
+                <a href="#feat-file">File</a>
+                <a href="#feat-themes">Themes</a>
+            </nav>
+
+            <section class="feature" id="feat-exact">
+                <h2>Exact arithmetic</h2>
+                <p>
+                    Underneath everything is an arbitrary-precision decimal
+                    engine. <code>+ − ×</code> and integer powers are
+                    <em>exact</em>; division carries 50 significant digits with
+                    banker's rounding. <code>0.1 + 0.2</code> is exactly
+                    <code>0.3</code>, and Machin's 1706 formula recovers π to 51
+                    places in three typed lines — money math never picks up
+                    floating-point drift.
+                </p>
+                <p>
+                    When you need a <strong>bounded</strong> type, it stays exact
+                    but <em>checked</em>. <code>Decimal(10.5, 5, 2)</code> is
+                    <code>10.50</code> — SQL <code>DECIMAL(p, s)</code>, the money
+                    type: rounds to the scale, errors on precision overflow
+                    instead of silently dropping digits (banker's rounding, or
+                    <code>Rounding.HalfUp</code>). <code>Int32(255)</code>,
+                    <code>UInt8(8)</code> are integers at 8–256 bits, signed or
+                    unsigned — <code>Int8(100) + Int8(100)</code> is an overflow
+                    error, never a silent wraparound.
+                </p>
+                <p>
+                    And the everyday formulas are built in across domains:
+                    statistics (<code>median</code>, <code>stdev</code>), algebra
+                    (<code>sqrt</code>, <code>gcd</code>), logic (<code>if</code>,
+                    <code>and</code>, <code>or</code>), finance (<code>pmt</code>,
+                    <code>irr</code>, <code>xirr</code>), and dates
+                    (<code>edate</code>, <code>days</code>).
+                </p>
+            </section>
+
+            <section class="feature" id="feat-language">
+                <h2>The Anzan language</h2>
+                <p>
+                    <a href={links.spec}>Anzan</a> — Soroban's expression language
+                    — is a small but real language. Define a function and it's
+                    immediately usable: <code>f(x) = x * 2</code>. Functions
+                    recurse, take LaTeX-style reductions
+                    (<code>∑</code>/<code>∏</code>), and document themselves from a
+                    trailing <code># comment</code>.
+                </p>
+                <p>
+                    It has first-class data — arrays, maps, strings, booleans, and
+                    <code>data</code> records — plus higher-order functions and
+                    lambdas (<code>map(x -&gt; x^2, [1, 2, 3])</code>). Group your
+                    own types and functions into <strong>namespaces</strong>
+                    (<code>Geo::Point</code>, <code>import Geo</code>), nesting and
+                    all. Every built-in has a man page (<code>man pmt</code>, or ⌘/
+                    for a searchable reference), and every documented example is
+                    evaluated by the test suite — so the docs can't rot.
+                </p>
+                <p>
+                    <a class="button quiet" href={links.spec}>Read the language spec</a>
+                </p>
+            </section>
+
+            <section class="feature" id="feat-grid">
+                <h2>Log + grid, one engine</h2>
+                <p>
+                    Type into a scrolling calculation log, or flip to a 26×1,000
+                    spreadsheet grid (⌘\). They share one engine: reference
+                    <code>B:1</code> from the log, use <code>rate</code> in a cell,
+                    sum a column with <code>sum(A:1..A:9)</code> — across
+                    worksheets too (<code>Budget!A:1</code>).
+                </p>
+                <p>
+                    Name a cell and write <code>'Projected Rate' * 12</code>
+                    instead of <code>B:7</code>; renames rewrite every referencing
+                    formula. A formula can even inspect the workbook itself —
+                    <code>cell("A", 1).value</code>,
+                    <code>Workbook.worksheets["Budget"]</code>,
+                    <code>sheetNames()</code> — with reads kept live, and log
+                    commands like <code>updateCell</code> /
+                    <code>addWorksheet</code> changing it one undo step at a time.
+                </p>
+            </section>
+
+            <section class="feature" id="feat-bits">
+                <h2>Programmer mode &amp; the bit editor</h2>
+                <p>
+                    Flip the log to <strong>Programmer mode</strong> and the
+                    overloaded glyphs read like C: <code>^</code> is XOR,
+                    <code>&amp;</code> <code>|</code> <code>&lt;&lt;</code>
+                    <code>&gt;&gt;</code> <code>~</code> are bitwise,
+                    <code>%</code> is modulo. It's a display <em>dialect</em>, not
+                    a semantic switch — the stored formula stays canonical, so it
+                    can never mean two things. <code>:mode programmer</code> in the
+                    CLI; a picker in the app.
+                </p>
+                <p>
+                    The app adds a macOS-Calculator-style <strong>binary bit
+                    editor</strong>: a number becomes a clickable register, and a
+                    reusable <strong>bit-field format</strong> labels its bit
+                    ranges — numeric, per-bit flags (<code>r-x</code>), or an enum
+                    that decodes a value to a label. Build one visually: drag the
+                    bits to carve a group, name it, color it, and save. Formats
+                    persist as ordinary typed values you can read and edit.
+                </p>
+            </section>
+
+            <section class="feature" id="feat-controls">
+                <h2>Live what-if controls</h2>
+                <p>
+                    <code>rate = slider(0.08, 0, 0.2)</code> renders as a draggable
+                    slider right in its cell — plus steppers, checkboxes, and
+                    dropdowns. The whole model recalculates as you drag, with one
+                    undo step on release. The control's value <em>is</em> the
+                    stored literal, so it's still a plain, inspectable formula.
+                </p>
+            </section>
+
+            <section class="feature" id="feat-data">
+                <h2>Data sheets at scale</h2>
+                <p>
+                    Import a 100,000-row CSV into a SQLite-backed sheet that lives
+                    inside the document. Formulas reach every row
+                    (<code>sum(Sales!C:2..C:100000)</code>), and opens stay instant
+                    — the grid renders a window, the database holds the rows.
+                </p>
+            </section>
+
+            <section class="feature" id="feat-cli">
+                <h2>In your terminal</h2>
+                <p>
+                    The full language ships as a <code>soroban</code> CLI. Run it
+                    as an Anzan REPL with tab completion, signature hints, and
+                    persistent history; pass an expression as an argument; or pipe
+                    it (<code>echo "fact(25)" | soroban</code>) and script against
+                    real exit codes. Same engine, same column-accurate error
+                    carets — just no grid.
+                </p>
+            </section>
+
+            <section class="feature" id="feat-file">
+                <h2>A plain file format</h2>
+                <p>
+                    <code>.soroban</code> is a documented package of pretty-printed
+                    JSON (plus SQLite for data sheets) — diffable in git,
+                    scriptable, hand-editable. Every behavior of the format is
+                    written down, and CSV goes in and out. Your work isn't trapped
+                    in a binary blob.
+                </p>
+            </section>
+
+            <section class="feature" id="feat-themes">
+                <h2>Make it yours</h2>
+                <p>
+                    Ten built-in themes — Solarized, Dracula, Nord, gruvbox… — or
+                    drop a small JSON theme into Application Support to make your
+                    own. This very site is wearing two of them; toggle it in the
+                    header.
+                </p>
+            </section>
+        </div>
+
+        <script>
+            // Scroll-spy: mark the feature-nav link whose section is in view.
+            const navLinks = [
+                ...document.querySelectorAll<HTMLAnchorElement>(".feature-nav a"),
+            ];
+            const byId = new Map(
+                navLinks.map((a) => [a.getAttribute("href")!.slice(1), a]),
+            );
+            const sections = [
+                ...document.querySelectorAll<HTMLElement>(".feature"),
+            ];
+            if (navLinks.length && sections.length) {
+                const setCurrent = (id: string) =>
+                    navLinks.forEach((a) =>
+                        a === byId.get(id)
+                            ? a.setAttribute("aria-current", "true")
+                            : a.removeAttribute("aria-current"),
+                    );
+                const obs = new IntersectionObserver(
+                    (entries) => {
+                        for (const e of entries)
+                            if (e.isIntersecting) setCurrent((e.target as HTMLElement).id);
+                    },
+                    { rootMargin: "-30% 0px -60% 0px", threshold: 0 },
+                );
+                sections.forEach((s) => obs.observe(s));
+            }
+        </script>
 
         <section class="support" id="source">
             <div class="cols">
