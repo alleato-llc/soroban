@@ -103,9 +103,12 @@ public final class Calculator {
         }
 
         if case .namespaceDefinition(let name, _) = expression {
-            // 2a-i: registers the namespace's types under qualified names. (Source
-            // persistence is a later slice — see docs/MODULES.md.)
-            return run(expression).map { _ in .dataDefined(declaration: "namespace \(name) { … }") }
+            return run(expression).map { _ in
+                // Persist the declaration line — its members live under qualified
+                // names and are restored by replaying this on open.
+                environment.recordNamespaceSource(line)
+                return .dataDefined(declaration: "namespace \(name) { … }")
+            }
         }
 
         if case .importDirective(let name) = expression {

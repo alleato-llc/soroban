@@ -215,7 +215,9 @@ struct SorobanSteps: StepDefinitions {
         let decoded = try Workbook.decode(
             try Workbook(sheets: payloads, variables: Self.calculator.environment.userVariables,
                          functions: Self.calculator.environment.allUserFunctions,
-                         dataTypes: Self.calculator.environment.userDataTypes).encode())
+                         dataTypes: Self.calculator.environment.userDataTypes,
+                         namespaces: Self.calculator.environment.namespaceSources,
+                         imports: Self.calculator.environment.importedNamespaces).encode())
 
         let store = SheetStore(calculator: Self.calculator)
         Self.store = store

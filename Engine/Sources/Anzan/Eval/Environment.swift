@@ -163,9 +163,18 @@ public final class EvaluationEnvironment {
     // MARK: Namespace imports (docs/MODULES.md 2b)
 
     /// Imported namespaces, in import order — their members are reachable
-    /// unqualified. Session state (persistence is a later slice).
+    /// unqualified. Persisted in the workbook (restored after namespaces).
     private var imports: [String] = []
     public var importedNamespaces: [String] { imports }
+
+    /// The source line of each `namespace … { … }` evaluated, in order —
+    /// replayed on workbook open to re-register the namespace's members (which
+    /// otherwise persist as empty-source qualified entries). Reopening appends,
+    /// so replay reconstructs the accumulated namespace.
+    private var namespaceSourceLines: [String] = []
+    public var namespaceSources: [String] { namespaceSourceLines }
+    func recordNamespaceSource(_ source: String) { namespaceSourceLines.append(source); changeCount += 1 }
+    public func clearNamespaceSources() { namespaceSourceLines.removeAll() }
 
     /// The simple member names (types + functions) declared in a namespace —
     /// for the import conflict check.
@@ -191,7 +200,7 @@ public final class EvaluationEnvironment {
         changeCount += 1
     }
 
-    func clearImports() { imports.removeAll() }
+    public func clearImports() { imports.removeAll() }
 
     /// Resolve an unqualified name through the imports → its qualified form when
     /// an import provides it as a function or type. The import conflict check

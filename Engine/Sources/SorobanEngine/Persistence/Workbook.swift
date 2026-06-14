@@ -79,21 +79,35 @@ public struct Workbook: Codable, Equatable, Sendable {
     public var functions: [String]
     /// Data type name → original declaration line ("data Person { … }").
     /// Re-evaluated on open BEFORE variables (record variables persist as
-    /// constructor calls). Decodes to empty for older files.
+    /// constructor calls). Decodes to empty for older files. Excludes namespace
+    /// members (qualified `Bits::BitField` names) — those restore via `namespaces`.
     public var dataTypes: [String: String]
+    /// Namespace declaration lines ("namespace Bits { … }"), in order — replayed
+    /// on open to re-register their (qualified) members. Decodes empty for older
+    /// files. (docs/MODULES.md 2c)
+    public var namespaces: [String]
+    /// Imported namespace names, restored (after `namespaces`) by replaying
+    /// `import Name`. Decodes empty for older files.
+    public var imports: [String]
 
     public init(sheets: [SheetPayload], activeSheet: String? = nil,
                 variables: [String: Value],
                 functions: [UserFunction] = [],
-                dataTypes: [String: DataType] = [:]) {
+                dataTypes: [String: DataType] = [:],
+                namespaces: [String] = [],
+                imports: [String] = []) {
         self.format = Self.formatIdentifier
         self.version = Self.currentVersion
         self.sheets = sheets
         self.activeSheet = activeSheet
         self.variables = variables.mapValues(\.description)
-        self.functions = functions.map(\.source)
+        // Namespace members carry qualified names + empty source; they restore
+        // via `namespaces`, so keep them out of the flat function/type maps.
+        self.functions = functions.filter { !$0.name.contains("::") }.map(\.source)
         self.dataTypes = Dictionary(uniqueKeysWithValues:
-            dataTypes.values.map { ($0.name, $0.source) })
+            dataTypes.values.filter { !$0.name.contains("::") }.map { ($0.name, $0.source) })
+        self.namespaces = namespaces
+        self.imports = imports
     }
 
     /// Single-sheet convenience (tests, simple tooling).
@@ -113,7 +127,7 @@ public struct Workbook: Codable, Equatable, Sendable {
     public var rowHeights: [String: Double] { sheets.first?.rowHeights ?? [:] }
 
     enum CodingKeys: String, CodingKey {
-        case format, version, sheets, activeSheet, variables, functions, dataTypes
+        case format, version, sheets, activeSheet, variables, functions, dataTypes, namespaces, imports
         // Legacy flat single-sheet fields (read-only).
         case cells, columnWidths, rowHeights
     }
@@ -132,6 +146,8 @@ public struct Workbook: Codable, Equatable, Sendable {
             functions = []
         }
         dataTypes = try container.decodeIfPresent([String: String].self, forKey: .dataTypes) ?? [:]
+        namespaces = try container.decodeIfPresent([String].self, forKey: .namespaces) ?? []
+        imports = try container.decodeIfPresent([String].self, forKey: .imports) ?? []
         activeSheet = try container.decodeIfPresent(String.self, forKey: .activeSheet)
 
         if let decoded = try container.decodeIfPresent([SheetPayload].self, forKey: .sheets),
@@ -156,6 +172,8 @@ public struct Workbook: Codable, Equatable, Sendable {
         try container.encode(variables, forKey: .variables)
         try container.encode(functions, forKey: .functions)
         try container.encode(dataTypes, forKey: .dataTypes)
+        if !namespaces.isEmpty { try container.encode(namespaces, forKey: .namespaces) }
+        if !imports.isEmpty { try container.encode(imports, forKey: .imports) }
     }
 
     /// Parsed variables; entries that fail to parse are dropped (they could

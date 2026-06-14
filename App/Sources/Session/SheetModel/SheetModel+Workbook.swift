@@ -30,7 +30,9 @@ extension SheetModel {
             activeSheet: store.activeSheet.name,
             variables: calculator.environment.userVariables,
             functions: calculator.environment.allUserFunctions,
-            dataTypes: calculator.environment.userDataTypes)
+            dataTypes: calculator.environment.userDataTypes,
+            namespaces: calculator.environment.namespaceSources,
+            imports: calculator.environment.importedNamespaces)
     }
 
     /// Replaces the whole session state from a workbook (open / new / scratch

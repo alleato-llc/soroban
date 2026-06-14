@@ -104,3 +104,15 @@ Feature: Namespaces group declarations under a qualified name
     And I calculate "import Ok"
     When I calculate "area(2)"
     Then the result is "12"
+
+  # docs/MODULES.md 2c: namespaces (their declaration lines) and imports persist
+  # in the workbook and replay on open, in dependency order.
+
+  Scenario: A namespace and its import survive save and reopen
+    Given I calculate "namespace Geo { data Point { x: Number, y: Number }; dist(p: Point) = sqrt(p.x^2 + p.y^2) }"
+    And I calculate "import Geo"
+    When the workbook is saved and reopened
+    And I calculate "Geo::dist(Geo::Point(x: 3, y: 4))"
+    Then the result is "5"
+    When I calculate "dist(Point(x: 6, y: 8))"
+    Then the result is "10"

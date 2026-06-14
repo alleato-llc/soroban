@@ -63,6 +63,37 @@ struct WorkbookTests {
         #expect(older.dataTypes.isEmpty)
     }
 
+    @Test func namespacesAndImportsRoundTripAndRestore() throws {
+        let calc = Calculator()
+        _ = calc.evaluate("namespace Geo { data Point { x: Number, y: Number }; dist(p: Point) = sqrt(p.x^2 + p.y^2) }")
+        _ = calc.evaluate("import Geo")
+        let decoded = try Workbook.decode(try Workbook(
+            sheets: [Workbook.SheetPayload(name: "Sheet 1", cells: [:])],
+            variables: [:],
+            functions: calc.environment.allUserFunctions,
+            dataTypes: calc.environment.userDataTypes,
+            namespaces: calc.environment.namespaceSources,
+            imports: calc.environment.importedNamespaces).encode())
+        // The namespace declaration persists; the qualified members do NOT leak
+        // into the flat function/type maps.
+        #expect(decoded.namespaces.count == 1)
+        #expect(decoded.imports == ["Geo"])
+        #expect(decoded.functions.isEmpty)   // Geo::dist is a namespace member
+        #expect(decoded.dataTypes.isEmpty)    // Geo::Point too
+
+        // Restoring into a fresh session re-registers the members and the import.
+        let fresh = Calculator()
+        fresh.restoreSession(from: decoded)
+        #expect(try fresh.evaluate("Geo::dist(Geo::Point(x: 3, y: 4))").get() == .value(BigDecimal(5)))
+        #expect(try fresh.evaluate("dist(Point(x: 6, y: 8))").get() == .value(BigDecimal(10))) // import restored
+
+        // Older files (no namespaces/imports keys) decode with empty defaults.
+        let older = try Workbook.decode(Data(
+            #"{"format": "soroban-workbook", "version": 1, "cells": {}, "variables": {}}"#.utf8))
+        #expect(older.namespaces.isEmpty)
+        #expect(older.imports.isEmpty)
+    }
+
     @Test func handEditedBadVariablesAreDropped() throws {
         let decoded = try Workbook.decode(Data("""
             {"format": "soroban-workbook", "version": 1,
