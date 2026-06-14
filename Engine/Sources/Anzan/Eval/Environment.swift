@@ -21,6 +21,17 @@ public final class EvaluationEnvironment {
 
     public init() {}
 
+    /// The namespace whose body is currently evaluating, so a namespaced member
+    /// resolves its siblings unqualified (`Bits::area` calls `perimeter`, finds
+    /// `Bits::perimeter`). A stack: nested/cross-namespace calls push their own
+    /// home, and a plain global function pushes `nil` so it can't see a caller's
+    /// siblings. Transient — empty outside function-body evaluation. Mirrors the
+    /// cell `ResolutionContext`'s current-sheet stack.
+    private var namespaceContext: [String?] = []
+    var currentNamespace: String? { namespaceContext.last ?? nil }
+    func enterNamespace(_ namespace: String?) { namespaceContext.append(namespace) }
+    func leaveNamespace() { if !namespaceContext.isEmpty { namespaceContext.removeLast() } }
+
     public subscript(name: String) -> Value? {
         get {
             switch name.lowercased() {

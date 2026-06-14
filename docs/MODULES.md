@@ -1,9 +1,11 @@
 # Modules — generic data types, namespaces, and imports (design)
 
-> **Status: IN PROGRESS.** Phase 1 (generic data field types) and phase 2a-i
-> (namespaced *data types* with qualified resolution) are **implemented and
-> tested**; namespaced functions/constants, imports, the builtin module reorg,
-> and persistence are still ahead. A foundational
+> **Status: IN PROGRESS.** Phase 1 (generic data field types), phase 2a-i
+> (namespaced *data types*), and phase 2a-ii (namespaced *functions* with the
+> home-namespace resolver — siblings resolve unqualified at call time, incl.
+> typed-parameter dispatch and recursion) are **implemented and tested**.
+> Constants-in-namespaces, imports, the builtin module reorg, and persistence are
+> still ahead. A foundational
 > language initiative, specced before code (like `docs/MODES.md` /
 > `docs/DECIMAL.md`). It is **the largest single direction proposed for the
 > language**, and the design has deliberately taken the *expansive* option on
@@ -66,11 +68,14 @@ resolves a member of a namespace: `Bits::BitFormat`, `Finance::pmt`.
 
   ```
   namespace Geometry {
-      data Point { x: Number, y: Number }
-      data Line  { a: Point, b: Point }
+      data Point { x: Number, y: Number };
+      data Line  { a: Point, b: Point };
       midpoint(l: Line) = Point(x: (l.a.x + l.b.x) / 2, y: (l.a.y + l.b.y) / 2)
   }
   ```
+
+  Members are **`;`-separated** (a function body would otherwise run into the
+  next member via implicit multiplication; a trailing `;` is fine).
 
   Inside the block, names resolve locally first; outside, they're reached as
   `Geometry::Point`, `Geometry::midpoint`. Namespaces may be reopened (append to
@@ -155,8 +160,11 @@ host-neutral `BinaryView` stays sheet/workbook-agnostic.
    - ✅ **2a-i — namespaced data types** — `::` token, `namespace` blocks
      (data members), qualified resolution + qualified type identity + sibling
      field-type qualification; `modules.feature`. *(No runtime context needed.)*
-   - **2a-ii — namespaced functions + constants** — the home-context resolver
-     (members resolve siblings unqualified when called later), reopening, nesting.
+   - ✅ **2a-ii — namespaced functions** — `;`-separated members, the
+     home-namespace resolver (siblings resolve unqualified at call time, via
+     `EvaluationEnvironment.currentNamespace`, mirrored in `call(name:)` and
+     `tailStep`), qualified parameter-type dispatch, recursion. *(Constants and
+     nesting still deferred.)*
    - **2b — imports** (`import NAME`, unqualified access, loud conflicts).
    - **2c — persistence** (workbook `namespaces`/`imports`, restore order).
 3. **Builtins → modules + prelude** — registry reorg, `Module::name` aliases, prelude.

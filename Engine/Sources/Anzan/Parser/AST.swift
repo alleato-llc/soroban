@@ -110,6 +110,14 @@ public enum TypeAnnotation: Equatable, Sendable {
         case .named(let name): return name
         }
     }
+
+    /// Within a namespace, qualify a sibling type annotation (`p: Point` →
+    /// `p: Bits::Point`) so typed dispatch matches the qualified instances.
+    func qualified(namespace: String, siblings: Set<String>) -> TypeAnnotation {
+        guard case .named(let name) = self, !name.contains("::"),
+              siblings.contains(name.lowercased()) else { return self }
+        return .named("\(namespace)::\(name)")
+    }
 }
 
 /// One `key: value` pair of a map literal.

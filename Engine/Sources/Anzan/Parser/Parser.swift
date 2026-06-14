@@ -86,6 +86,8 @@ package struct Parser {
             throw EngineError.parseError(message: "cannot define '\(name)'", position: namePosition)
         }
 
+        // Members are `;`-separated (a function body would otherwise run into
+        // the next member via implicit multiplication); a trailing `;` is fine.
         var members: [Expression] = []
         while true {
             if case .rightBrace = current.kind { break }
@@ -94,6 +96,14 @@ package struct Parser {
                                              position: current.position)
             }
             members.append(try statement())
+            switch current.kind {
+            case .semicolon: _ = advance()
+            case .rightBrace: break
+            default:
+                throw EngineError.parseError(
+                    message: "separate namespace declarations with ';' — e.g. data A { … }; f(x) = …",
+                    position: current.position)
+            }
         }
         _ = advance() // '}'
         guard !members.isEmpty else {

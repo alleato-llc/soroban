@@ -101,7 +101,20 @@ extension Evaluator {
             for (parameter, argument) in zip(function.parameters, arguments) {
                 locals[parameter.name] = argument
             }
-            switch try tailStep(function.body, in: environment, locals: locals, depth: depth + 1) {
+            // A namespaced member resolves siblings unqualified while its body
+            // runs (home-context); a plain function pushes nil. Per-iteration so
+            // a tail call into another namespace sees the right home; balanced
+            // on throw. Nested (non-tail) calls push their own in their apply().
+            environment.enterNamespace(Self.homeNamespace(of: function.name))
+            let step: TailStep
+            do {
+                step = try tailStep(function.body, in: environment, locals: locals, depth: depth + 1)
+            } catch {
+                environment.leaveNamespace()
+                throw error
+            }
+            environment.leaveNamespace()
+            switch step {
             case .value(let value):
                 return value
             case .call(let next, let nextArguments, let nextCaptures):
@@ -111,6 +124,13 @@ extension Evaluator {
                 iterations += 1
             }
         }
+    }
+
+    /// The namespace a qualified name lives in — `Bits::area` → `Bits`, a plain
+    /// name → nil. (Flat namespaces for now; the prefix before the first `::`.)
+    static func homeNamespace(of name: String) -> String? {
+        guard let separator = name.range(of: "::") else { return nil }
+        return String(name[..<separator.lowerBound])
     }
 
     /// Walks tail positions: through the taken branch of if(), down to a
@@ -130,6 +150,16 @@ extension Evaluator {
         case .call(let name, let argumentExprs) where !registry.contains(name: name):
             let arguments = try arguments(of: argumentExprs, in: environment,
                                           locals: locals, depth: depth)
+            // Mirror call(name:)'s namespace-sibling resolution (home-context).
+            if let ns = environment.currentNamespace, !name.contains("::") {
+                let qualified = "\(ns)::\(name)"
+                if let function = environment.function(named: qualified) {
+                    return .call(function, arguments, captures: [:])
+                }
+                if let type = environment.dataType(named: qualified) {
+                    return .value(try construct(type, arguments: arguments))
+                }
+            }
             if let scoped = resolveScopedFunction?(name) {
                 return .call(scoped, arguments, captures: [:])
             }

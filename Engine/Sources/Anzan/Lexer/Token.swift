@@ -25,6 +25,7 @@ public struct Token: Equatable, Sendable {
         case leftBrace, rightBrace     // { } — map literals
         case colon             // : — map key separator (A:1 consumes its own ':')
         case colonColon        // :: — namespace qualifier (Geometry::Point)
+        case semicolon         // ; — separates declarations inside a namespace block
         case comma
         case end               // synthesized end-of-input marker
     }

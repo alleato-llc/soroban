@@ -101,6 +101,7 @@ package struct Lexer {
             "[": .leftBracket, "]": .rightBracket,
             "{": .leftBrace, "}": .rightBrace,
             ":": .colon, // a cell reference consumes its own ':' (A:1)
+            ";": .semicolon, // namespace member separator
             "×": .star, "·": .star, "÷": .slash, "−": .minus,
             "√": .sqrtSign,
             "<": .lessThan, ">": .greaterThan,
