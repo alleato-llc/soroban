@@ -174,16 +174,46 @@ struct BitFieldTests {
         _ = calculator.evaluate(CalculatorSessionBitsSchema.source)
         let value = try! calculator.evaluate(
             "Bits::BitFormat(fields: ["
-            + "Bits::BitField(name: \"owner\", bits: 3, kind: \"flags\", flags: [\"r\", \"w\", \"x\"], values: []), "
-            + "Bits::BitField(name: \"mode\", bits: 2, kind: \"enum\", flags: [], values: [\"idle\", \"run\", \"halt\", \"max\"]), "
-            + "Bits::BitField(name: \"rest\", bits: 3, kind: \"numeric\", flags: [], values: [])])").get()
+            + "Bits::BitField(name: \"owner\", bits: 3, kind: \"flags\", flags: [\"r\", \"w\", \"x\"], values: [], color: \"blue\", base: 10), "
+            + "Bits::BitField(name: \"mode\", bits: 2, kind: \"enum\", flags: [], values: [\"idle\", \"run\", \"halt\", \"max\"], color: \"green\", base: 10), "
+            + "Bits::BitField(name: \"rest\", bits: 3, kind: \"numeric\", flags: [], values: [], color: \"\", base: 16)])").get()
         guard case .value(let record) = value else { Issue.record("not a value"); return }
         let layout = BinaryView.layout(from: record)
         #expect(layout?.map(\.name) == ["owner", "mode", "rest"])
         #expect(layout?.map(\.width) == [3, 2, 3])
         #expect(layout?.first?.flags == ["r", "w", "x"])
+        #expect(layout?.map(\.color) == ["blue", "green", nil]) // empty color → nil (auto)
         #expect(layout?[1].values == ["idle", "run", "halt", "max"])
         #expect(layout?.last?.flags == nil && layout?.last?.values == nil) // numeric
+        #expect(layout?.last?.base == 16) // the numeric field reads in hex
+    }
+
+    @Test func numericFieldRendersAndParsesInItsBase() {
+        // The loose {bits, base} map form round-trips a per-field display base.
+        let layout = BinaryView.layout(from:
+            BinaryView.numericFormatMap([("oui", 8, 16), ("nic", 8, 10)]))
+        #expect(layout?.map(\.base) == [16, nil]) // base 10 normalizes to nil (decimal default)
+        // 0x1B44 across two octets → oui=0x1b (hex text), nic=68 (decimal text).
+        let fields = view("0x1B44").fields(layout ?? [])
+        #expect(fields.map(\.valueText) == ["0x1b", "68"])
+        #expect(fields.map(\.label) == ["0x1b", "68"])
+    }
+
+    @Test func parseIsTheInverseOfValueText() {
+        // Parse in the field's base…
+        #expect(BinaryView.parse("27", base: 10) == BigInt(27))
+        #expect(BinaryView.parse("1b", base: 16) == BigInt(27))
+        // …but an explicit prefix always wins over the base.
+        #expect(BinaryView.parse("0x1b", base: 10) == BigInt(27))
+        #expect(BinaryView.parse("0b101", base: 10) == BigInt(5))
+        #expect(BinaryView.parse("0o17", base: 10) == BigInt(15))
+        #expect(BinaryView.parse("zz", base: 16) == nil)
+        // Round-trip: a field's valueText parses back to its value, any base.
+        for base in [2, 8, 10, 16] {
+            let f = BinaryView.Field(name: "f", width: 8, lowBit: 0, value: BigInt(171),
+                                     flags: nil, values: nil, base: base)
+            #expect(BinaryView.parse(f.valueText, base: base) == BigInt(171))
+        }
     }
 
     @Test func enumFieldDecodesItsValueToALabel() {
@@ -205,7 +235,8 @@ struct BitFieldTests {
 private enum CalculatorSessionBitsSchema {
     static let source =
         "namespace Bits { data BitField { name: String, bits: Number, kind: String, "
-        + "flags: [String], values: [String] }; data BitFormat { fields: [BitField] } }"
+        + "flags: [String], values: [String], color: String, base: Number }; "
+        + "data BitFormat { fields: [BitField] } }"
 }
 
 @Suite("ans-prefix continuation")
@@ -243,5 +274,107 @@ struct AnsPrefixTests {
         #expect(Calculator.ansPrefixed("%5", mode: .programmer) == "ans%5")
         #expect(Calculator.ansPrefixed("<<2", mode: .programmer) == "ans<<2")
         #expect(Calculator.ansPrefixed("&3", mode: .programmer) == "ans&3")
+    }
+}
+
+@Suite("Format builder")
+struct FormatBuilderTests {
+    private func builder() -> BinaryView.FormatBuilder {
+        BinaryView.FormatBuilder(palette: ["blue", "green", "orange"])
+    }
+
+    @Test func claimToggleClears() {
+        var b = builder()
+        b.claim(5)
+        #expect(b.pendingWidth == 5)
+        b.claim(5) // clicking the same far edge clears
+        #expect(b.pendingWidth == 0)
+        b.claim(3)
+        #expect(b.pendingWidth == 3)
+    }
+
+    @Test func addFieldBuildsAKindedSpecAndResetsTheDraft() {
+        var b = builder()
+        // A flags field.
+        b.claim(3); b.draftName = "owner"; b.draftKind = .flags; b.draftLabels = "r, w, x"
+        b.addField()
+        // Draft reset, color advanced to the next palette entry.
+        #expect(b.pendingWidth == 0 && b.draftName == "" && b.draftKind == .numeric)
+        #expect(b.draftColor == "green")
+        // An enum field.
+        b.claim(2); b.draftName = "mode"; b.draftKind = .enumeration; b.draftLabels = "idle, run, halt, max"
+        b.addField()
+        // A hex numeric field.
+        b.claim(8); b.draftName = "rest"; b.draftKind = .numeric; b.draftBase = 16
+        b.addField()
+
+        let layout = b.layout
+        #expect(layout.map(\.name) == ["owner", "mode", "rest"])
+        #expect(layout.map(\.width) == [3, 2, 8])
+        #expect(layout[0].flags == ["r", "w", "x"])
+        #expect(layout[0].color == "blue")
+        #expect(layout[1].values == ["idle", "run", "halt", "max"])
+        #expect(layout[1].color == "green")
+        #expect(layout[2].base == 16 && layout[2].flags == nil && layout[2].values == nil)
+    }
+
+    @Test func flagsPadAndTruncateToWidth() {
+        var b = builder()
+        b.claim(3); b.draftName = "f"; b.draftKind = .flags; b.draftLabels = "a, b" // short
+        b.addField()
+        #expect(b.layout[0].flags == ["a", "b", "?"])
+        b.claim(2); b.draftName = "g"; b.draftKind = .flags; b.draftLabels = "a, b, c, d" // long
+        b.addField()
+        #expect(b.layout[1].flags == ["a", "b"])
+    }
+
+    @Test func canAddFieldGuardsNameAndClaim() {
+        var b = builder()
+        #expect(!b.canAddField)            // nothing claimed, no name
+        b.claim(3)
+        #expect(!b.canAddField)            // claimed, still no name
+        b.draftName = "  "
+        #expect(!b.canAddField)            // blank name
+        b.draftName = "x"
+        #expect(b.canAddField)
+        b.addField()
+        #expect(b.layout.count == 1)
+        // A no-op add (nothing claimed) leaves the builder unchanged.
+        b.addField()
+        #expect(b.layout.count == 1)
+    }
+
+    @Test func removeAndRecolor() {
+        var b = builder()
+        b.claim(3); b.draftName = "a"; b.addField()
+        b.claim(3); b.draftName = "b"; b.addField()
+        let firstID = b.fields[0].id
+        b.recolor(firstID, to: "teal")
+        #expect(b.fields[0].colorName == "teal")
+        b.remove(firstID)
+        #expect(b.fields.map(\.name) == ["b"])
+    }
+
+    @Test func widthArithmetic() {
+        var b = builder()
+        b.claim(3); b.draftName = "a"; b.addField()
+        b.claim(5); b.draftName = "b"; b.addField()
+        #expect(b.committedWidth == 8)
+        #expect(b.freeBits(registerWidth: 16) == 8)
+        #expect(b.freeBits(registerWidth: 4) == 0) // never negative
+    }
+
+    @Test func seedRoundTripsAnExistingLayout() {
+        let original = [
+            BinaryView.FieldSpec(name: "owner", width: 3, flags: ["r", "w", "x"], color: "blue"),
+            BinaryView.FieldSpec(name: "rest", width: 5, color: "green", base: 16),
+        ]
+        var b = builder()
+        b.seed(from: original)
+        #expect(b.fields.map(\.name) == ["owner", "rest"])
+        #expect(b.fields[0].kind == .flags)
+        #expect(b.fields[1].kind == .numeric && b.fields[1].base == 16)
+        // The layout reconstructs the same specs.
+        #expect(b.layout == original)
     }
 }

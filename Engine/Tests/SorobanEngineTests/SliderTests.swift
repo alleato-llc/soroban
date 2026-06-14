@@ -56,6 +56,18 @@ struct SliderTests {
         #expect(info.value(atFraction: -2) == BigDecimal(0))    // clamped
     }
 
+    @Test func widestValueTextReservesTheLongestLabel() throws {
+        // 0…10 step 1, decimals=0 → candidates "0","1","9","10","5"; widest "10".
+        let info = try #require(SliderInfo.extract(
+            from: try Parser.parse("slider(5, 0, 10, 1)"), name: nil))
+        #expect(info.widestValueText(format: .general) == "10")
+        // A fractional step realizes the worst case via a one-step neighbor;
+        // "0.25"/"0.75" tie on width, so assert the reserved width, not which one.
+        let fine = try #require(SliderInfo.extract(
+            from: try Parser.parse("slider(0, 0, 1, 0.25)"), name: nil))
+        #expect(fine.widestValueText(format: .general).count == 4)
+    }
+
     @Test func cellsRenderSliders() throws {
         let (calc, store) = makeStore()
         let grid = store.activeSheet.grid

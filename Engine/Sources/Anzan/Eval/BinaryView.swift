@@ -53,6 +53,17 @@ public struct BinaryView: Sendable, Equatable {
         (0..<width).reversed().map { (pattern & (BigInt(1) << $0)) != 0 }
     }
 
+    /// Parse an integer in `base` (2/8/10/16) — the inverse of a field's
+    /// `valueText`. A `0x`/`0o`/`0b` prefix always wins over `base`, so a hex
+    /// field accepts `1b` or `0x1b`. nil on malformed input.
+    public static func parse(_ text: String, base: Int) -> BigInt? {
+        let lower = text.lowercased()
+        if lower.hasPrefix("0x") { return BigInt(String(lower.dropFirst(2)), radix: 16) }
+        if lower.hasPrefix("0o") { return BigInt(String(lower.dropFirst(2)), radix: 8) }
+        if lower.hasPrefix("0b") { return BigInt(String(lower.dropFirst(2)), radix: 2) }
+        return BigInt(text, radix: base)
+    }
+
     /// The current value, reconstructed in its original kind (a fixed-width int
     /// keeps its type and signedness; a plain register is a Number).
     public var value: Value {
@@ -116,8 +127,18 @@ extension BinaryView {
         public let width: Int
         public let flags: [String]?
         public let values: [String]?
-        public init(name: String, width: Int, flags: [String]? = nil, values: [String]? = nil) {
-            self.name = name; self.width = width; self.flags = flags; self.values = values
+        /// A presentational color NAME (the host maps it to a real color); nil
+        /// means "auto" (the host cycles a palette by position). Opaque to the
+        /// engine — it never interprets it.
+        public let color: String?
+        /// The radix a NUMERIC field's value is displayed/entered in — 2, 8, 10,
+        /// or 16. nil (or 10) is decimal; the others read `0b…`/`0o…`/`0x…`.
+        /// Presentation only, like `color` — ignored for flags/enum fields.
+        public let base: Int?
+        public init(name: String, width: Int, flags: [String]? = nil,
+                    values: [String]? = nil, color: String? = nil, base: Int? = nil) {
+            self.name = name; self.width = width; self.flags = flags
+            self.values = values; self.color = color; self.base = base
         }
     }
 
@@ -131,6 +152,7 @@ extension BinaryView {
         public let value: BigInt     // the field's unsigned value
         public let flags: [String]?  // per-bit flag names (high→low), nil = not flags
         public let values: [String]? // enum value labels (value indexes them), nil = not enum
+        public let base: Int?        // display radix for a numeric field (2/8/10/16), nil = 10
 
         /// The decoded meaning of a flag field: single-char flags read
         /// positionally with `-` for clear bits (`r-x`); multi-char flags list
@@ -159,10 +181,22 @@ extension BinaryView {
             return values[index]
         }
 
+        /// A numeric field's value spelled in its display base — `0x1b` (hex),
+        /// `0o33` (octal), `0b11011` (binary), or plain decimal. Used for both
+        /// the readout and as the editable text.
+        public var valueText: String {
+            switch base ?? 10 {
+            case 16: return "0x" + String(value, radix: 16)
+            case 8: return "0o" + String(value, radix: 8)
+            case 2: return "0b" + String(value, radix: 2)
+            default: return String(value)
+            }
+        }
+
         /// The field's human-readable decode — enum label, flag string, or the
-        /// plain number — whichever applies.
+        /// numeric value in its base — whichever applies.
         public var label: String {
-            enumString ?? flagString ?? String(value)
+            enumString ?? flagString ?? valueText
         }
 
         /// Is the flag at position `i` (0 = the field's high bit) set?
@@ -195,6 +229,12 @@ extension BinaryView {
                         names.append(name)
                     }
                     layout.append(FieldSpec(name: entry.key, width: names.count, flags: names))
+                case .map(let inner):
+                    // A numeric field with a display base: `{bits: 8, base: 16}`.
+                    guard case .number(let n)? = member(inner, "bits"),
+                          n.isInteger, let width = n.intValue, width >= 1 else { return nil }
+                    layout.append(FieldSpec(name: entry.key, width: width,
+                                            base: normalizedBase(member(inner, "base"))))
                 default:
                     return nil
                 }
@@ -205,24 +245,26 @@ extension BinaryView {
             // A BitFormat-shaped record: a `fields` list of BitField records. Each
             // field is a flags / enum / numeric field — chosen by `kind` when the
             // record carries it, else derived from which list is non-empty.
-            guard case .array(let fieldValues)? = member(record, "fields"), !fieldValues.isEmpty
+            guard case .array(let fieldValues)? = member(record.entries, "fields"), !fieldValues.isEmpty
             else { return nil }
             var layout: [FieldSpec] = []
             for fieldValue in fieldValues {
                 guard case .record(let field) = fieldValue,
-                      case .string(let name)? = member(field, "name") else { return nil }
-                let kind: String? = if case .string(let k)? = member(field, "kind") { k } else { nil }
-                let flags = stringList(member(field, "flags"))
-                let values = stringList(member(field, "values"))
+                      case .string(let name)? = member(field.entries, "name") else { return nil }
+                let kind: String? = if case .string(let k)? = member(field.entries, "kind") { k } else { nil }
+                let color: String? = if case .string(let c)? = member(field.entries, "color"), !c.isEmpty { c } else { nil }
+                let base = normalizedBase(member(field.entries, "base"))
+                let flags = stringList(member(field.entries, "flags"))
+                let values = stringList(member(field.entries, "values"))
                 if (kind == "flags" || kind == nil), let flags, !flags.isEmpty {
-                    layout.append(FieldSpec(name: name, width: flags.count, flags: flags))
+                    layout.append(FieldSpec(name: name, width: flags.count, flags: flags, color: color))
                 } else if (kind == "enum" || kind == nil), let values, !values.isEmpty,
-                          case .number(let bits)? = member(field, "bits"),
+                          case .number(let bits)? = member(field.entries, "bits"),
                           bits.isInteger, let width = bits.intValue, width >= 1 {
-                    layout.append(FieldSpec(name: name, width: width, values: values))
-                } else if case .number(let bits)? = member(field, "bits"),
+                    layout.append(FieldSpec(name: name, width: width, values: values, color: color))
+                } else if case .number(let bits)? = member(field.entries, "bits"),
                           bits.isInteger, let width = bits.intValue, width >= 1 {
-                    layout.append(FieldSpec(name: name, width: width))
+                    layout.append(FieldSpec(name: name, width: width, color: color, base: base))
                 } else {
                     return nil
                 }
@@ -234,8 +276,8 @@ extension BinaryView {
         }
     }
 
-    private static func member(_ record: Value.RecordValue, _ key: String) -> Value? {
-        record.entries.first { $0.key == key }?.value
+    private static func member(_ entries: [Value.MapEntry], _ key: String) -> Value? {
+        entries.first { $0.key == key }?.value
     }
 
     private static func stringList(_ value: Value?) -> [String]? {
@@ -243,6 +285,14 @@ extension BinaryView {
         var names: [String] = []
         for item in items { guard case .string(let name) = item else { return nil }; names.append(name) }
         return names
+    }
+
+    /// A display radix from a `base` member — only 2/8/10/16 are honored; 10 and
+    /// anything else collapse to nil (decimal). Keeps a stray value from picking
+    /// a nonsense radix.
+    private static func normalizedBase(_ value: Value?) -> Int? {
+        guard case .number(let n)? = value, n.isInteger, let b = n.intValue else { return nil }
+        return (b == 2 || b == 8 || b == 16) ? b : nil
     }
 
     /// Build a format map from numeric (name, width) pairs — the inverse of
@@ -256,6 +306,18 @@ extension BinaryView {
     public static func flagFormatMap(_ pairs: [(name: String, flags: [String])]) -> Value {
         .map(pairs.map { pair in
             Value.MapEntry(key: pair.name, value: .array(pair.flags.map { Value.string($0) }))
+        })
+    }
+
+    /// Build a format map of numeric fields that carry a display BASE — each
+    /// value is a `{bits, base}` map (`octet: {bits: 8, base: 16}`), the form
+    /// `layout(from:)` reads back into a based numeric field.
+    public static func numericFormatMap(_ pairs: [(name: String, width: Int, base: Int)]) -> Value {
+        .map(pairs.map { pair in
+            Value.MapEntry(key: pair.name, value: .map([
+                Value.MapEntry(key: "bits", value: .number(BigDecimal(pair.width))),
+                Value.MapEntry(key: "base", value: .number(BigDecimal(pair.base))),
+            ]))
         })
     }
 
@@ -274,7 +336,7 @@ extension BinaryView {
             let mask = (BigInt(1) << f.width) - 1
             let value = low >= 0 ? (pattern >> low) & mask : BigInt(0)
             return Field(name: f.name, width: f.width, lowBit: max(low, 0), value: value,
-                         flags: f.flags, values: f.values)
+                         flags: f.flags, values: f.values, base: f.base)
         }
     }
 

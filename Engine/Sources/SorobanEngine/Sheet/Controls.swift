@@ -76,6 +76,15 @@ public struct SliderInfo: Equatable, Sendable {
               let offset = Double((value - minimum).description) else { return 0 }
         return Swift.min(Swift.max(offset / spanValue, 0), 1)
     }
+
+    /// The widest value label this slider can show in `format` — the grid
+    /// reserves this width so the track never resizes mid-drag. The worst case
+    /// of integer digits × step decimals is one of min/max and their one-step
+    /// neighbors; the current value covers a long resting literal.
+    public func widestValueText(format: NumberFormat) -> String {
+        [minimum, minimum + step, maximum - step, maximum, value]
+            .map(format.rendered).max { $0.count < $1.count } ?? ""
+    }
 }
 
 /// A checkbox cell: `flag = checkbox(true)`. Clicking flips the literal.

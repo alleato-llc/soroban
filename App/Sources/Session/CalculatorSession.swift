@@ -128,6 +128,21 @@ final class CalculatorSession {
         ("TCP flags", BinaryView.flagFormatMap([
             ("flags", ["CWR", "ECE", "URG", "ACK", "PSH", "RST", "SYN", "FIN"])])),
         ("RGB565", BinaryView.formatMap([("r", 5), ("g", 6), ("b", 5)])),
+        // A 32-bit register split into four octets — type an IP as a plain
+        // integer (or 0x address) and read/edit it dotted-quad style.
+        ("IPv4 address", BinaryView.formatMap([
+            ("octet1", 8), ("octet2", 8), ("octet3", 8), ("octet4", 8)])),
+        // 48-bit MAC, six hex octets (register rounds up to 64 — 48 isn't a
+        // width): the high three octets are the OUI (vendor), the low three the
+        // device.
+        ("MAC address", BinaryView.numericFormatMap([
+            ("oui1", 8, 16), ("oui2", 8, 16), ("oui3", 8, 16),
+            ("nic1", 8, 16), ("nic2", 8, 16), ("nic3", 8, 16)])),
+        // 128-bit IPv6, eight 16-bit hextets, shown in hex (the conventional
+        // colon form).
+        ("IPv6 address", BinaryView.numericFormatMap([
+            ("h1", 16, 16), ("h2", 16, 16), ("h3", 16, 16), ("h4", 16, 16),
+            ("h5", 16, 16), ("h6", 16, 16), ("h7", 16, 16), ("h8", 16, 16)])),
     ]
 
     /// Custom/saved formats persisted in the workbook — any environment variable
@@ -184,18 +199,24 @@ final class CalculatorSession {
     /// phases 4–5). Emitted once per workbook, before the first saved format, so
     /// formats persist as typed records (`Bits::BitFormat`) rather than loose maps.
     /// A field's `kind` is "numeric", "flags" (per-bit names), or "enum" (value
-    /// labels); the unused list is empty.
+    /// labels); the unused list is empty. `color` is a presentational palette name.
     static let bitsNamespaceSource =
         "namespace Bits { data BitField { name: String, bits: Number, kind: String, "
-        + "flags: [String], values: [String] }; data BitFormat { fields: [BitField] } }"
+        + "flags: [String], values: [String], color: String, base: Number }; "
+        + "data BitFormat { fields: [BitField] } }"
+
+    /// The bit-field band palette, by NAME — the persisted `color` of a field is
+    /// one of these; the view maps each name to a real (theme-adapting) color.
+    static let fieldColorNames = ["blue", "green", "orange", "purple", "pink", "teal"]
 
     /// A layout rendered as a `Bits::BitFormat(...)` constructor call — the typed,
-    /// re-parseable form the binary editor saves.
+    /// re-parseable form the binary editor saves. A field with no explicit color
+    /// gets the palette name for its position.
     private static func bitFormatSource(_ layout: [BinaryView.FieldSpec]) -> String {
         func list(_ strings: [String]) -> String {
             strings.map { "\"\($0)\"" }.joined(separator: ", ")
         }
-        let fields = layout.map { spec -> String in
+        let fields = layout.enumerated().map { index, spec -> String in
             let kind: String, flags: [String], values: [String]
             if let f = spec.flags, !f.isEmpty {
                 kind = "flags"; flags = f; values = []
@@ -204,8 +225,11 @@ final class CalculatorSession {
             } else {
                 kind = "numeric"; flags = []; values = []
             }
+            let color = spec.color ?? fieldColorNames[index % fieldColorNames.count]
+            let base = spec.base ?? 10
             return "Bits::BitField(name: \"\(spec.name)\", bits: \(spec.width), "
-                + "kind: \"\(kind)\", flags: [\(list(flags))], values: [\(list(values))])"
+                + "kind: \"\(kind)\", flags: [\(list(flags))], values: [\(list(values))], "
+                + "color: \"\(color)\", base: \(base))"
         }.joined(separator: ", ")
         return "Bits::BitFormat(fields: [\(fields)])"
     }

@@ -24,38 +24,25 @@ struct BinaryEditorView: View {
     @State private var showingSave = false
 
     // Visual format builder (build mode): drag/click free bits to carve a group,
-    // detail it (name/kind/labels), add it; live-preview as you go; save.
+    // detail it (name/kind/labels), add it; live-preview as you go; save. The
+    // logic lives in the engine's BinaryView.FormatBuilder; this view is bindings.
     @State private var building = false
-    @State private var builtFields: [BuilderField] = []
-    @State private var pendingWidth = 0
-    @State private var draftName = ""
-    @State private var draftKind: BuilderField.Kind = .numeric
-    @State private var draftLabels = ""
+    @State private var builder = BinaryView.FormatBuilder(palette: CalculatorSession.fieldColorNames)
     @State private var builderName = ""
 
-    /// Distinct band colors cycled per field (system colors adapt to light/dark).
-    private static let fieldColors: [Color] = [.blue, .green, .orange, .purple, .pink, .teal]
+    /// Distinct band colors cycled per field (system colors adapt to light/dark),
+    /// paired with the NAME persisted in a field's `color`. Order matches
+    /// `CalculatorSession.fieldColorNames`.
+    private static let fieldColors: [(name: String, color: Color)] = [
+        ("blue", .blue), ("green", .green), ("orange", .orange),
+        ("purple", .purple), ("pink", .pink), ("teal", .teal),
+    ]
 
-    /// A field as the builder accumulates it; converts to a `BinaryView.FieldSpec`
-    /// (flags padded/truncated to the field's bit width; enum labels as-is).
-    struct BuilderField: Identifiable {
-        let id = UUID()
-        var name: String
-        var width: Int
-        var kind: Kind
-        var labels: [String]
-        enum Kind: String, CaseIterable, Identifiable { case numeric = "Numeric", flags = "Flags", enumeration = "Enum"; var id: String { rawValue } }
-
-        var spec: BinaryView.FieldSpec {
-            switch kind {
-            case .numeric: return .init(name: name, width: width)
-            case .flags:
-                var f = labels
-                if f.count < width { f += Array(repeating: "?", count: width - f.count) }
-                return .init(name: name, width: width, flags: Array(f.prefix(width)))
-            case .enumeration: return .init(name: name, width: width, values: labels)
-            }
-        }
+    /// Map a persisted color name to a color; unknown/nil falls back to the
+    /// palette cycled by `position`.
+    private static func color(named name: String?, position: Int) -> Color {
+        if let name, let match = fieldColors.first(where: { $0.name == name }) { return match.color }
+        return fieldColors[position % fieldColors.count].color
     }
 
     var body: some View {
@@ -238,26 +225,16 @@ struct BinaryEditorView: View {
         showingSave = false
     }
 
-    // MARK: Visual format builder (build mode)
+    // MARK: Visual format builder (build mode) — bindings over BinaryView.FormatBuilder
 
-    private var committedWidth: Int { builtFields.reduce(0) { $0 + $1.width } }
-    private func freeBits(_ view: BinaryView) -> Int { max(0, view.width - committedWidth) }
-
-    /// Enter build mode, seeding from the active format so an existing one can be
-    /// tweaked. Closes the other disclosure rows.
+    /// Enter build mode, seeding the builder from the active format so an existing
+    /// one can be tweaked. Closes the other disclosure rows.
     private func startBuilding() {
-        builtFields = (session.activeLayout ?? []).map { spec in
-            if let flags = spec.flags {
-                BuilderField(name: spec.name, width: spec.width, kind: .flags, labels: flags)
-            } else if let values = spec.values {
-                BuilderField(name: spec.name, width: spec.width, kind: .enumeration, labels: values)
-            } else {
-                BuilderField(name: spec.name, width: spec.width, kind: .numeric, labels: [])
-            }
-        }
+        var seeded = BinaryView.FormatBuilder(palette: CalculatorSession.fieldColorNames)
+        seeded.seed(from: session.activeLayout ?? [])
+        builder = seeded
         let name = session.activeFormatName
         builderName = (name == "Custom" || name == nil) ? "" : name!
-        pendingWidth = 0; draftName = ""; draftKind = .numeric; draftLabels = ""
         showingCustom = false; showingSave = false
         building = true
     }
@@ -268,16 +245,20 @@ struct BinaryEditorView: View {
             Text("Click the open bits to claim a group, then name it below.")
                 .font(theme.font(scale: 0.7)).foregroundStyle(theme.secondaryText.color)
             builderStrip(view)
-            if pendingWidth > 0 { pendingDetail }
+            if builder.pendingWidth > 0 { pendingDetail }
             HStack(spacing: 8) {
                 Text("format").font(theme.font(scale: 0.8)).foregroundStyle(theme.secondaryText.color)
                 TextField("name", text: $builderName)
                     .textFieldStyle(.roundedBorder).font(theme.font(scale: 0.8)).frame(width: 130)
-                Button("Save") { saveBuild() }
-                    .controlSize(.small)
-                    .disabled(builtFields.isEmpty || builderName.trimmingCharacters(in: .whitespaces).isEmpty)
-                Button("Apply") { applyBuild() }
-                    .controlSize(.small).disabled(builtFields.isEmpty)
+                Button("Save") {
+                    session.saveBuiltFormat(builder.layout, named: builderName); building = false
+                }
+                .controlSize(.small)
+                .disabled(builder.isEmpty || builderName.trimmingCharacters(in: .whitespaces).isEmpty)
+                Button("Apply") {
+                    session.applyBuiltFormat(builder.layout); building = false
+                }
+                .controlSize(.small).disabled(builder.isEmpty)
                 Spacer()
                 Button("Cancel") { building = false }.controlSize(.small)
             }
@@ -288,18 +269,18 @@ struct BinaryEditorView: View {
     /// by the open bits as clickable cells. Clicking the j-th open cell claims a
     /// j-bit pending group; the claimed cells highlight.
     private func builderStrip(_ view: BinaryView) -> some View {
-        let free = freeBits(view)
+        let free = builder.freeBits(registerWidth: view.width)
         // One group claims up to 32 bits at a time (plenty for any real subfield);
         // more open bits become further groups, so the whole register is reachable.
         let shown = min(free, 32)
         return FlowLayout(spacing: 8, lineSpacing: 8) {
-            ForEach(Array(builtFields.enumerated()), id: \.element.id) { i, field in
-                committedBand(field, color: Self.fieldColors[i % Self.fieldColors.count])
+            ForEach(Array(builder.fields.enumerated()), id: \.element.id) { i, field in
+                committedBand(field, position: i)
             }
             ForEach(1...max(shown, 1), id: \.self) { j in
                 if j <= shown { openCell(index: j) }
             }
-            if free == 0 && builtFields.isEmpty {
+            if free == 0 && builder.isEmpty {
                 Text("widen the register to add bits")
                     .font(theme.font(scale: 0.7)).foregroundStyle(theme.secondaryText.color)
             }
@@ -307,28 +288,59 @@ struct BinaryEditorView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func committedBand(_ field: BuilderField, color: Color) -> some View {
-        VStack(spacing: 2) {
+    private func committedBand(_ field: BinaryView.FormatBuilder.Field, position: Int) -> some View {
+        let color = Self.color(named: field.colorName, position: position)
+        return VStack(spacing: 2) {
             Text(field.name).font(theme.font(scale: 0.68)).foregroundStyle(color).lineLimit(1)
-            Text("\(field.width)b · \(field.kind.rawValue.lowercased())")
-                .font(theme.font(scale: 0.6)).foregroundStyle(theme.secondaryText.color)
+            HStack(spacing: 4) {
+                // The swatch is a menu: recolor this field.
+                Menu {
+                    ForEach(Self.fieldColors, id: \.name) { entry in
+                        Button { builder.recolor(field.id, to: entry.name) } label: {
+                            Label(entry.name.capitalized, systemImage:
+                                field.colorName == entry.name ? "checkmark.circle.fill" : "circle.fill")
+                        }
+                    }
+                } label: {
+                    Circle().fill(color).frame(width: 8, height: 8)
+                }
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                Text("\(field.width)b · \(field.kind.rawValue.lowercased())")
+                    .font(theme.font(scale: 0.6)).foregroundStyle(theme.secondaryText.color)
+            }
         }
         .padding(.horizontal, 8).padding(.vertical, 5)
         .background(color.opacity(0.15))
         .overlay(RoundedRectangle(cornerRadius: 5).stroke(color.opacity(0.5)))
         .overlay(alignment: .topTrailing) {
-            Button { builtFields.removeAll { $0.id == field.id }; pendingWidth = 0 } label: {
+            Button { builder.remove(field.id) } label: {
                 Image(systemName: "xmark.circle.fill").font(.system(size: 11))
             }
             .buttonStyle(.plain).foregroundStyle(theme.secondaryText.color).offset(x: 4, y: -4)
         }
     }
 
+    /// A row of selectable color swatches for the pending field.
+    private var colorSwatches: some View {
+        HStack(spacing: 4) {
+            ForEach(Self.fieldColors, id: \.name) { entry in
+                Button { builder.draftColor = entry.name } label: {
+                    Circle().fill(entry.color)
+                        .frame(width: 14, height: 14)
+                        .overlay(Circle().stroke(theme.resultText.color,
+                                                 lineWidth: builder.draftColor == entry.name ? 2 : 0))
+                }
+                .buttonStyle(.plain)
+                .help(entry.name.capitalized)
+            }
+        }
+    }
+
     private func openCell(index j: Int) -> some View {
-        let claimed = j <= pendingWidth
+        let claimed = j <= builder.pendingWidth
         let accent = theme.accent.color
         return Button {
-            pendingWidth = (pendingWidth == j) ? 0 : j // click the same far edge to clear
+            builder.claim(j)
         } label: {
             RoundedRectangle(cornerRadius: 3)
                 .fill(claimed ? accent.opacity(0.3) : theme.inputBackground.color)
@@ -342,48 +354,35 @@ struct BinaryEditorView: View {
 
     private var pendingDetail: some View {
         HStack(spacing: 8) {
-            Text("\(pendingWidth)b").font(theme.font(scale: 0.78)).foregroundStyle(theme.accent.color)
-            TextField("name", text: $draftName)
+            Text("\(builder.pendingWidth)b").font(theme.font(scale: 0.78)).foregroundStyle(theme.accent.color)
+            TextField("name", text: $builder.draftName)
                 .textFieldStyle(.roundedBorder).font(theme.font(scale: 0.8)).frame(width: 90)
-            Picker("", selection: $draftKind) {
-                ForEach(BuilderField.Kind.allCases) { Text($0.rawValue).tag($0) }
+            Picker("", selection: $builder.draftKind) {
+                ForEach(BinaryView.FormatBuilder.FieldKind.allCases) { Text($0.rawValue).tag($0) }
             }
             .labelsHidden().fixedSize()
-            switch draftKind {
+            switch builder.draftKind {
             case .numeric:
-                EmptyView()
+                Picker("", selection: $builder.draftBase) {
+                    Text("dec").tag(10)
+                    Text("hex").tag(16)
+                }
+                .pickerStyle(.segmented).labelsHidden().fixedSize()
+                .help("How this field's value reads — decimal or hex (0x…)")
             case .flags:
-                TextField("r, w, x", text: $draftLabels)
+                TextField("r, w, x", text: $builder.draftLabels)
                     .textFieldStyle(.roundedBorder).font(theme.font(scale: 0.8))
                     .help("One name per bit, high→low (extra are dropped, missing become ?)")
             case .enumeration:
-                TextField("idle, run, halt, max", text: $draftLabels)
+                TextField("idle, run, halt, max", text: $builder.draftLabels)
                     .textFieldStyle(.roundedBorder).font(theme.font(scale: 0.8))
                     .help("A label per value, starting at 0")
             }
-            Button("Add field") { addField() }
+            colorSwatches
+            Button("Add field") { builder.addField() }
                 .controlSize(.small)
-                .disabled(draftName.trimmingCharacters(in: .whitespaces).isEmpty)
+                .disabled(!builder.canAddField)
         }
-    }
-
-    private func addField() {
-        let name = draftName.trimmingCharacters(in: .whitespaces)
-        guard !name.isEmpty, pendingWidth >= 1 else { return }
-        let labels = draftKind == .numeric ? [] :
-            draftLabels.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
-        builtFields.append(BuilderField(name: name, width: pendingWidth, kind: draftKind, labels: labels))
-        pendingWidth = 0; draftName = ""; draftKind = .numeric; draftLabels = ""
-    }
-
-    private func applyBuild() {
-        session.applyBuiltFormat(builtFields.map(\.spec))
-        building = false
-    }
-
-    private func saveBuild() {
-        session.saveBuiltFormat(builtFields.map(\.spec), named: builderName)
-        building = false
     }
 
     // MARK: Plain grid (no format) — nibble groups in even rows
@@ -417,7 +416,7 @@ struct BinaryEditorView: View {
                 unusedSegment(low: total, count: unused, bits: bits, view: view, style: style)
             }
             ForEach(Array(fields.enumerated()), id: \.element.name) { i, field in
-                fieldSegment(field, color: Self.fieldColors[i % Self.fieldColors.count],
+                fieldSegment(field, color: Self.color(named: layout[i].color, position: i),
                              bits: bits, view: view, style: style)
             }
         }
@@ -523,16 +522,17 @@ struct BinaryEditorView: View {
             set: { session.setBinaryField(field.name, to: BigInt($0)) })
     }
 
-    /// Live edit of a field's value — parses to BigInt and rewrites its bit
-    /// range (clamped engine-side).
+    /// Live edit of a field's value — shown in the field's base (`0x…` for hex)
+    /// and parsed in that base, but a `0x`/`0o`/`0b` prefix always wins, so a hex
+    /// field accepts `1b` or `0x1b`. Rewrites its bit range (clamped engine-side).
     private func fieldBinding(_ field: BinaryView.Field) -> Binding<String> {
         Binding(
-            get: { String(field.value) },
+            get: { field.valueText },
             set: { text in
                 let trimmed = text.trimmingCharacters(in: .whitespaces)
                 if trimmed.isEmpty {
                     session.setBinaryField(field.name, to: BigInt(0))
-                } else if let value = BigInt(trimmed) {
+                } else if let value = BinaryView.parse(trimmed, base: field.base ?? 10) {
                     session.setBinaryField(field.name, to: value)
                 }
             })

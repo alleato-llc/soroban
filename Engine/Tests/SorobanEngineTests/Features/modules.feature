@@ -192,3 +192,40 @@ Feature: Namespaces group declarations under a qualified name
     Then the result is "299792458"
     When I calculate "Phys::energy(2)"
     Then the result is "179751035747363528"
+
+  # docs/PROGRAMMER.md worked example — a real subnetting toolkit built from
+  # namespaces + fixed-width integers + the bitwise builtins (no engine change).
+  # Pinned here so the documented recipe can't rot.
+
+  Scenario: An IPv4 subnetting toolkit composes from namespaces and fixed-width ints
+    Given I calculate "namespace Net { ip(a,b,c,d) = UInt32(a)*16777216 + UInt32(b)*65536 + UInt32(c)*256 + UInt32(d); mask(p) = UInt32(2^32 - 2^(32 - p)); wildcard(p) = bitNot(mask(p)); network(addr, p) = bitAnd(addr, mask(p)); broadcast(addr, p) = bitOr(addr, wildcard(p)); hosts(p) = 2^(32 - p) - 2 }"
+    And I calculate "addr = Net::ip(192, 168, 1, 130)"
+    When I calculate "Net::network(addr, 24) == 3232235776"
+    Then the result is "1"
+    When I calculate "Net::broadcast(addr, 24) == 3232236031"
+    Then the result is "1"
+    When I calculate "Net::hosts(24)"
+    Then the result is "254"
+    When I calculate "Net::network(addr, 26) == 3232235904"
+    Then the result is "1"
+    When I calculate "Net::hosts(26)"
+    Then the result is "62"
+
+  Scenario: IPv6 subnetting scales the same toolkit to a 128-bit UInt128
+    Given I calculate "namespace Net6 { mask(p) = UInt128(2^128 - 2^(128 - p)); network(addr, p) = bitAnd(addr, mask(p)); hosts(p) = 2^(128 - p); hextet(addr, i) = bitAnd(bitShift(addr, -16 * (7 - i)), 65535) }"
+    And I calculate "addr = UInt128(2) * 2^112 + UInt128(0xdb8) * 2^96 + UInt128(0xabcd)"
+    When I calculate "Net6::hextet(addr, 0) == 2"
+    Then the result is "1"
+    When I calculate "Net6::hextet(addr, 1) == 3512"
+    Then the result is "1"
+    When I calculate "Net6::network(addr, 64) == bitAnd(addr, UInt128(2^128 - 2^64))"
+    Then the result is "1"
+    When I calculate "Net6::hosts(64)"
+    Then the result is "18446744073709551616"
+
+  Scenario: A MAC address splits into OUI and device with a UInt64
+    Given I calculate "mac = UInt64(0x001B44113AB7)"
+    When I calculate "bitAnd(bitShift(mac, -24), 0xFFFFFF) == 0x001B44"
+    Then the result is "1"
+    When I calculate "bitAnd(mac, 0xFFFFFF) == 0x113AB7"
+    Then the result is "1"

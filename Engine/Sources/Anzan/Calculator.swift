@@ -296,6 +296,15 @@ public enum EvalOutcome: Equatable, Sendable, CustomStringConvertible {
 public struct Completion: Hashable, Sendable {
     public enum Kind: Hashable, Sendable {
         case function, variable, constant
+
+        /// Short tag shown beside a completion (`ƒ` for a function, etc.).
+        public var badge: String {
+            switch self {
+            case .function: "ƒ"
+            case .variable: "var"
+            case .constant: "const"
+            }
+        }
     }
 
     public let name: String

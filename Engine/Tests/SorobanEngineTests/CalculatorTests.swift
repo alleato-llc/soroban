@@ -60,6 +60,12 @@ struct CompletionTests {
             .sorted { $0.lowercased() < $1.lowercased() })
     }
 
+    @Test func kindBadges() {
+        #expect(Completion.Kind.function.badge == "ƒ")
+        #expect(Completion.Kind.variable.badge == "var")
+        #expect(Completion.Kind.constant.badge == "const")
+    }
+
     @Test func emptyPrefixAndExactMatchesYieldNothing() {
         let calc = Calculator()
         #expect(calc.completions(forPrefix: "").isEmpty)

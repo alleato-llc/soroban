@@ -52,7 +52,7 @@ struct SuggestionsView: View {
 
     private func row(_ completion: Completion, isSelected: Bool) -> some View {
         HStack(spacing: 8) {
-            Text(badge(for: completion.kind))
+            Text(completion.kind.badge)
                 .font(theme.font(scale: 0.8))
                 .foregroundStyle(theme.secondaryText.color)
                 .frame(width: 36, alignment: .trailing)
@@ -75,13 +75,5 @@ struct SuggestionsView: View {
     private var highlightedDoc: FunctionDoc? {
         guard session.suggestions.indices.contains(session.selectedSuggestion) else { return nil }
         return session.documentation(for: session.suggestions[session.selectedSuggestion].name)
-    }
-
-    private func badge(for kind: Completion.Kind) -> String {
-        switch kind {
-        case .function: "ƒ"
-        case .variable: "var"
-        case .constant: "const"
-        }
     }
 }

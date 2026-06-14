@@ -146,7 +146,7 @@ struct CellView: View, Equatable {
             // expression; the value text shows the cell's number format).
             SliderCellContent(address: address, info: info,
                               valueText: format.numberFormat.rendered(info.value),
-                              widestValueText: Self.widestSliderText(info, format: format.numberFormat),
+                              widestValueText: info.widestValueText(format: format.numberFormat),
                               theme: theme)
                 .help("\(info.name.map { "\($0) — " } ?? "")\(raw)")
 
@@ -214,17 +214,6 @@ struct CellView: View, Equatable {
 
     /// NSAlert with a text field — names are rare enough that a modal beats
     /// new chrome. Re-prompts with the error message on invalid input.
-    /// The longest label this slider can show under `format`, reserved as
-    /// the value text's width so the track never resizes mid-drag (see
-    /// SliderCellContent.widestValueText). Min/max and their one-step
-    /// neighbors realize the worst case of integer digits × step decimals;
-    /// the current value covers long resting literals.
-    private static func widestSliderText(_ info: SliderInfo, format: NumberFormat) -> String {
-        let candidates = [info.minimum, info.minimum + info.step,
-                          info.maximum - info.step, info.maximum, info.value]
-        return candidates.map(format.rendered).max { $0.count < $1.count } ?? ""
-    }
-
     private func promptForCellName(sheet: SheetModel, address: CellAddress, current: String?) {
         sheet.retargetSelection(toInclude: address)
         var message: String? = nil
