@@ -108,6 +108,28 @@ Feature: Namespaces group declarations under a qualified name
   # docs/MODULES.md 2c: namespaces (their declaration lines) and imports persist
   # in the workbook and replay on open, in dependency order.
 
+  # docs/MODULES.md phase 3: every builtin is also reachable as Module::name
+  # (its category), while the bare name stays global (the prelude).
+
+  Scenario: A builtin is reachable by its module, and the bare name stays global
+    When I calculate "Core::sqrt(16)"
+    Then the result is "4"
+    When I calculate "Core::sqrt(16) == sqrt(16)"
+    Then the result is "1"
+
+  Scenario: A qualified builtin must belong to that module
+    When I calculate "Finance::sqrt(16)"
+    Then the calculation fails mentioning "unknown function 'Finance::sqrt'"
+
+  Scenario: A qualified builtin works as a value
+    When I calculate "map(Core::sqrt, [4, 9, 16])"
+    Then the result is "[2, 3, 4]"
+
+  Scenario: Importing a builtin module is a no-op — its members are in the prelude
+    Given I calculate "import Stats"
+    When I calculate "median(1, 2, 3, 4, 5)"
+    Then the result is "3"
+
   Scenario: A namespace and its import survive save and reopen
     Given I calculate "namespace Geo { data Point { x: Number, y: Number }; dist(p: Point) = sqrt(p.x^2 + p.y^2) }"
     And I calculate "import Geo"

@@ -150,6 +150,10 @@ struct Evaluator {
             if let qualified = environment.importedName(name) {
                 return .function(FunctionValue(kind: .user(name: qualified)))
             }
+            // A qualified builtin as a value — `map(Finance::pmt, …)`.
+            if let bare = registry.resolveQualified(name) {
+                return .function(FunctionValue(kind: .builtin(bare)))
+            }
             throw EngineError.unknownVariable(name: name)
 
         case .lambda(let parameters, let body):
@@ -327,6 +331,11 @@ struct Evaluator {
             if environment.importedNamespaces.contains(where: { $0.lowercased() == name.lowercased() }) {
                 return .number(.zero)
             }
+            // A builtin module (Finance, Stats, …) is already in the global
+            // prelude — importing it is a harmless no-op.
+            if registry.isModule(name) {
+                return .number(.zero)
+            }
             let members = environment.memberNames(ofNamespace: name)
             guard !members.isEmpty else {
                 throw EngineError.domainError(message: "no namespace '\(name)' to import")
@@ -492,6 +501,12 @@ struct Evaluator {
             }
             if let type = environment.dataType(named: qualified) {
                 return try construct(type, arguments: arguments)
+            }
+        }
+        // A qualified builtin (`Finance::pmt`) — the bare name is also global.
+        if let bare = registry.resolveQualified(name) {
+            return try registry.call(name: bare, arguments: arguments) { fn, args in
+                try self.apply(function: fn, arguments: args, in: environment, depth: depth)
             }
         }
         throw EngineError.unknownFunction(name: name)

@@ -4,10 +4,12 @@
 > (namespaced *data types*), and phase 2a-ii (namespaced *functions* with the
 > home-namespace resolver — siblings resolve unqualified at call time, incl.
 > typed-parameter dispatch and recursion), phase 2b (`import` — unqualified
-> access with loud conflicts), and phase 2c (workbook persistence of namespaces
-> and imports) are **implemented and tested** — so **phase 2 is complete**.
-> Constants-in-namespaces (and nested namespaces) and the builtin module reorg
-> (phase 3) are still ahead. A foundational
+> access with loud conflicts), phase 2c (workbook persistence of namespaces and
+> imports), and phase 3 (builtins reachable as `Module::name` behind the global
+> prelude) are **implemented and tested** — so **phases 1–3 are complete**. Only
+> the payoff remains: phase 4 (`Bits` module) and phase 5 (binary-editor
+> builder). Constants-in-namespaces and nested namespaces stay deferred. A
+> foundational
 > language initiative, specced before code (like `docs/MODES.md` /
 > `docs/DECIMAL.md`). It is **the largest single direction proposed for the
 > language**, and the design has deliberately taken the *expansive* option on
@@ -175,7 +177,11 @@ host-neutral `BinaryView` stays sheet/workbook-agnostic.
      lines) and `imports`; qualified members are kept OUT of the flat
      `functions`/`dataTypes` maps. Restore order: namespaces → imports → types →
      functions → variables. Older files decode with empty defaults.
-3. **Builtins → modules + prelude** — registry reorg, `Module::name` aliases, prelude.
+3. ✅ **Builtins → modules + prelude** — every builtin is reachable as
+   `Module::name` (its category: `Finance::pmt`, `Stats::stdev`, `Core::sqrt`),
+   validated against the builtin's category; the bare name stays global (the
+   prelude — nothing renamed, all existing programs unchanged). `import` of a
+   builtin module is a no-op (already in the prelude).
 4. **The `Bits` module** — `BitFormat` / `BitField`.
 5. **Binary editor** — builder emits/consumes `Bits::BitFormat`; viewer renders
    enum labels (the work paused for this design).

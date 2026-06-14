@@ -10,6 +10,23 @@ public enum FunctionCategory: String, CaseIterable, Sendable {
     case data = "Data & Text"
     case programmer = "Programmer"
     case controls = "Controls"
+
+    /// Single-word module name for `Module::builtin` qualified access (the raw
+    /// value is the reference-window heading, which isn't a valid identifier).
+    public var moduleName: String {
+        switch self {
+        case .core: return "Core"
+        case .logic: return "Logic"
+        case .trig: return "Trig"
+        case .finance: return "Finance"
+        case .dates: return "Dates"
+        case .accounting: return "Accounting"
+        case .stats: return "Stats"
+        case .data: return "Data"
+        case .programmer: return "Programmer"
+        case .controls: return "Controls"
+        }
+    }
 }
 
 /// A built-in function: arity contract, implementation, AND documentation.
@@ -175,5 +192,24 @@ package struct FunctionRegistry: Sendable {
 
     func function(named name: String) -> BuiltinFunction? {
         functions[name.lowercased()]
+    }
+
+    /// Is `name` a builtin module (a category)? — used to treat `import Finance`
+    /// as a no-op (its members are already in the global prelude).
+    func isModule(_ name: String) -> Bool {
+        FunctionCategory.allCases.contains { $0.moduleName.lowercased() == name.lowercased() }
+    }
+
+    /// Resolve a qualified builtin `Module::name` → the bare builtin name when
+    /// that builtin exists AND belongs to that module (`Finance::pmt` → `pmt`,
+    /// `Finance::sqrt` → nil). The bare name stays globally available too (the
+    /// prelude); the qualified form is an additive, disambiguating alias.
+    func resolveQualified(_ qualified: String) -> String? {
+        guard let separator = qualified.range(of: "::") else { return nil }
+        let module = String(qualified[..<separator.lowerBound])
+        let name = String(qualified[separator.upperBound...])
+        guard let function = function(named: name),
+              function.category.moduleName.lowercased() == module.lowercased() else { return nil }
+        return name
     }
 }

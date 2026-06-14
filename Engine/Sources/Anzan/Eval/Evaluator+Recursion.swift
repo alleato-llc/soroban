@@ -200,6 +200,12 @@ extension Evaluator {
                     return .value(try construct(type, arguments: arguments))
                 }
             }
+            // A qualified builtin (`Finance::pmt`).
+            if let bare = registry.resolveQualified(name) {
+                return .value(try registry.call(name: bare, arguments: arguments) { inner, args in
+                    try self.apply(function: inner, arguments: args, in: environment, depth: depth)
+                })
+            }
             throw EngineError.unknownFunction(name: name)
 
         default:
