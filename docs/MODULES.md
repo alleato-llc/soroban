@@ -3,9 +3,10 @@
 > **Status: IN PROGRESS.** Phase 1 (generic data field types), phase 2a-i
 > (namespaced *data types*), and phase 2a-ii (namespaced *functions* with the
 > home-namespace resolver — siblings resolve unqualified at call time, incl.
-> typed-parameter dispatch and recursion) are **implemented and tested**.
-> Constants-in-namespaces, imports, the builtin module reorg, and persistence are
-> still ahead. A foundational
+> typed-parameter dispatch and recursion), and phase 2b (`import` — unqualified
+> access with loud conflicts) are **implemented and tested**.
+> Constants-in-namespaces, the builtin module reorg, and persistence are still
+> ahead. A foundational
 > language initiative, specced before code (like `docs/MODES.md` /
 > `docs/DECIMAL.md`). It is **the largest single direction proposed for the
 > language**, and the design has deliberately taken the *expansive* option on
@@ -165,7 +166,10 @@ host-neutral `BinaryView` stays sheet/workbook-agnostic.
      `EvaluationEnvironment.currentNamespace`, mirrored in `call(name:)` and
      `tailStep`), qualified parameter-type dispatch, recursion. *(Constants and
      nesting still deferred.)*
-   - **2b — imports** (`import NAME`, unqualified access, loud conflicts).
+   - ✅ **2b — imports** — `import NAME` brings a namespace's members into scope
+     unqualified (a final-fallback resolution, so any builtin/user/host name
+     wins); conflicts with a builtin/global/another import are a loud error at
+     import time; re-import is idempotent. Session-scoped (persistence is 2c).
    - **2c — persistence** (workbook `namespaces`/`imports`, restore order).
 3. **Builtins → modules + prelude** — registry reorg, `Module::name` aliases, prelude.
 4. **The `Bits` module** — `BitFormat` / `BitField`.

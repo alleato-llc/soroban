@@ -53,6 +53,13 @@ package struct Parser {
             index += 2
             return .assignment(name: name, value: try comparison())
         }
+        // `import Bits` — contextual: only `import` followed by a name commits,
+        // so `import` stays usable as a variable and `import = 5` is an assignment.
+        if case .identifier(let keyword) = current.kind, keyword.lowercased() == "import",
+           index + 1 < tokens.count, case .identifier(let namespace) = tokens[index + 1].kind {
+            index += 2
+            return .importDirective(name: namespace)
+        }
         if let namespaceDefinition = try namespaceDefinition() {
             return namespaceDefinition
         }

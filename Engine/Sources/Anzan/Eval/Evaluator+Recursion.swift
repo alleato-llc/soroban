@@ -191,6 +191,15 @@ extension Evaluator {
                     })
                 }
             }
+            // Imported namespaces — the final fallback (mirrors call(name:)).
+            if let qualified = environment.importedName(name) {
+                if let function = environment.function(named: qualified) {
+                    return .call(function, arguments, captures: [:])
+                }
+                if let type = environment.dataType(named: qualified) {
+                    return .value(try construct(type, arguments: arguments))
+                }
+            }
             throw EngineError.unknownFunction(name: name)
 
         default:

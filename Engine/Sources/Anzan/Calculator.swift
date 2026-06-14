@@ -108,6 +108,12 @@ public final class Calculator {
             return run(expression).map { _ in .dataDefined(declaration: "namespace \(name) { … }") }
         }
 
+        if case .importDirective(let name) = expression {
+            // 2b: brings the namespace's members into scope unqualified. (Import
+            // persistence is a later slice — see docs/MODULES.md.)
+            return run(expression).map { _ in .dataDefined(declaration: "import \(name)") }
+        }
+
         if case .helpRequest(let name) = expression {
             guard let doc = documentation(for: name) else {
                 return .failure(.domainError(
@@ -151,6 +157,9 @@ public final class Calculator {
         if case .namespaceDefinition(let name, _) = expression {
             return .failure(.domainError(
                 message: "define namespace \(name) in the calculation log, not a cell"))
+        }
+        if case .importDirective = expression {
+            return .failure(.domainError(message: "import in the calculation log, not a cell"))
         }
         if case .assignment(let name, _) = expression {
             // Only reachable via `=name = value` — the PLAIN form classifies

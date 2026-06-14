@@ -159,6 +159,53 @@ public final class EvaluationEnvironment {
         dataTypes = newTypes
         changeCount += 1
     }
+
+    // MARK: Namespace imports (docs/MODULES.md 2b)
+
+    /// Imported namespaces, in import order — their members are reachable
+    /// unqualified. Session state (persistence is a later slice).
+    private var imports: [String] = []
+    public var importedNamespaces: [String] { imports }
+
+    /// The simple member names (types + functions) declared in a namespace —
+    /// for the import conflict check.
+    func memberNames(ofNamespace namespace: String) -> [String] {
+        let prefix = namespace.lowercased() + "::"
+        // Derive from the values' names (original case), not the lowercased keys.
+        var names: [String] = []
+        for type in dataTypes.values where type.name.lowercased().hasPrefix(prefix) {
+            names.append(String(type.name.dropFirst(prefix.count)))
+        }
+        for list in functions.values {
+            for function in list where function.name.lowercased().hasPrefix(prefix) {
+                names.append(String(function.name.dropFirst(prefix.count)))
+            }
+        }
+        return names
+    }
+
+    /// Record an import (idempotent — re-importing is a no-op).
+    func addImport(_ namespace: String) {
+        guard !imports.contains(where: { $0.lowercased() == namespace.lowercased() }) else { return }
+        imports.append(namespace)
+        changeCount += 1
+    }
+
+    func clearImports() { imports.removeAll() }
+
+    /// Resolve an unqualified name through the imports → its qualified form when
+    /// an import provides it as a function or type. The import conflict check
+    /// keeps this unambiguous (no two imports, and no global, share a name).
+    func importedName(_ name: String) -> String? {
+        guard !name.contains("::") else { return nil }
+        for namespace in imports {
+            let qualified = "\(namespace)::\(name)"
+            if function(named: qualified) != nil || dataType(named: qualified) != nil {
+                return qualified
+            }
+        }
+        return nil
+    }
 }
 
 /// A user-defined function: `f(x, y) = body`. The body is the parsed AST

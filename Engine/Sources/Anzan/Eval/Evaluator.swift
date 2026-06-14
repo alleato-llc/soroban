@@ -145,6 +145,11 @@ struct Evaluator {
             if registry.contains(name: name) {
                 return .function(FunctionValue(kind: .builtin(name)))
             }
+            // An imported namespace's function/type as a bare value (`map(area, …)`
+            // after `import Geo`). Last fallback; re-resolves by qualified name.
+            if let qualified = environment.importedName(name) {
+                return .function(FunctionValue(kind: .user(name: qualified)))
+            }
             throw EngineError.unknownVariable(name: name)
 
         case .lambda(let parameters, let body):
@@ -315,6 +320,32 @@ struct Evaluator {
                 }
             }
             return .number(.zero)
+
+        case .importDirective(let name):
+            // Already imported → idempotent no-op (before the conflict check,
+            // which would otherwise flag the namespace's own members).
+            if environment.importedNamespaces.contains(where: { $0.lowercased() == name.lowercased() }) {
+                return .number(.zero)
+            }
+            let members = environment.memberNames(ofNamespace: name)
+            guard !members.isEmpty else {
+                throw EngineError.domainError(message: "no namespace '\(name)' to import")
+            }
+            // Loud conflicts (docs/MODULES.md): an imported member must not
+            // collide with a builtin, a global function/type/variable, or
+            // another import. Qualify it instead.
+            for member in members {
+                if registry.contains(name: member)
+                    || environment.function(named: member) != nil
+                    || environment.dataType(named: member) != nil
+                    || environment[member] != nil
+                    || environment.importedName(member) != nil {
+                    throw EngineError.domainError(message:
+                        "importing \(name) would shadow '\(member)' — use \(name)::\(member) instead")
+                }
+            }
+            environment.addImport(name)
+            return .number(.zero)
         }
     }
 
@@ -451,6 +482,17 @@ struct Evaluator {
         // and the resolver rejects them outside the log (`allowMutation`).
         if let value = try resolveHostMutation?(name, arguments, allowMutation) {
             return value
+        }
+        // Imported namespaces are the final fallback (a user/host/builtin name
+        // always wins); the import conflict check keeps this unambiguous.
+        if let qualified = environment.importedName(name) {
+            if let function = environment.function(named: qualified) {
+                return try apply(user: function, arguments: arguments,
+                                 captures: [:], in: environment, depth: depth)
+            }
+            if let type = environment.dataType(named: qualified) {
+                return try construct(type, arguments: arguments)
+            }
         }
         throw EngineError.unknownFunction(name: name)
     }

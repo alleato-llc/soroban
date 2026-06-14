@@ -62,6 +62,9 @@ public indirect enum Expression: Equatable, Sendable {
     /// declarations under a name; members are reached as `Bits::BitField`. In
     /// 2a-i the members are data declarations (see docs/MODULES.md).
     case namespaceDefinition(name: String, members: [Expression])
+    /// `import Bits` — brings a namespace's members into scope unqualified
+    /// (docs/MODULES.md 2b).
+    case importDirective(name: String)
 }
 
 /// A function parameter: a name and an optional type annotation. An
@@ -195,7 +198,7 @@ extension Expression {
             return body.containsCellReference
         case .nameReference:
             return true // a named cell IS a cell reference
-        case .dataDefinition, .namespaceDefinition:
+        case .dataDefinition, .namespaceDefinition, .importDirective:
             return false
         }
     }

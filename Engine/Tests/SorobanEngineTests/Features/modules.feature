@@ -71,3 +71,36 @@ Feature: Namespaces group declarations under a qualified name
   Scenario: Constants and nesting are not in a namespace yet
     When I calculate "namespace Bad { x = 5 }"
     Then the calculation fails mentioning "constants and nesting come later"
+
+  # docs/MODULES.md 2b: `import Name` brings a namespace's members into scope
+  # unqualified; the qualified form always works; conflicts are loud.
+
+  Scenario: import brings a namespace's members into scope unqualified
+    Given I calculate "namespace Geo { data Point { x: Number, y: Number }; dist(p: Point) = sqrt(p.x^2 + p.y^2) }"
+    And I calculate "import Geo"
+    When I calculate "dist(Point(x: 3, y: 4))"
+    Then the result is "5"
+    When I calculate "Geo::dist(Geo::Point(x: 6, y: 8))"
+    Then the result is "10"
+
+  Scenario: Importing an unknown namespace errors
+    When I calculate "import Nope"
+    Then the calculation fails mentioning "no namespace 'Nope'"
+
+  Scenario: Importing a name that collides with a global is loud
+    Given I calculate "data Pt { x: Number }"
+    And I calculate "namespace NS { data Pt { x: Number } }"
+    When I calculate "import NS"
+    Then the calculation fails mentioning "would shadow 'Pt'"
+
+  Scenario: Importing a name that collides with a builtin is loud
+    Given I calculate "namespace M2 { sqrt(x) = x * x }"
+    When I calculate "import M2"
+    Then the calculation fails mentioning "would shadow 'sqrt'"
+
+  Scenario: Re-importing a namespace is a harmless no-op
+    Given I calculate "namespace Ok { area(r) = 3 * r * r }"
+    And I calculate "import Ok"
+    And I calculate "import Ok"
+    When I calculate "area(2)"
+    Then the result is "12"

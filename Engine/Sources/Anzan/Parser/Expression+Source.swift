@@ -88,8 +88,10 @@ extension Expression {
                 + " }"
         case .namespaceDefinition(let name, let members):
             return "namespace \(name) { "
-                + members.map { sub($0) }.joined(separator: " ")
+                + members.map { sub($0) }.joined(separator: "; ")
                 + " }"
+        case .importDirective(let name):
+            return "import \(name)"
         }
     }
 
