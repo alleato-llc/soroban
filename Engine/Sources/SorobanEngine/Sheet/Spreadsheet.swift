@@ -459,6 +459,8 @@ public final class Spreadsheet {
     private func display(of value: Value) -> CellDisplay {
         switch value {
         case .number(let number): return .value(number)
+        case .fixedInt(let f): return .value(f.decimal) // shows its numeric value
+        case .fixedDecimal(let d): return .value(d.value) // value; CellFormat handles currency padding
         case .string(let text): return .text(text)
         case .array, .map, .record:
             return .error("a cell can't hold \(value.kindName) — aggregate it (e.g. sum(…)) or reference a field")

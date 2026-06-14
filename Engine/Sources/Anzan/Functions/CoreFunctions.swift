@@ -138,10 +138,10 @@ let coreFunctions: [BuiltinFunction] = [
         try nthRoot(args[0], requireInt(args[1], "root degree"))
     },
     fn("pow", 2...2, "pow(x, y)",
-       "x raised to y. Exact for integer exponents; the ^ operator is equivalent.",
+       "x raised to y. Exact for integer exponents. Equivalent to the ^ operator — except in Programmer mode, where ^ is XOR, so pow is how you write a power there.",
        ["pow(2, 10)", "pow(4, 0.5)"]) { args in try Functions.pow(args[0], args[1]) },
     fn("mod", 2...2, "mod(x, y)",
-       "Remainder of x ÷ y, with the sign of x (exact). Modulo is a function; the postfix % means percent (3% → 0.03).",
+       "Remainder of x ÷ y, with the sign of x (exact). In the default dialect modulo is this function and the postfix % means percent (3% → 0.03); in Programmer mode the `%` operator is modulo (a % b). See man modes.",
        ["mod(10, 3)", "mod(-7, 3)"]) { args in try args[0] % args[1] },
     fn("fact", 1...1, "fact(n)",
        "Factorial of a non-negative integer, computed exactly.",

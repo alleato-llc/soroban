@@ -210,8 +210,8 @@ struct SheetDefinitionTests {
         store.activeSheet.grid.setCell("tax(x) = x * 1.0825  # TX sales tax", at: addr(0, 0))
         let doc = try #require(calc.documentation(for: "tax"))
         #expect(doc.summary == "TX sales tax")
-        guard case .success(.documentation) = calc.evaluate("man(tax)") else {
-            Issue.record("man() should find λ cells"); return
+        guard case .success(.documentation) = calc.evaluate("man tax") else {
+            Issue.record("man should find λ cells"); return
         }
     }
 }

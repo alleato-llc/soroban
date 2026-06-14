@@ -13,9 +13,29 @@ definition), **notation-mirroring** (`f(x) = x * 2`, `2x`, `∑_i=1^10(i^2)`
 read like the math they denote), and **small** (no I/O, no loops with side
 effects — the host provides persistence and interaction).
 
-This document specifies the language. The workbook container is specified in
-[FORMAT.md](https://github.com/alleato-llc/soroban/blob/main/docs/FORMAT.md); app behaviors (themes, grid UX) live in the
-[README](https://github.com/alleato-llc/soroban/blob/main/README.md).
+This document specifies the canonical language. Two companion specs cover
+extensions: **[MODES.md](https://github.com/alleato-llc/soroban/blob/main/docs/MODES.md)** — the Programmer/Finance input-display *dialects*
+(what the glyphs `^ % & | << >> ~` mean per mode, over one canonical AST) — and
+**[FIXED-WIDTH.md](https://github.com/alleato-llc/soroban/blob/main/docs/FIXED-WIDTH.md)** — the bounded, checked `Int`/`UInt` integer types — and
+**[DECIMAL.md](https://github.com/alleato-llc/soroban/blob/main/docs/DECIMAL.md)** — fixed-precision `Decimal(value, precision, scale)` (or the short forms `Decimal(value)` / `Decimal(value, scale)`) (the money
+type). The workbook container is specified in [FORMAT.md](https://github.com/alleato-llc/soroban/blob/main/docs/FORMAT.md); app behaviors
+(themes, grid UX) live in the [README](https://github.com/alleato-llc/soroban/blob/main/README.md).
+
+## At a glance
+
+```
+1_000 * 1.0825                       # 1082.5 — exact, no floating-point drift
+0.1 + 0.2 == 0.3                     # 1 (true) — decimals are exact, not binary
+pmt(0.05/12, 360, 300000)            # spreadsheet finance, by its Excel name
+double(x) = x * 2                    # define a function — it reads like the math
+∑_i=1^10(i^2)                        # 385 — notation you can actually type
+data Point { x: Number, y: Number }  # a typed record…
+Point(x: 3, y: 4)                    # …constructed by field name
+```
+
+Every line is an expression that evaluates to a value; there are no statements
+beyond assignment and definition. The same language runs in the app's
+calculation log, in grid cells, and in the `soroban` CLI.
 
 ## Influences
 
@@ -37,12 +57,20 @@ Anzan is small enough to name its ancestors precisely:
   as values, lambdas closing over locals by value, `map`/`filter`/`reduce`,
   immutable structures, recursion as *the* loop — with Scheme's proper tail
   calls echoed in the constant-stack tail recursion, and Lisp's special
-  forms in the lazy `if()` and unevaluated `man(name)`.
+  forms in the lazy `if()` and unevaluated `man name`.
 - **JSON / JavaScript** — structure literals (`[1, 2, 3]`,
   `{name: "Ada"}`), 0-based indexing, `m.key` / `m["key"]` access, string
   escapes. Canonical value rendering is deliberately JSON-adjacent so
   workbooks stay diffable and hand-editable.
-- **Unix** — `#` comments, doc-comments-as-man-pages (`man(pmt)`), and a
+- **Databases and systems languages** (SQL, Rust, Ada, Python) — the bounded
+  numeric types that sit *beside* the default exact number, and the Programmer
+  dialect's operators. `Decimal(p, s)` is SQL's money type (with PostgreSQL's
+  1000-digit precision ceiling); `Int32` / `UInt8` take Rust's fixed-width
+  spellings and *checked* arithmetic — an overflow is an error, in the
+  discipline of Ada's range types, never C's silent wraparound. Programmer
+  mode's bitwise operators (`^ & | << >> ~`) follow Python's glyphs and
+  precedence (see [Language modes](#language-modes-presentational-dialects)).
+- **Unix** — `#` comments, doc-comments-as-man-pages (`man pmt`), and a
   REPL/pipe CLI with honest exit codes.
 
 Equally deliberate is what was *refused*: IEEE-754 float semantics (the
@@ -59,7 +87,7 @@ only when a function *cannot* do the job, which happens for exactly three
 reasons:
 
 1. **It needs unevaluated arguments.** `if()` must not evaluate the
-   untaken branch; `man(name)`'s argument is a name, not a value;
+   untaken branch; `man name`'s argument is a name, not a value;
    `∑_i=1^10(term)` re-evaluates its term per index. Functions receive
    evaluated values — by the time one runs, it's too late.
 2. **It binds names.** Lambda parameters, `∑`'s index, `f(x) =`'s
@@ -157,8 +185,8 @@ with a built-in.
 
 ### Reserved names
 
-`ans` `pi` `π` `tau` `τ` `e` `true` `false` `Json` `sigma` `if` `man` `help`
-cannot be assigned to. Identifiers beginning `sigma_` / `product_` are reserved for
+`ans` `pi` `π` `tau` `τ` `e` `true` `false` `Json` `Rounding` `sigma` `if`
+`man` `manual` `help` cannot be assigned to. Identifiers beginning `sigma_` / `product_` are reserved for
 the indexed reduction forms (§8). `data` is a **contextual** keyword — only
 the exact shape `data Name {` starts a declaration (§7), so `data = 5` is
 still an assignment.
@@ -204,6 +232,8 @@ Every expression evaluates to one of:
 | map | `{name: "Ada", age: 36}` | insertion-ordered; keys case-sensitive |
 | function | `x -> x * 2`, or a bare function name | first-class (§6) |
 | record | `Person(name: "Ada", …)` | an instance of a declared `data` type (§7) |
+| fixed-width int | `Int32(255)`, `UInt8(255)` (or `Int(255, 32)`, `UInt(255, 8)`) | a bounded, checked integer — exact, but overflow is an error, not a wraparound ([FIXED-WIDTH.md](https://github.com/alleato-llc/soroban/blob/main/docs/FIXED-WIDTH.md)) |
+| fixed-precision decimal | `Decimal(10.5, 5, 2)`, `Decimal(0.5)`, `Decimal(0.5, 2)` | SQL DECIMAL(p,s) / money: rounds to `scale`, checked `precision` (≤ 1000), configurable rounding; short forms capture the value at max precision ([DECIMAL.md](https://github.com/alleato-llc/soroban/blob/main/docs/DECIMAL.md)) |
 | handle | *(no literal)* | an opaque, read-only host object — a `Workbook`, worksheet, or cell — navigated with `.` and `[]` (§10) |
 
 Structures are **immutable** — there is no element assignment; rebind the
@@ -252,6 +282,39 @@ two numbers in a row (`3 4`, or `3 % 4` — which is `3%` then `4`) is a **missi
 operator**, so it's a parse error nudging toward `*`, not a silent product. For
 `3` mod `4`, write `mod(3, 4)`.
 
+The table above is the **canonical (Normal) dialect**: `^` is power, `%` is
+percent, and bit operations are functions. Programmer mode re-spells some of
+those glyphs as bitwise/modulo operators — see [Language modes](#language-modes-presentational-dialects)
+next.
+
+## Language modes (presentational dialects)
+
+A **mode** changes only how glyphs are *typed and displayed* — never what a
+formula means. Every mode parses to the same canonical AST and stores the same
+canonical form, so a saved workbook reads identically under any mode and a
+formula can never mean two things. A programmer types `5 ^ 3` for XOR; an
+analyst types `5 ^ 3` for *power*; the engine stores `bitXor(5, 3)` or
+`pow(5, 3)` either way. Modes are **log/input-line only** — grid cells always
+parse the canonical dialect. The full glyph tables are in
+[MODES.md](https://github.com/alleato-llc/soroban/blob/main/docs/MODES.md).
+
+- **Normal** *(default — the dialect §3 specifies)*: `^` power, `%` percent;
+  bit operations are the functions `bitAnd` `bitOr` `bitXor` `bitShift`
+  `bitNot`.
+- **Programmer**: the glyphs `^ & | << >> %` read as XOR / AND / OR /
+  shift-left / shift-right / modulo, and prefix `~` is bitwise NOT — Python's
+  operators and precedence (the bitwise band sits below arithmetic and above
+  comparison). Power becomes the `pow(a, b)` function. A glyph a mode lacks is
+  always written longhand (`pow` in Programmer, `bitXor` in Normal), so nothing
+  is unreachable — only re-spelled.
+- **Finance**: grammatically identical to Normal today; reserved as the home
+  for future finance *display* defaults (e.g. currency formatting).
+
+**Out-of-mode glyphs are loud, never silent**: a bare `&` in Normal, or `<<` in
+Finance, is a clear error, not a misparse. Because only the canonical (Normal)
+form is ever stored, switching modes and reloading are lossless — and Normal
+must stay byte-identical to the pre-modes grammar (it's the regression oracle).
+
 ## 4. The exactness model
 
 Numbers are arbitrary-precision decimals (`BigInt` significand × 10^exponent,
@@ -279,7 +342,7 @@ touch it, and a failed calculation never clobbers it.
 
 **Function definition** `f(x) = body` stores the body unevaluated. The
 trailing `# comment` becomes the function's documentation, shown by
-`man(f)`. Definitions may appear in any order; names resolve at **call
+`man f`. Definitions may appear in any order; names resolve at **call
 time** — which also means a body's free variables read the *current* global.
 Parameters may be **type-annotated** (`f(p: Point) = …`) for dispatch, and a
 definition's name may be an operator symbol — see §7:
@@ -478,10 +541,11 @@ condition must be a number; comparisons return 1/0.
   `∑_i=(n-1)^10(i)`. An empty range yields the identity (∑ → 0, ∏ → 1); a
   span over 100,000 terms is an error.
 
-## 9. Documentation: `man()` / `help()`
+## 9. Documentation: `man` / `manual` / `help`
 
-`man(name)` (alias `help`) is a special form — the argument is a NAME, never
-evaluated. It returns the documentation entry (signature, summary, examples)
+`man NAME` (aliases `manual`, `help`) is a special form, written unix-style with
+a space and **no parentheses** — `man pmt`, `manual sum`, `help if`. The argument
+is a NAME, never evaluated. It returns the documentation entry (signature, summary, examples)
 for built-ins, special forms, user functions, and data types (whose docs
 come from their trailing `# comment`). Every built-in ships documentation,
 and every documented example is evaluated by the test suite.
@@ -642,7 +706,11 @@ zero says so, and type errors name the offending type.
 ## Appendix: grammar sketch
 
 EBNF-ish; literals quoted, `{}` repetition, `[]` optional. Token-level rules
-(numbers incl. `0x…`/`0b…`, strings, cell references, comments) are in §1.
+(numbers incl. `0x…`/`0b…`, strings, cell references, comments) are in §1. This
+is the **canonical (Normal-dialect)** grammar; Programmer mode adds a bitwise
+operator band (`|` · `^` · `&` · `<< >>`, between comparison and additive) plus
+prefix `~`, parsing to the same canonical bitwise functions — see
+[MODES.md](https://github.com/alleato-llc/soroban/blob/main/docs/MODES.md).
 
 ```
 line        = datadef | definition | assignment | expression ;

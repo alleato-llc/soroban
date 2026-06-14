@@ -31,7 +31,7 @@ examples:
   soroban "0.1 + 0.2 == 0.3"             # 1 — exactly, no float drift
   soroban "pmt(0.05/12, 360, 200000)"    # spreadsheet-grade finance
   soroban "x = 3" "x^2 + 1"              # arguments share one session
-  soroban "man(pmt)"                     # built-in documentation
+  soroban "man pmt"                      # built-in documentation
 """
 
 func eprint(_ message: String) {
@@ -68,7 +68,10 @@ func evaluate(_ line: String, on calculator: Calculator,
                 // the integer result in hex too. Display only.
                 print("= \(value) (\(hex))\(trailing)")
             } else {
-                print(pretty ? "= \(value)\(trailing)" : value.description)
+                // Echo the clean form — a fixed-width int / decimal prints as its
+                // plain number (343353 / 10.50), not its Int32(…)/Decimal(…) form.
+                let shown = value.displayDescription
+                print(pretty ? "= \(shown)\(trailing)" : shown)
             }
         case .functionDefined(let signature):
             print(pretty ? "λ \(signature)" : signature)
@@ -96,6 +99,25 @@ if arguments.contains("-h") || arguments.contains("--help") {
 if arguments.contains("--version") {
     print(cliVersion)
     exit(0)
+}
+
+/// `:mode [normal|programmer|finance]` — show or set the input/display dialect.
+/// Programmer mode reads `^` as XOR, `&`/`|` as AND/OR, `<<`/`>>` as shifts, and
+/// `%` as modulo (power becomes pow); see docs/MODES.md.
+@discardableResult
+func handleModeCommand(_ line: String, on calculator: Calculator, quiet: Bool = false) -> Bool {
+    let parts = line.split(separator: " ", maxSplits: 1).map(String.init)
+    guard parts.count == 2 else {
+        if !quiet { print("mode: \(calculator.mode.rawValue) — use :mode normal|programmer|finance") }
+        return true
+    }
+    guard let mode = LanguageMode(rawValue: parts[1].trimmingCharacters(in: .whitespaces).lowercased()) else {
+        eprint("unknown mode '\(parts[1])' — use normal, programmer, or finance")
+        return false
+    }
+    calculator.mode = mode
+    if !quiet { print("mode: \(mode.rawValue)") }
+    return true
 }
 
 let calculator = Calculator()
@@ -143,7 +165,7 @@ if isatty(STDIN_FILENO) == 1 {
         return (rest, (127, 127, 127))
     }
 
-    print("Anzan・暗算 \(cliVersion) — Soroban's exact calculation language. man(name) for docs, tab completes; exit to leave.")
+    print("Anzan・暗算 \(cliVersion) — Soroban's exact calculation language. man name (or manual/help) for docs, tab completes, :mode switches dialect; exit to leave.")
     while true {
         let line: String
         do {
@@ -158,6 +180,10 @@ if isatty(STDIN_FILENO) == 1 {
         let trimmed = line.trimmingCharacters(in: .whitespaces)
         if trimmed.isEmpty { continue }
         if trimmed == "exit" || trimmed == "quit" { break }
+        if trimmed == ":mode" || trimmed.hasPrefix(":mode ") {
+            handleModeCommand(trimmed, on: calculator)
+            continue
+        }
         lineNoise.addHistory(line)
         try? lineNoise.saveHistory(toFile: historyFile)
         evaluate(line, on: calculator, pretty: true,
@@ -169,6 +195,11 @@ if isatty(STDIN_FILENO) == 1 {
     while let line = readLine(strippingNewline: true) {
         let trimmed = line.trimmingCharacters(in: .whitespaces)
         if trimmed.isEmpty { continue }
+        if trimmed == ":mode" || trimmed.hasPrefix(":mode ") {
+            // Mode switches work in piped scripts too — silent (not a result line).
+            if !handleModeCommand(trimmed, on: calculator, quiet: true) { allSucceeded = false }
+            continue
+        }
         if !evaluate(line, on: calculator, pretty: false,
                      echoInputOnError: true, caretIndent: 0) {
             allSucceeded = false

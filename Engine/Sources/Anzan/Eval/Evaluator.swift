@@ -212,7 +212,7 @@ struct Evaluator {
         case .helpRequest:
             // Calculator intercepts this in the log; reaching the evaluator
             // means a context with no documentation surface.
-            throw EngineError.domainError(message: "man() works in the calculation log")
+            throw EngineError.domainError(message: "man works in the calculation log, not a cell")
 
         case .functionDefinition(let name, let parameters, let body):
             guard !registry.contains(name: name) else {
@@ -566,7 +566,7 @@ struct Evaluator {
             }
             return value
 
-        case .number, .function:
+        case .number, .fixedInt, .fixedDecimal, .function:
             throw EngineError.domainError(message: "\(base.kindName) can't be indexed")
         }
     }
@@ -575,6 +575,16 @@ struct Evaluator {
         // `+` concatenates as soon as either side is a string — "Q" + 1 is "Q1".
         if op == .add, isString(lhs) || isString(rhs) {
             return .string(lhs.displayText + rhs.displayText)
+        }
+        // Fixed-width integer arithmetic: the mixing matrix + checked overflow
+        // (docs/FIXED-WIDTH.md). Numeric (non-fixedInt) operands skip this and
+        // take the exact-decimal path below, unchanged.
+        if FixedInt.isInvolved(lhs, rhs) {
+            return try FixedInt.applyBinary(op, lhs, rhs)
+        }
+        // Fixed-precision decimal arithmetic — the money-type mixing matrix.
+        if FixedDecimal.isInvolved(lhs, rhs) {
+            return try FixedDecimal.applyBinary(op, lhs, rhs)
         }
         let a = try lhs.asNumber(for: op.rawValue)
         let b = try rhs.asNumber(for: op.rawValue)

@@ -68,7 +68,10 @@ extension Calculator {
             return special
         }
         if let constant = Self.constants.first(where: { $0.name.lowercased() == name.lowercased() }) {
-            return constant // man(pi), man(Json), …
+            return constant // man pi, man Json, …
+        }
+        if let op = Self.operators.first(where: { $0.name.lowercased() == name.lowercased() }) {
+            return op // man modes, man arithmetic, man comparisons, …
         }
         if let scoped = scopedFunctionResolver?(name) {
             return Self.doc(for: scoped)
@@ -147,8 +150,8 @@ extension Calculator {
         FunctionDoc(
             name: "arithmetic",
             signature: "+  −  ×(*)  ÷(/)  ^  %",
-            summary: "Exact decimal arithmetic — 0.1 + 0.2 is exactly 0.3. ^ is power (right-associative), % is modulo. Typographic × ÷ − · paste fine. Implicit multiplication works: 2(3 + 4), 2x, 2π.",
-            examples: ["0.1 + 0.2", "2^10", "2(3 + 4)", "2π"]),
+            summary: "Exact decimal arithmetic — 0.1 + 0.2 is exactly 0.3. ^ is power (right-associative); postfix % is percent (3% → 0.03), and mod(x, y) is modulo. Typographic × ÷ − · paste fine. Implicit multiplication works: 2(3 + 4), 2x, 2π. In Programmer mode ^ and % — plus & | << >> ~ — read as bitwise/modulo instead; see man modes.",
+            examples: ["0.1 + 0.2", "2^10", "3%", "2π"]),
         FunctionDoc(
             name: "comparisons",
             signature: "<  >  <=  >=  ==  !=   (≤ ≥ ≠)",
@@ -196,6 +199,11 @@ extension Calculator {
             signature: "x -> expr   ·   (a, b) -> expr",
             summary: "Anonymous functions, for map/filter/reduce — or assign one: f = x -> x * 2, then f(3). A bare function name is a value too: map(sqrt, arr). Lambdas close over function parameters by value.",
             examples: ["map(x -> x ^ 2, [1, 2, 3])", "double = x -> x * 2"]),
+        FunctionDoc(
+            name: "modes",
+            signature: ":mode normal · programmer · finance",
+            summary: "Input/display DIALECTS for the calculation log. Normal (default): ^ is power, postfix % is percent, and bit ops are functions (bitAnd, bitOr, bitXor, bitShift, bitNot). Programmer: ^ is XOR, & AND, | OR, << >> shifts, % modulo, ~ NOT (Python precedence; power becomes pow). Finance ≈ Normal for now. A dialect only changes which glyphs you type and read — the stored formula is always canonical, so it never means two things. SWITCH: Settings → Mode (⌘,) or the input-bar mode icon, or type :mode programmer (or finance / normal) — the :mode command works in both the app log and the CLI. Grid cells are always Normal.",
+            examples: ["5 ^ 3", "pow(2, 10)", "bitAnd(12, 10)"]),
     ]
 
     static let constants: [FunctionDoc] = [
@@ -212,5 +220,8 @@ extension Calculator {
         FunctionDoc(name: "Json", signature: "Json.Pretty · Json.Compact",
                     summary: "Formatting options for toJson() — named constants instead of a magic flag. Pretty is the default; Json.Compact packs to one line. They're plain string values (\"pretty\" / \"compact\") carried in a constant map.",
                     examples: ["toJson({a: 1}, Json.Compact)", "Json.Pretty"]),
+        FunctionDoc(name: "Rounding", signature: "Rounding.Bankers · Rounding.HalfUp",
+                    summary: "Rounding modes for Decimal() — Bankers (round half to even, the default and the engine's standard) or HalfUp (round half away from zero). Named constants like Json; plain string values in a constant map.",
+                    examples: ["Decimal(1.005, 5, 2, Rounding.HalfUp)", "Rounding.Bankers"]),
     ]
 }

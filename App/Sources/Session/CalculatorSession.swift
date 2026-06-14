@@ -26,6 +26,27 @@ final class CalculatorSession {
     /// grid's `Spreadsheet`): bumped on append/clear so the log view refreshes.
     private(set) var logGeneration = 0
 
+    /// The log's input/display dialect (docs/MODES.md). Persisted like the theme
+    /// and pushed to the engine, so the LOG path parses/echoes under it; cells
+    /// stay canonical (`.normal`). New input parses in this mode; existing log
+    /// entries are inert records and stay as typed. Switching bumps
+    /// `logGeneration` so the input-bar affordance refreshes.
+    var mode: LanguageMode = .normal {
+        didSet {
+            calculator.mode = mode
+            UserDefaults.standard.set(mode.rawValue, forKey: Self.modeKey)
+            // Record a dim divider in the tape so it's clear when the dialect
+            // changed (the affordance icon refreshes via @Observable `mode`).
+            // Skipped during the init restore and on no-op sets.
+            guard modeLoggingEnabled, mode != oldValue else { return }
+            log.append(HistoryEntry(expression: "", outcome: .mode("\(mode.displayName) mode")))
+            logGeneration += 1
+        }
+    }
+    private static let modeKey = "languageMode"
+    /// False during `init`'s mode restore so launching doesn't log a switch.
+    private var modeLoggingEnabled = false
+
     var input = ""
     var activeView: MainView = .log
 
@@ -207,6 +228,11 @@ final class CalculatorSession {
         // The log model loaded its own persisted tape; wire it as the source
         // for the `History` reflection API (log-only) — no adapter needed.
         sheet.store.logSource = log
+        // Restore the persisted dialect and push it to the engine (a property
+        // observer doesn't fire for the initial set in init, so sync explicitly).
+        mode = LanguageMode(rawValue: UserDefaults.standard.string(forKey: Self.modeKey) ?? "") ?? .normal
+        calculator.mode = mode
+        modeLoggingEnabled = true // from here, user mode switches are logged
     }
 
     // The log tape + its persistence now live in `LogStore` (a UI-free model);
@@ -217,12 +243,26 @@ final class CalculatorSession {
         let line = input.trimmingCharacters(in: .whitespaces)
         guard !line.isEmpty else { return }
 
+        // `:mode [normal|programmer|finance]` — switch the input dialect from the
+        // log itself (parity with the CLI's :mode and the toggle), not a
+        // calculation. The mode change logs its own dim divider via `mode`'s
+        // observer.
+        if line == ":mode" || line.hasPrefix(":mode ") {
+            applyModeCommand(line)
+            input = ""; historyCursor = nil; draft = ""
+            return
+        }
+
         // Variables and functions are part of the workbook — definitions
         // and assignments dirty it.
         let stateBefore = calculator.environment.changeCount
 
         let outcome: HistoryEntry.Outcome
         var annotation: String?
+        // When a value displays cleaner than it recalls (a fixed-width int /
+        // decimal shows its plain number but recalls its typed constructor), the
+        // canonical form rides along as the recall override; nil otherwise.
+        var recallOverride: String?
         switch calculator.evaluate(line) {
         case .success(.documentation(let doc)):
             outcome = .info(EvalOutcome.documentation(doc).description)
@@ -235,13 +275,18 @@ final class CalculatorSession {
             // `Workbook`) is ALSO display-only — its `Workbook(…)`/`[LogEntry(…)]`
             // rendering isn't re-parseable, so it must not be recalled or
             // treated as a value (same reason cells reject host results).
-            // Everything else keeps the canonical, recallable "= …" form.
+            // Everything else keeps the canonical, recallable "= …" form — but
+            // shows the clean `displayDescription` (a plain number for a
+            // fixed-width int / decimal), recalling the typed constructor.
             if let block = result.rawBlock {
                 outcome = .info(block)
             } else if case .value(let value) = result, value.containsHost {
                 outcome = .info(value.description)
             } else {
-                outcome = .value(result.description)
+                let display = result.displayDescription
+                outcome = .value(display)
+                let canonical = result.description
+                if canonical != display { recallOverride = canonical }
             }
             // The programmer hex echo, identical to the CLI's: an integer
             // result of a line that spoke 0x/0b or the bit/base functions
@@ -258,7 +303,8 @@ final class CalculatorSession {
         // dimmed and display-only (kept out of Insert/Copy, like annotation).
         let note = Calculator.trailingComment(in: line)
         log.append(HistoryEntry(expression: line, outcome: outcome,
-                                annotation: annotation, note: note))
+                                annotation: annotation, note: note,
+                                recallOverride: recallOverride))
         logGeneration += 1
 
         if inputHistory.last != line {
@@ -279,6 +325,20 @@ final class CalculatorSession {
             workbook.noteContentChanged()
             environmentGeneration += 1 // the inspector re-reads the log half
         }
+    }
+
+    /// Handles a `:mode …` line typed into the log. A valid dialect switches
+    /// `mode` (which logs the divider + persists); anything else logs a usage hint.
+    private func applyModeCommand(_ line: String) {
+        let parts = line.split(separator: " ", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
+        guard parts.count == 2, let requested = LanguageMode(rawValue: parts[1].lowercased()) else {
+            log.append(HistoryEntry(expression: line, outcome: .error(
+                message: "usage: :mode normal | programmer | finance (currently \(mode.displayName))",
+                position: nil)))
+            logGeneration += 1
+            return
+        }
+        mode = requested
     }
 
     func clearLog() {

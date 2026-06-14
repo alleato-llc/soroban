@@ -1,4 +1,25 @@
 import SwiftUI
+import SorobanEngine
+
+extension LanguageMode {
+    /// Human label for the Settings picker and the input-bar affordance.
+    var displayName: String {
+        switch self {
+        case .normal: return "Normal"
+        case .programmer: return "Programmer"
+        case .finance: return "Finance"
+        }
+    }
+
+    /// Compact SF Symbol for the input-bar status affordance.
+    var symbol: String {
+        switch self {
+        case .normal: return "number"
+        case .programmer: return "chevron.left.forwardslash.chevron.right"
+        case .finance: return "dollarsign"
+        }
+    }
+}
 
 /// The single-line expression input pinned to the bottom of the window.
 struct InputBarView: View {
@@ -58,6 +79,31 @@ struct InputBarView: View {
                     }
                     return .handled
                 }
+
+            // Input dialect (docs/MODES.md): a compact status affordance — the
+            // icon shows the active mode, the menu switches it. Accented when not
+            // Normal so a non-default dialect is visible at a glance.
+            Menu {
+                ForEach(LanguageMode.allCases, id: \.self) { candidate in
+                    Button {
+                        session.mode = candidate
+                    } label: {
+                        if session.mode == candidate {
+                            Label(candidate.displayName, systemImage: "checkmark")
+                        } else {
+                            Text(candidate.displayName)
+                        }
+                    }
+                }
+            } label: {
+                Image(systemName: session.mode.symbol)
+                    .foregroundStyle(session.mode == .normal
+                                     ? theme.secondaryText.color : theme.accent.color)
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("Input dialect: \(session.mode.displayName)")
 
             // Function reference (also ⌘/; with autocomplete open it jumps
             // to the highlighted function).

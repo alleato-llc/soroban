@@ -95,6 +95,10 @@ extension LogRecord {
         case .comment(let comment):
             text = comment; value = nil
             isError = false; isComment = true; isInfo = false
+        case .mode(let label):
+            // Display-only marker (like info): visible in History, never a value.
+            text = label; value = nil
+            isError = false; isComment = false; isInfo = true
         }
         self.init(input: entry.expression, text: text, value: value,
                   isError: isError, isComment: isComment, isInfo: isInfo, note: entry.note ?? "")

@@ -23,7 +23,7 @@ struct SourceTextTests {
         "x = a + 1",
         "f(x, y) = x * y + 1",
         "sigma_i=1^10(i^2)", "product_k=(n - 1)^(m + 1)(k)",
-        "man(pmt)",
+        "man pmt",
         // lambdas (the original consumer), with structures inside
         "x -> x * 2", "(a, b) -> a + b", "() -> 7",
         "f = x -> sum([x, A:1])",
@@ -57,7 +57,7 @@ struct ContainsCellReferenceTests {
     @Test(arguments: [
         "1 + 2", "x * y", "f(1)", "x = 1", "f(x) = x", "if(1, 2, 3)",
         "sigma_i=1^3(i)", "\"text\"", "[1, {a: 2}]", "m.key", "arr[0]",
-        "x -> x * 2", "a < b", "man(pmt)",
+        "x -> x * 2", "a < b", "man pmt",
     ])
     func cleanOfRefs(_ source: String) throws {
         #expect(!(try Parser.parse(source).containsCellReference))

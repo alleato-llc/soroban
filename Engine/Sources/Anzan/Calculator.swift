@@ -38,6 +38,11 @@ public final class Calculator {
     /// SheetStore (direct) and overridden by the app (undoable).
     public var hostMutationResolver: ((_ name: String, _ arguments: [Value], _ inLog: Bool) throws -> Value?)?
 
+    /// The active input/display dialect for the LOG path (`evaluate`). The host
+    /// sets this (CLI `:mode`, the app's toggle). Cells are unaffected — the
+    /// cell path always parses `.normal` (log-only scope). See `docs/MODES.md`.
+    public var mode: LanguageMode = .normal
+
     public init() {}
 
     /// Evaluates one line from the log. On success a value becomes `ans`
@@ -57,7 +62,7 @@ public final class Calculator {
 
         let expression: Expression
         do {
-            expression = try Parser.parse(line)
+            expression = try Parser.parse(line, mode: mode)
         } catch let error as EngineError {
             return .failure(error)
         } catch {
@@ -115,7 +120,8 @@ public final class Calculator {
     /// is left untouched, so grid recalculation never disturbs the log session.
     public func evaluateFormula(_ input: String) -> Result<Value, EngineError> {
         do {
-            return evaluateFormula(try Parser.parse(input))
+            // Cells are always canonical — log-only mode scope (docs/MODES.md).
+            return evaluateFormula(try Parser.parse(input, mode: .normal))
         } catch let error as EngineError {
             return .failure(error)
         } catch {
@@ -143,7 +149,7 @@ public final class Calculator {
                 message: "drop the leading '=' — a plain '\(name) = …' cell defines a sheet variable"))
         }
         if case .helpRequest = expression {
-            return .failure(.domainError(message: "man() works in the calculation log"))
+            return .failure(.domainError(message: "man works in the calculation log, not a cell"))
         }
         return run(expression)
     }
@@ -232,6 +238,15 @@ public enum EvalOutcome: Equatable, Sendable, CustomStringConvertible {
             return lines.joined(separator: "\n")
         case .comment(let text): return "# \(text)"
         }
+    }
+
+    /// The clean, human-facing echo — `description` except a fixed-width int /
+    /// fixed-precision decimal value renders as its plain number (`343353` /
+    /// `10.50`) rather than its `Int32(…)` / `Decimal(…)` constructor. Hosts show
+    /// this; `description` stays what they recall/copy/persist (the type survives).
+    public var displayDescription: String {
+        if case .value(let value) = self { return value.displayDescription }
+        return description
     }
 
     /// The numeric result, when the line was a calculation (nil for

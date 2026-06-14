@@ -52,6 +52,13 @@ final class ThemeManager {
     private static let fontKey = "fontFamilyOverride"
     private static let sizeKey = "fontSizeOverride"
 
+    /// The adjustable text-size range — shared by Settings → Size, the log's
+    /// pinch-to-zoom, and the ⌘+/⌘− zoom commands so they never drift apart.
+    static let fontSizeRange: ClosedRange<Double> = 10...48
+    static func clampedFontSize(_ size: Double) -> Double {
+        min(max(size, fontSizeRange.lowerBound), fontSizeRange.upperBound)
+    }
+
     init() {
         let loaded = Self.loadThemes()
         themes = loaded

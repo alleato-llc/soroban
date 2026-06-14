@@ -88,6 +88,11 @@ final class SheetModel {
     var columnResizePreview: ResizePreview?
     var rowResizePreview: ResizePreview?
 
+    /// The current app font size (the app keeps this synced to ThemeManager).
+    /// The grid's DEFAULT column width / row height scale with it so cells stay
+    /// proportional to the font — see SheetModel+Layout.
+    var gridFontSize: CGFloat = 14
+
     /// Worksheets (SheetModel+Worksheets.swift): set by the menu-bar Sheet
     /// menu; SheetTabBar consumes them (the rename field and the delete
     /// confirmation live there).

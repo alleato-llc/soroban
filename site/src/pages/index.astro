@@ -241,6 +241,31 @@ const links = {
                     higher-order functions, lambdas, and a
                     <a href={links.spec}>full language spec</a>.
                 </Card>
+                <Card title="Speaks your dialect" scopes={["log", "cli"]}>
+                    Flip the log to <strong>Programmer mode</strong> and the glyphs
+                    read like C: <code>^</code> is XOR, <code>&amp;</code> <code>|</code>
+                    <code>&lt;&lt;</code> <code>&gt;&gt;</code> <code>~</code> are bitwise,
+                    <code>%</code> is modulo. It's a display <em>dialect</em>, not a
+                    semantic switch — the stored formula stays canonical, so it can
+                    never mean two things. <code>:mode programmer</code> in the CLI; a
+                    picker in the app.
+                </Card>
+                <Card title="Fixed-width integers" scopes={["log", "grid", "cli"]}>
+                    <code>Int32(255)</code>, <code>UInt8(8)</code> — bounded
+                    integers at 8–256 bits, signed or unsigned (or
+                    <code>Int(255, 32)</code> with the width as an argument). Still
+                    exact, but <em>checked</em>: <code>Int8(100) + Int8(100)</code> is
+                    an overflow error, never a silent wraparound. Mixed widths promote
+                    to the wider type; signed and unsigned never mix.
+                </Card>
+                <Card title="Money-grade decimals" scopes={["log", "grid", "cli"]}>
+                    <code>Decimal(10.5, 5, 2)</code> is <code>10.50</code> — SQL
+                    <code>DECIMAL(p, s)</code>, the money type: rounds to the scale,
+                    checks the precision (overflow errors, never silently drops
+                    digits). Banker's rounding by default, or
+                    <code>Rounding.HalfUp</code>. Or just <code>Decimal(0.5)</code> to
+                    capture a value exactly.
+                </Card>
                 <Card title="Live what-if controls" scopes={["grid"]}>
                     <code>rate = slider(0.08, 0, 0.2)</code> renders as a draggable
                     slider in its cell — plus steppers, checkboxes, dropdowns. The

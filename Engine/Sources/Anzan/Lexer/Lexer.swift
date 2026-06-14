@@ -70,6 +70,7 @@ package struct Lexer {
             let twoChar: [String: Token.Kind] = [
                 "==": .equalEqual, "!=": .notEqual,
                 "<=": .lessOrEqual, ">=": .greaterOrEqual,
+                "<<": .shiftLeft, ">>": .shiftRight, // before the single-char `<`/`>`
                 "..": .dotDot, // before the number scanner grabs the first '.'
                 "->": .arrow,  // before '-' lexes as minus
             ]
@@ -102,6 +103,8 @@ package struct Lexer {
             "×": .star, "·": .star, "÷": .slash, "−": .minus,
             "√": .sqrtSign,
             "<": .lessThan, ">": .greaterThan,
+            "&": .ampersand, "|": .pipe, // Programmer-mode bitwise; parser errors elsewhere
+            "~": .tilde, // Programmer-mode bitwise NOT
             "≤": .lessOrEqual, "≥": .greaterOrEqual, "≠": .notEqual,
             "!": .bang, // sheet qualifier — "!=" was caught by the two-char pass
             "∑": .identifier("sigma"),   // math symbols aren't letters, so the

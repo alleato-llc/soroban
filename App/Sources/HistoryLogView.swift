@@ -5,7 +5,23 @@ struct HistoryLogView: View {
     @Environment(CalculatorSession.self) private var session
     @Environment(ThemeManager.self) private var themeManager
 
+    /// Font size at the start of a pinch, so the magnification is applied
+    /// relative to it (smooth) rather than compounding each frame.
+    @State private var zoomBaseSize: Double?
+
     private var theme: Theme { themeManager.current }
+
+    /// Pinch-to-zoom the text size — drives the same app-wide font override the
+    /// Settings → Size slider does (persisted, clamped to its 10–24 range).
+    private var pinchToZoom: some Gesture {
+        MagnifyGesture()
+            .onChanged { value in
+                let base = zoomBaseSize ?? themeManager.current.fontSize
+                if zoomBaseSize == nil { zoomBaseSize = base }
+                themeManager.fontSizeOverride = ThemeManager.clampedFontSize((base * value.magnification).rounded())
+            }
+            .onEnded { _ in zoomBaseSize = nil }
+    }
 
     var body: some View {
         // The log model (LogStore) isn't @Observable; subscribe to its changes
@@ -32,6 +48,7 @@ struct HistoryLogView: View {
                 }
             }
         }
+        .gesture(pinchToZoom)
     }
 
     private var emptyState: some View {
@@ -71,6 +88,18 @@ private struct EntryView: View {
                         Button("Edit Note") { session.recall(expression: entry.expression) }
                         Button("Copy Note") { copyToPasteboard(entry.expression) }
                     }
+            } else if case .mode(let label) = entry.outcome {
+                // A dialect-switch marker — a dim centered divider, distinct from
+                // a user's # note (no prefix, no value).
+                HStack(spacing: 8) {
+                    Rectangle().fill(theme.secondaryText.color.opacity(0.25)).frame(height: 1)
+                    Text(label)
+                        .font(theme.font(scale: 0.82))
+                        .foregroundStyle(theme.secondaryText.color)
+                        .fixedSize()
+                    Rectangle().fill(theme.secondaryText.color.opacity(0.25)).frame(height: 1)
+                }
+                .padding(.vertical, 2)
             } else {
                 expressionAndResult
             }
@@ -115,7 +144,7 @@ private struct EntryView: View {
                         }
                     }
 
-            case .comment:
+            case .comment, .mode:
                 EmptyView() // handled above (never reached)
 
             case .info(let text):

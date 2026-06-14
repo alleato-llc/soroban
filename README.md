@@ -60,8 +60,10 @@ soroban                                     # interactive REPL
 
 The REPL has tab completion (built-ins, constants, and your own
 variables/functions), gray signature hints as you type `name(`, persistent
-↑/↓ history across sessions (`~/.soroban_history`), and the full `man(name)`
-documentation. `exit`, `quit`, or ⌃D leaves.
+↑/↓ history across sessions (`~/.soroban_history`), and the full `man name`
+documentation. `:mode programmer` (or `finance`/`normal`) switches the input
+dialect — `^` reads as XOR, `&`/`|`/`<<`/`>>`/`~` as bitwise, `%` as modulo (see
+[docs/MODES.md](docs/MODES.md)). `exit`, `quit`, or ⌃D leaves.
 
 ## Testing
 
@@ -235,10 +237,10 @@ Case-insensitive. `ans`, `pi`, `tau`, `e` are built-in constants.
 - **Trig** (radians): `sin cos tan asin acos atan atan2`, hyperbolics `sinh cosh tanh asinh acosh atanh`, and `deg rad` conversions at full precision (`deg(pi)` is exactly 180)
 - **Finance** (spreadsheet sign convention): `pv fv pmt nper rate npv irr effectiveRate nominal`, and the amortization split `ipmt ppmt cumipmt cumprinc` (`ipmt + ppmt = pmt`, exactly, every period)
 - **Dates** (exact day serials since 1970-01-01): `date today year month day weekday weeknum quarter edate eomonth days`, business days `workday networkdays` (holidays as extra arguments), plus `xnpv xirr` for irregular cash flows (`xirr(A:1..A:5, B:1..B:5)` — dates first, flows second)
-- **Accounting**: `markup margin percentOf percentChange`, depreciation `sln syd ddb`
+- **Accounting**: `markup margin percentOf percentChange`, depreciation `sln syd ddb`, and **fixed-precision decimals** `Decimal(value, precision, scale)` (SQL DECIMAL(p,s) / money — rounds to scale, checked precision ≤ 1000, `Rounding.Bankers`/`Rounding.HalfUp`), with short forms `Decimal(value)` (exact capture at max precision) and `Decimal(value, scale)`. See [docs/DECIMAL.md](docs/DECIMAL.md)
 - **Stats** (variadic, range-friendly): `sum product count avg median stdev variance mode geomean sumproduct`, `percentile(data…, p)`, and the regression set `correl slope intercept forecast` (paired series split evenly — pass two equal ranges)
 - **Data & Text**: `len first last keys values concat sort unique reverse seq toJson fromJson`, plus the higher-order `map filter reduce` (take a lambda `x -> x * 2` or a function name) and `list(…)` — collect a range into an array, so `sum(filter(x -> x > 10, list(A:1..A:9)))` works
-- **Programmer**: hex/binary literals (`0xFF`, `0b1010` — exact at any width), `toBase fromBase` (bases 2–36), and arbitrary-width bit math `bitAnd bitOr bitXor bitShift` (functions by design — `^` is power here, so the C operator set would mislead)
+- **Programmer**: hex/binary literals (`0xFF`, `0b1010` — exact at any width), `toBase fromBase` (bases 2–36), arbitrary-width bit math `bitAnd bitOr bitXor bitShift bitNot`, and **fixed-width integer types** — per-width `Int8…Int256` / `UInt8…UInt256` (e.g. `Int32(v)`), or parameterized `Int(v, bits)` / `UInt(v, bits)` (8–256 bits, signed/unsigned — exact and *checked*: overflow is an error, never a wraparound). In **Programmer mode** the bit functions read as the C operators `^ & | << >> ~` (with `%` as modulo) — a display *dialect*; in the default dialect `^` stays power and `%` percent. See [docs/MODES.md](docs/MODES.md) and [docs/FIXED-WIDTH.md](docs/FIXED-WIDTH.md)
 - **Controls**: `slider stepper checkbox dropdown` — pure functions in formulas, interactive controls in cells (see Controls section)
 
 **Cell ranges**: `sum(A:1..A:9)`, rectangles like `avg(A:1..C:10)` — usable in
@@ -277,11 +279,11 @@ tax(x) = x * 1.0825   # TX sales tax on a subtotal
 Because the doc lives in the definition line, it saves into workbooks
 automatically and updates whenever you redefine the function.
 
-### man()
+### man
 
-`man(pmt)` (or `help(pmt)`) prints a function's signature, summary, and
-examples straight into the log — built-ins, special forms (`man(if)`,
-`man(sigma)`), and your own documented functions alike.
+`man pmt` (or `manual pmt` / `help pmt` — unix-style, no parentheses) prints a
+function's signature, summary, and examples straight into the log — built-ins,
+special forms (`man if`, `man sigma`), and your own documented functions alike.
 
 ### Function Reference
 
@@ -384,7 +386,7 @@ an error, and `toJson` emits real `true`/`false` because the type says so), or
 fields fail with named errors. Every record gets structural `==`/`!=` for
 free; an operator overload must involve at least one data type
 (`+(a: Number, b: Number)` is rejected). A trailing `# comment` documents the
-type (`man(Person)`); types, record variables, and overloads save in
+type (`man Person`); types, record variables, and overloads save in
 workbooks. In the grid, a plain `data … { … }` cell is a sheet-scoped
 **𝑫** definition, next to λ and 𝑖.
 
@@ -463,7 +465,7 @@ their cells**: assigning one in the log says so ("'rate' is defined in cell
 A:3 — edit that cell to change it"), and they shadow same-named log
 variables. Defining a name twice on one sheet errors in the later cell;
 built-in names stay protected. A definition's trailing `# comment` is its
-documentation — `man(tax)` finds it. Referenced numerically, definition
+documentation — `man tax` finds it. Referenced numerically, definition
 cells behave like text (skipped in ranges); the definitions live in the
 workbook as ordinary cell contents, so they save, load, and undo like
 everything else.

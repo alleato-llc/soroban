@@ -113,7 +113,7 @@ Feature: Data types — declared records with named construction
     Then the result is ""[1,2]""
     When I calculate "Json = 5"
     Then the calculation fails mentioning "cannot assign"
-    When I calculate "man(Json)"
+    When I calculate "man Json"
     Then documentation is shown mentioning "Formatting options"
 
   Scenario Outline: Construction mistakes explain themselves
@@ -158,7 +158,7 @@ Feature: Data types — declared records with named construction
 
   Scenario: A type documents itself through its trailing comment
     When I calculate "data Invoice { total: Number, paid: Boolean } # one customer invoice"
-    And I calculate "man(Invoice)"
+    And I calculate "man Invoice"
     Then documentation is shown mentioning "one customer invoice"
 
   Scenario: toJson escapes strings and renders empty containers

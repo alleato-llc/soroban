@@ -39,11 +39,11 @@ Feature: Defining your own functions
 
   Scenario: A trailing comment becomes the function's documentation
     When I calculate "tax(x) = x * 1.0825  # TX sales tax"
-    And I calculate "man(tax)"
+    And I calculate "man tax"
     Then documentation is shown mentioning "TX sales tax"
 
   Scenario: Built-in functions ship their manual
-    When I calculate "man(pmt)"
+    When I calculate "man pmt"
     Then documentation is shown mentioning "payment"
 
   Scenario: Only the taken branch of if() runs

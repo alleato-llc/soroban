@@ -14,6 +14,9 @@ public struct Token: Equatable, Sendable {
         case bang              // ! — sheet qualifier (Budget!A:1); != lexes first
         case quotedName(String) // 'Q1 Budget' — sheet names with spaces
         case plus, minus, star, slash, percent, caret
+        case shiftLeft, shiftRight     // << >> — Programmer-mode bit shifts (lexed mode-agnostically; parser gates)
+        case ampersand, pipe           // & | — Programmer-mode bitwise AND/OR
+        case tilde                     // ~ — Programmer-mode bitwise NOT (needs a fixed width)
         case sqrtSign          // √ — prefix square root
         case lessThan, greaterThan, lessOrEqual, greaterOrEqual, equalEqual, notEqual
         case assign            // =

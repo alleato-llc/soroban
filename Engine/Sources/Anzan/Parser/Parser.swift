@@ -9,14 +9,18 @@
 ///   primary:     number | ident | ident(args) | (expr)
 package struct Parser {
     private let tokens: [Token]
+    /// The dialect to parse under — affects only overloaded glyphs (`^ % & | << >>`).
+    /// `.normal` (the default) is today's grammar exactly. See `docs/MODES.md`.
+    private let mode: LanguageMode
     private var index = 0
 
-    private init(tokens: [Token]) {
+    private init(tokens: [Token], mode: LanguageMode) {
         self.tokens = tokens
+        self.mode = mode
     }
 
-    package static func parse(_ source: String) throws(EngineError) -> Expression {
-        var parser = Parser(tokens: try Lexer.tokenize(source))
+    package static func parse(_ source: String, mode: LanguageMode = .normal) throws(EngineError) -> Expression {
+        var parser = Parser(tokens: try Lexer.tokenize(source), mode: mode)
         let expr = try parser.statement()
         try parser.expectEnd()
         return expr
@@ -140,10 +144,10 @@ package struct Parser {
         if let lambda = try lambdaExpression() {
             return lambda
         }
-        let lhs = try additive()
+        let lhs = try bitwiseOr()
         guard let op = comparisonOperator(for: current.kind) else { return lhs }
         _ = advance()
-        let rhs = try additive()
+        let rhs = try bitwiseOr()
         if comparisonOperator(for: current.kind) != nil {
             throw EngineError.parseError(
                 message: "comparisons can't be chained — use and(a < b, b < c)",
@@ -313,6 +317,70 @@ package struct Parser {
         }
     }
 
+    // MARK: Programmer-mode bitwise band (Python precedence)
+    //
+    // Loosest-to-tightest: `|` · `^` · `&` · `<< >>`, sitting between comparison
+    // and additive (so bitwise binds below arithmetic, above comparison — no
+    // C-style `a & b == c` trap). Active only in `.programmer`; in other modes
+    // these are pass-throughs, and the glyphs that have no other meaning
+    // (`| & << >>`) raise a mode-scoped error rather than a vague "unexpected
+    // input". `^` is NOT errored here: in `.normal`/`.finance` it is power,
+    // consumed deeper by power().
+
+    private mutating func bitwiseOr() throws(EngineError) -> Expression {
+        var lhs = try bitwiseXor()
+        while case .pipe = current.kind {
+            guard mode == .programmer else { throw modeOperatorError("|", "bitOr", at: current.position) }
+            _ = advance()
+            lhs = .call(name: "bitOr", arguments: [lhs, try bitwiseXor()])
+        }
+        return lhs
+    }
+
+    private mutating func bitwiseXor() throws(EngineError) -> Expression {
+        var lhs = try bitwiseAnd()
+        while mode == .programmer, case .caret = current.kind {
+            _ = advance()
+            lhs = .call(name: "bitXor", arguments: [lhs, try bitwiseAnd()])
+        }
+        return lhs
+    }
+
+    private mutating func bitwiseAnd() throws(EngineError) -> Expression {
+        var lhs = try shift()
+        while case .ampersand = current.kind {
+            guard mode == .programmer else { throw modeOperatorError("&", "bitAnd", at: current.position) }
+            _ = advance()
+            lhs = .call(name: "bitAnd", arguments: [lhs, try shift()])
+        }
+        return lhs
+    }
+
+    private mutating func shift() throws(EngineError) -> Expression {
+        var lhs = try additive()
+        while true {
+            switch current.kind {
+            case .shiftLeft:
+                guard mode == .programmer else { throw modeOperatorError("<<", "bitShift", at: current.position) }
+                _ = advance()
+                lhs = .call(name: "bitShift", arguments: [lhs, try additive()])
+            case .shiftRight:
+                guard mode == .programmer else { throw modeOperatorError(">>", "bitShift", at: current.position) }
+                _ = advance()
+                // `a >> n` ≡ bitShift(a, -n) — bitShift shifts right on a negative count.
+                lhs = .call(name: "bitShift", arguments: [lhs, .unaryMinus(try additive())])
+            default:
+                return lhs
+            }
+        }
+    }
+
+    private func modeOperatorError(_ glyph: String, _ function: String, at position: Int) -> EngineError {
+        .parseError(
+            message: "'\(glyph)' is a Programmer-mode operator — use \(function)(…), or switch to Programmer mode",
+            position: position)
+    }
+
     private mutating func additive() throws(EngineError) -> Expression {
         var lhs = try term()
         while true {
@@ -339,6 +407,11 @@ package struct Parser {
             case .slash:
                 _ = advance()
                 lhs = .binary(.divide, lhs, try unary())
+            case .percent where mode == .programmer:
+                // Programmer mode: `%` is modulo (mod(a, b)), at multiplicative
+                // precedence. In other modes `%` is postfix percent (postfix()).
+                _ = advance()
+                lhs = .call(name: "mod", arguments: [lhs, try unary()])
             case .leftParen, .identifier, .cellReference:
                 // Implicit multiplication: `2(3+4)`, `2x`, `(a)(b)`, `2 A:1` —
                 // a value against a name, paren, or cell.
@@ -369,12 +442,21 @@ package struct Parser {
             _ = advance()
             return .call(name: "sqrt", arguments: [try unary()])
         }
+        if case .tilde = current.kind { // ~x is bitwise NOT (Programmer mode only)
+            guard mode == .programmer else {
+                throw modeOperatorError("~", "bitNot", at: current.position)
+            }
+            _ = advance()
+            return .call(name: "bitNot", arguments: [try unary()])
+        }
         return try power()
     }
 
     private mutating func power() throws(EngineError) -> Expression {
         let base = try postfix()
-        guard case .caret = current.kind else { return base }
+        // In Programmer mode `^` is XOR (consumed up the chain by bitwiseXor);
+        // only in .normal/.finance is it power.
+        guard mode != .programmer, case .caret = current.kind else { return base }
         _ = advance()
         // Right-associative; the exponent may carry its own unary minus (2^-1).
         return .binary(.power, base, try unary())
@@ -411,9 +493,10 @@ package struct Parser {
                 } else {
                     expr = .member(base: expr, name: name)
                 }
-            case .percent:
-                // Postfix percent: `3%` → 0.03. Always percent (modulo is mod());
-                // chains like other postfixes (`A:1%`, `arr[0]%`).
+            case .percent where mode != .programmer:
+                // Postfix percent: `3%` → 0.03. In .normal/.finance `%` is always
+                // percent; chains like other postfixes (`A:1%`, `arr[0]%`). In
+                // Programmer mode `%` is modulo — left for term() to consume.
                 _ = advance()
                 expr = .percent(expr)
             default:
@@ -466,23 +549,18 @@ package struct Parser {
                 }
             }
 
-            // man(name) / help(name): the argument is a name, not a value —
-            // parse it before the normal (evaluating) argument list would.
-            if lowered == "man" || lowered == "help" {
-                guard case .leftParen = current.kind else {
+            // man NAME / manual NAME / help NAME: unix-style — the argument is a
+            // NAME (never evaluated), space-separated, NO parentheses.
+            if lowered == "man" || lowered == "manual" || lowered == "help" {
+                if case .leftParen = current.kind {
                     throw EngineError.parseError(
-                        message: "usage: \(name)(functionName) — e.g. \(name)(pmt)",
-                        position: token.position)
-                }
-                _ = advance()
-                guard case .identifier(let subject) = current.kind else {
-                    throw EngineError.parseError(
-                        message: "\(name)() needs a function name — e.g. \(name)(pmt)",
+                        message: "use `\(name) name` — e.g. \(name) pmt (no parentheses)",
                         position: current.position)
                 }
-                _ = advance()
-                guard case .rightParen = current.kind else {
-                    throw EngineError.parseError(message: "expected ')'", position: current.position)
+                guard case .identifier(let subject) = current.kind else {
+                    throw EngineError.parseError(
+                        message: "\(name) needs a function name — e.g. \(name) pmt",
+                        position: current.position)
                 }
                 _ = advance()
                 return .helpRequest(name: subject)
@@ -836,8 +914,8 @@ package struct Parser {
 /// Identifiers that cannot be assigned to (or defined as functions).
 /// `sigma` is the special summation form, so a user function would be
 /// uncallable anyway.
-let ReservedNames: Set<String> = ["ans", "pi", "e", "tau", "π", "τ", "sigma", "if", "man", "help",
-                                  "true", "false", "json"]
+let ReservedNames: Set<String> = ["ans", "pi", "e", "tau", "π", "τ", "sigma", "if", "man", "manual", "help",
+                                  "true", "false", "json", "rounding"]
 
 extension Parser {
     /// `sigma_x`/`product_x` spellings are reserved for the indexed

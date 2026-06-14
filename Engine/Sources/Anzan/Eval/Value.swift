@@ -21,6 +21,16 @@ public enum Value: Sendable {
     /// canonicalized to declaration order by the constructor.
     case record(RecordValue)
 
+    /// A bounded, checked integer (`Int32(v)` / `UInt8(v)`, or `Int(v, bits)`) — a
+    /// number with a declared width. Coerces to its decimal value outside typed
+    /// arithmetic; typed arithmetic (the mixing matrix) lives in the evaluator.
+    case fixedInt(FixedInt)
+
+    /// A bounded, checked fixed-precision decimal (`Decimal(v, precision, scale)`)
+    /// — SQL DECIMAL(p,s) / the money type. Coerces to its decimal value outside
+    /// typed arithmetic; the mixing matrix lives in the evaluator.
+    case fixedDecimal(FixedDecimal)
+
     /// An opaque, HOST-implemented handle navigated through a uniform protocol
     /// (`.member`/`[…]`/`.method(…)`). Anzan never knows what it is — the host
     /// (e.g. the spreadsheet's Workbook/Worksheet/Cell reflection) provides the
@@ -79,6 +89,8 @@ public enum Value: Sendable {
         case .map: return "a map"
         case .function: return "a function"
         case .record(let record): return "a \(record.typeName)"
+        case .fixedInt(let f): return "a \(f.typeName)"
+        case .fixedDecimal(let d): return "a \(d.typeName)"
         case .host(let object): return "a \(object.typeName)"
         }
     }
@@ -93,11 +105,17 @@ public enum Value: Sendable {
     /// The numeric payload, or a type error naming the context:
     /// "expected a number for ^, got an array".
     public func asNumber(for context: String) throws -> BigDecimal {
-        guard case .number(let value) = self else {
+        switch self {
+        case .number(let value): return value
+        // A fixed-width int reads as its numeric value outside typed arithmetic
+        // (comparison, truthiness, numeric functions). Typed arithmetic — the
+        // mixing matrix + checked overflow — is intercepted in the evaluator.
+        case .fixedInt(let f): return f.decimal
+        case .fixedDecimal(let d): return d.value
+        default:
             throw EngineError.domainError(
                 message: "expected a number for \(context), got \(kindName)")
         }
-        return value
     }
 
     /// Numbers carried by this value, arrays flattened recursively — how
@@ -107,6 +125,10 @@ public enum Value: Sendable {
         switch self {
         case .number(let value):
             return [value]
+        case .fixedInt(let f):
+            return [f.decimal]
+        case .fixedDecimal(let d):
+            return [d.value]
         case .array(let items):
             var numbers: [BigDecimal] = []
             numbers.reserveCapacity(items.count)
@@ -154,6 +176,15 @@ extension Value: Equatable {
             return a == b
         case (.host(let a), .host(let b)):
             return a.isEqual(to: b)
+        // Fixed-width ints compare by numeric value — `Int8(5) == 5` and
+        // `Int8(5) == Int16(5)` are both true (it's the number 5).
+        case (.fixedInt(let a), .fixedInt(let b)): return a.value == b.value
+        case (.fixedInt(let a), .number(let b)): return a.decimal == b
+        case (.number(let a), .fixedInt(let b)): return a == b.decimal
+        // Fixed-precision decimals compare by numeric value too.
+        case (.fixedDecimal(let a), .fixedDecimal(let b)): return a.value == b.value
+        case (.fixedDecimal(let a), .number(let b)): return a.value == b
+        case (.number(let a), .fixedDecimal(let b)): return a == b.value
         default:
             return false
         }
@@ -214,16 +245,46 @@ extension Value: CustomStringConvertible {
                 "\(entry.key): \(record.fieldText(entry))"
             }.joined(separator: ", ")
             return "\(record.typeName)(\(body))"
+        case .fixedInt(let f):
+            return f.description
+        case .fixedDecimal(let d):
+            return d.description
         case .host(let object):
             return object.description
         }
     }
 
+    /// A clean, human-facing rendering: identical to `description` EXCEPT a
+    /// fixed-width int shows its plain integer (`343353`) and a fixed-precision
+    /// decimal its scale-padded value (`10.50`) instead of the constructor call.
+    /// `description` stays the canonical, re-parseable form — what persists,
+    /// recalls, and copies (so the *type* survives a round trip); this is only
+    /// what the log and the CLI ECHO. Recurses so fixed values nested in
+    /// arrays/maps read cleanly too.
+    public var displayDescription: String {
+        switch self {
+        case .number, .string, .function, .record, .host:
+            return description
+        case .array(let items):
+            return "[" + items.map(\.displayDescription).joined(separator: ", ") + "]"
+        case .map(let entries):
+            let body = entries.map { entry in
+                "\(Self.keyLiteral(entry.key)): \(entry.value.displayDescription)"
+            }.joined(separator: ", ")
+            return "{" + body + "}"
+        case .fixedInt(let f):
+            return f.value.description
+        case .fixedDecimal(let d):
+            return d.text
+        }
+    }
+
     /// Bare text for concatenation and cell display — strings without their
-    /// quotes; everything else canonical.
+    /// quotes; everything else its clean (`displayDescription`) form, so a
+    /// fixed-width int concatenates as its plain number, not `Int32(…)`.
     public var displayText: String {
         if case .string(let text) = self { return text }
-        return description
+        return displayDescription
     }
 
     /// True if this value embeds a host reflection handle (`Workbook`, a
@@ -236,7 +297,7 @@ extension Value: CustomStringConvertible {
         case .host: return true
         case .array(let items): return items.contains { $0.containsHost }
         case .map(let entries): return entries.contains { $0.value.containsHost }
-        case .number, .string, .function, .record: return false
+        case .number, .string, .function, .record, .fixedInt, .fixedDecimal: return false
         }
     }
 

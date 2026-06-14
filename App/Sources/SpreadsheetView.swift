@@ -15,7 +15,12 @@ struct SpreadsheetView: View {
     private var theme: Theme { themeManager.current }
     private var sheet: SheetModel { session.sheet }
 
-    static let gutterWidth: CGFloat = 44
+    static let baseGutterWidth: CGFloat = 44
+    /// The row-number gutter scales with the font like the cells, so wide row
+    /// numbers don't clip at large sizes.
+    private var gutterWidth: CGFloat {
+        (Self.baseGutterWidth * sheet.gridFontSize / SheetModel.baseFontSize).rounded()
+    }
 
     var body: some View {
         ScrollView(.horizontal) {
@@ -94,7 +99,14 @@ struct SpreadsheetView: View {
             guard sheet.selected != nil, sheet.editing == nil else { return }
             sheet.pasteFromPasteboard()
         }
-        .onAppear { gridFocused = true }
+        .onAppear {
+            gridFocused = true
+            sheet.gridFontSize = themeManager.current.fontSize
+        }
+        // Keep the grid's default cell geometry proportional to the app font.
+        .onChange(of: themeManager.current.fontSize) {
+            sheet.gridFontSize = themeManager.current.fontSize
+        }
         // When a cell editor closes, hand keyboard focus back to the grid.
         .onChange(of: sheet.editing) {
             if sheet.editing == nil {
@@ -106,12 +118,12 @@ struct SpreadsheetView: View {
     private var headerRow: some View {
         HStack(spacing: 0) {
             Text("") // gutter corner
-                .frame(width: Self.gutterWidth, height: SheetModel.defaultRowHeight)
+                .frame(width: gutterWidth, height: sheet.defaultRowHeightScaled)
             ForEach(0..<sheet.visibleColumnCount, id: \.self) { column in
                 Text(CellAddress(column: column, row: 0).columnName)
                     .font(theme.font(scale: 0.85))
                     .foregroundStyle(theme.secondaryText.color)
-                    .frame(width: sheet.width(ofColumn: column), height: SheetModel.defaultRowHeight)
+                    .frame(width: sheet.width(ofColumn: column), height: sheet.defaultRowHeightScaled)
                     .contentShape(Rectangle())
                     .contextMenu {
                         if !sheet.activeSheetIsData {
@@ -126,7 +138,7 @@ struct SpreadsheetView: View {
     }
 
     private func gridRow(_ row: Int) -> some View {
-        GridRowView(row: row, gutterWidth: Self.gutterWidth)
+        GridRowView(row: row, gutterWidth: gutterWidth)
     }
 
     // MARK: Resize guide lines (the only views that update during a drag)
@@ -134,7 +146,7 @@ struct SpreadsheetView: View {
     @ViewBuilder
     private var columnResizeGuide: some View {
         if let preview = sheet.columnResizePreview {
-            let leftEdge = (0..<preview.index).reduce(Self.gutterWidth) { $0 + sheet.width(ofColumn: $1) }
+            let leftEdge = (0..<preview.index).reduce(gutterWidth) { $0 + sheet.width(ofColumn: $1) }
             Rectangle()
                 .fill(theme.accent.color)
                 .frame(width: 1.5)
@@ -147,7 +159,7 @@ struct SpreadsheetView: View {
     private var rowResizeGuide: some View {
         if let preview = sheet.rowResizePreview {
             let topEdge = (0..<preview.index).reduce(CGFloat(0)) { $0 + sheet.height(ofRow: $1) }
-            let gridWidth = (0..<Spreadsheet.columnCount).reduce(Self.gutterWidth) { $0 + sheet.width(ofColumn: $1) }
+            let gridWidth = (0..<Spreadsheet.columnCount).reduce(gutterWidth) { $0 + sheet.width(ofColumn: $1) }
             Rectangle()
                 .fill(theme.accent.color)
                 .frame(width: gridWidth, height: 1.5)

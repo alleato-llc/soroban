@@ -169,6 +169,23 @@ extension BigDecimal {
         return quotient + (remainder.sign == .minus ? -1 : 1)
     }
 
+    /// Rounds to `places` decimal places with half **away from zero** (Java
+    /// HALF_UP) — the fixed-precision `decimal` type's `Rounding.HalfUp` mode.
+    public func roundedHalfUp(toPlaces places: Int) -> BigDecimal {
+        guard exponent < -places else { return self }
+        let scale = BigInt(10).power(-places - exponent)
+        let (q, r) = significand.quotientAndRemainder(dividingBy: scale)
+        return BigDecimal(significand: Self.roundHalfUp(quotient: q, remainder: r, divisor: scale),
+                          exponent: -places)
+    }
+
+    /// Half-or-more rounds away from zero (no even tie-break).
+    private static func roundHalfUp(quotient: BigInt, remainder: BigInt, divisor: BigInt) -> BigInt {
+        if remainder.isZero { return quotient }
+        guard remainder.magnitude * 2 >= divisor.magnitude else { return quotient }
+        return quotient + (remainder.sign == .minus ? -1 : 1)
+    }
+
     /// Division to `PrecisionContext.current` significant digits.
     /// Exact when the quotient terminates within the working precision.
     public static func / (lhs: BigDecimal, rhs: BigDecimal) throws(EngineError) -> BigDecimal {

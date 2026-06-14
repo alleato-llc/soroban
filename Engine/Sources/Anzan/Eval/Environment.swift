@@ -31,6 +31,7 @@ public final class EvaluationEnvironment {
             case "true": return .number(.one)
             case "false": return .number(.zero)
             case "json": return Constants.json
+            case "rounding": return Constants.rounding
             default: return variables[name]
             }
         }
@@ -212,5 +213,13 @@ enum Constants {
     static let json: Value = .map([
         Value.MapEntry(key: "Pretty", value: .string("pretty")),
         Value.MapEntry(key: "Compact", value: .string("compact")),
+    ])
+
+    /// Decimal()'s rounding namespace: `Rounding.Bankers` / `Rounding.HalfUp` —
+    /// named constants instead of a magic string (same pattern as `Json`). Plain
+    /// string values in a constant map, so `Decimal(x, p, s, "halfUp")` works too.
+    static let rounding: Value = .map([
+        Value.MapEntry(key: "Bankers", value: .string("bankers")),
+        Value.MapEntry(key: "HalfUp", value: .string("halfUp")),
     ])
 }

@@ -4,19 +4,30 @@ import Foundation
 // MARK: Grid layout (resizable columns/rows)
 
 extension SheetModel {
+    /// The font size the default geometry below is tuned for (92×24 at 14pt).
+    static let baseFontSize: CGFloat = 14
     static let defaultColumnWidth: CGFloat = 92
     static let defaultRowHeight: CGFloat = 24
     static let columnWidthRange: ClosedRange<CGFloat> = 40...400
     static let rowHeightRange: ClosedRange<CGFloat> = 18...120
 
+    /// Defaults scale with the app font so a larger font gets proportionally
+    /// larger cells; a column/row the user resized keeps its explicit size.
+    var defaultColumnWidthScaled: CGFloat {
+        (Self.defaultColumnWidth * gridFontSize / Self.baseFontSize).clamped(to: Self.columnWidthRange)
+    }
+    var defaultRowHeightScaled: CGFloat {
+        (Self.defaultRowHeight * gridFontSize / Self.baseFontSize).clamped(to: Self.rowHeightRange)
+    }
+
     func width(ofColumn column: Int) -> CGFloat {
         _ = generation // layout is per-sheet; switches re-render via generation
-        return store.activeSheet.columnWidths[column].map { CGFloat($0) } ?? Self.defaultColumnWidth
+        return store.activeSheet.columnWidths[column].map { CGFloat($0) } ?? defaultColumnWidthScaled
     }
 
     func height(ofRow row: Int) -> CGFloat {
         _ = generation
-        return store.activeSheet.rowHeights[row].map { CGFloat($0) } ?? Self.defaultRowHeight
+        return store.activeSheet.rowHeights[row].map { CGFloat($0) } ?? defaultRowHeightScaled
     }
 
     /// In-flight drag, shown as a guide line. The actual size applies on

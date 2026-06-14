@@ -51,6 +51,10 @@ struct SorobanSteps: StepDefinitions {
         Self.outcome = Self.calculator.evaluate(match.captures[0])
     }
 
+    let setMode = StepDefinition.given("the calculator is in (normal|programmer|finance) mode") { match in
+        Self.calculator.mode = LanguageMode(rawValue: match.captures[0])!
+    }
+
     let resultIs = StepDefinition.then("the result is \"(.*)\"") { match in
         guard case .success(let outcome)? = Self.outcome else {
             throw Failure(description: "expected a result, got \(String(describing: Self.outcome))")

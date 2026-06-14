@@ -31,8 +31,8 @@ public indirect enum Expression: Equatable, Sendable {
     /// `if(cond, then, else)` — a special form: only the taken branch is
     /// evaluated, so the other may divide by zero or recurse.
     case conditional(condition: Expression, then: Expression, else: Expression)
-    /// `man(pmt)` / `help(pmt)` — prints documentation; the argument is a
-    /// NAME, never evaluated.
+    /// `man pmt` / `manual pmt` / `help pmt` — prints documentation; the
+    /// argument is a NAME, never evaluated, space-separated (no parentheses).
     case helpRequest(name: String)
     /// `"…"` — a string value.
     case stringLiteral(String)

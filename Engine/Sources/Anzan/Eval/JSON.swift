@@ -24,6 +24,12 @@ extension Value {
         case .record(let record):
             return try Self.jsonObject(record.entries, booleanFields: record.booleanFields,
                                        pretty: pretty, depth: depth)
+        case .fixedInt(let f):
+            // A bounded integer is a JSON number (its exact value).
+            return f.value.description
+        case .fixedDecimal(let d):
+            // A JSON number, kept at the declared scale (e.g. 10.50).
+            return d.text
         case .function:
             throw EngineError.domainError(message: "toJson() can't serialize a function")
         case .host(let object):

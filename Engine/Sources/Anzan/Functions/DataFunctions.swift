@@ -15,7 +15,7 @@ let dataFunctions: [BuiltinFunction] = [
             case .map(let entries): return .number(BigDecimal(entries.count))
             case .record(let record): return .number(BigDecimal(record.entries.count))
             case .string(let text): return .number(BigDecimal(text.count))
-            case .number, .function, .host:
+            case .number, .fixedInt, .fixedDecimal, .function, .host:
                 throw EngineError.domainError(message: "len() works on arrays, maps, and strings")
             }
         }),

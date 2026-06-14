@@ -59,23 +59,24 @@ struct ManAndCommentsTests {
 
     @Test func manPrintsDocumentation() throws {
         let calc = Calculator()
-        guard case .success(.documentation(let doc)) = calc.evaluate("man(pmt)") else {
+        guard case .success(.documentation(let doc)) = calc.evaluate("man pmt") else {
             Issue.record("expected documentation outcome")
             return
         }
         #expect(doc.name == "pmt")
         #expect(doc.signature.contains("pmt("))
 
-        // help() is the same; lookups are case-insensitive; special forms work.
-        #expect(calc.evaluate("help(SUM)").isFailure == false)
-        guard case .success(.documentation(let ifDoc)) = calc.evaluate("man(if)") else {
+        // help/manual are the same; lookups are case-insensitive; special forms work.
+        #expect(calc.evaluate("help SUM").isFailure == false)
+        #expect(calc.evaluate("manual sum").isFailure == false)
+        guard case .success(.documentation(let ifDoc)) = calc.evaluate("man if") else {
             Issue.record("expected if docs")
             return
         }
         #expect(ifDoc.summary.contains("taken branch"))
 
         // The printed form is multi-line: signature, summary, examples.
-        let text = try calc.evaluate("man(abs)").get().description
+        let text = try calc.evaluate("man abs").get().description
         #expect(text.contains("abs(x)"))
         #expect(text.contains("e.g."))
     }
@@ -83,13 +84,13 @@ struct ManAndCommentsTests {
     @Test func manCoversUserFunctionsAndFailsHelpfully() {
         let calc = Calculator()
         _ = calc.evaluate("tax(x) = x * 1.0825 # TX sales tax")
-        guard case .success(.documentation(let doc)) = calc.evaluate("man(tax)") else {
+        guard case .success(.documentation(let doc)) = calc.evaluate("man tax") else {
             Issue.record("expected user function docs")
             return
         }
         #expect(doc.summary == "TX sales tax")
 
-        guard case .failure(let error) = calc.evaluate("man(nope)") else {
+        guard case .failure(let error) = calc.evaluate("man nope") else {
             Issue.record("expected failure")
             return
         }
@@ -99,7 +100,7 @@ struct ManAndCommentsTests {
     @Test func manIsLogOnlyAndReserved() {
         let calc = Calculator()
         let sheet = Spreadsheet(calculator: calc)
-        sheet.setCell("man(pmt)", at: CellAddress(column: 0, row: 0))
+        sheet.setCell("man pmt", at: CellAddress(column: 0, row: 0))
         guard case .error(let message) = sheet.displayValue(at: CellAddress(column: 0, row: 0)) else {
             Issue.record("expected cell error")
             return
@@ -107,11 +108,31 @@ struct ManAndCommentsTests {
         #expect(message.contains("calculation log"))
 
         #expect(calc.evaluate("man = 5").isFailure)
-        #expect(calc.evaluate("help(x) = x").isFailure)
-        #expect(calc.evaluate("man(1 + 2)").isFailure) // names only
-        // man() never touches ans.
+        #expect(calc.evaluate("help(x) = x").isFailure) // reserved — can't define
+        #expect(calc.evaluate("man 1").isFailure)       // names only
+        // man never touches ans.
         _ = calc.evaluate("42")
-        _ = calc.evaluate("man(abs)")
+        _ = calc.evaluate("man abs")
         #expect(calc.environment.ans == .number(BigDecimal(42)))
+    }
+
+    @Test func parensFormIsRejectedWithAHint() {
+        let calc = Calculator()
+        // The old man(func) spelling is gone — it errors with a migration hint.
+        guard case .failure(let error) = calc.evaluate("man(abs)") else {
+            Issue.record("man(abs) should fail now"); return
+        }
+        #expect(error.description.contains("no parentheses"))
+        // manual is the literal alias; all three space-forms work.
+        #expect(calc.evaluate("man abs").isFailure == false)
+        #expect(calc.evaluate("manual abs").isFailure == false)
+        #expect(calc.evaluate("help abs").isFailure == false)
+    }
+
+    @Test func manResolvesOperatorAndModeDocs() {
+        let calc = Calculator()
+        // man covers the curated operator/syntax + mode docs, not just functions.
+        #expect(calc.evaluate("man modes").isFailure == false)
+        #expect(calc.evaluate("man arithmetic").isFailure == false)
     }
 }

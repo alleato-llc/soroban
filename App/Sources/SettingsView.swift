@@ -1,8 +1,10 @@
 import SwiftUI
 import AppKit
+import SorobanEngine
 
 struct SettingsView: View {
     @Environment(ThemeManager.self) private var themeManager
+    @Environment(CalculatorSession.self) private var session
 
     /// Monospaced families only: the log's error-caret column padding and the
     /// grid's number alignment rely on fixed-pitch rendering.
@@ -14,11 +16,20 @@ struct SettingsView: View {
 
     var body: some View {
         @Bindable var themeManager = themeManager
+        @Bindable var session = session
 
         Form {
             Picker("Theme:", selection: $themeManager.currentName) {
                 ForEach(themeManager.themes) { theme in
                     Text(theme.name).tag(theme.name)
+                }
+            }
+
+            // Input/display dialect for the log (docs/MODES.md). Cells stay
+            // canonical; only the log path reads/echoes glyphs per this mode.
+            Picker("Mode:", selection: $session.mode) {
+                ForEach(LanguageMode.allCases, id: \.self) { mode in
+                    Text(mode.displayName).tag(mode)
                 }
             }
 
@@ -33,7 +44,7 @@ struct SettingsView: View {
 
             LabeledContent("Size:") {
                 HStack {
-                    Slider(value: fontSize, in: 10...24, step: 1)
+                    Slider(value: fontSize, in: ThemeManager.fontSizeRange, step: 1)
                     Text("\(Int(themeManager.current.fontSize)) pt")
                         .monospacedDigit()
                         .frame(width: 44, alignment: .trailing)

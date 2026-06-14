@@ -77,6 +77,21 @@ struct SorobanApp: App {
                     session.inspectorVisible.toggle()
                 }
                 .keyboardShortcut("0", modifiers: [.command, .option])
+                Divider()
+                Button("Zoom In") {
+                    themeManager.fontSizeOverride =
+                        ThemeManager.clampedFontSize(themeManager.current.fontSize + 1)
+                }
+                .keyboardShortcut("+", modifiers: .command)
+                Button("Zoom Out") {
+                    themeManager.fontSizeOverride =
+                        ThemeManager.clampedFontSize(themeManager.current.fontSize - 1)
+                }
+                .keyboardShortcut("-", modifiers: .command)
+                Button("Actual Size") {
+                    themeManager.fontSizeOverride = nil // back to the theme default
+                }
+                .keyboardShortcut("0", modifiers: .command)
             }
             // Example expressions, grouped by language component — always
             // reachable (the empty-state welcome only shows on a fresh tape).
@@ -148,6 +163,7 @@ struct SorobanApp: App {
 
         Settings {
             SettingsView()
+                .environment(session)
                 .environment(themeManager)
         }
 
