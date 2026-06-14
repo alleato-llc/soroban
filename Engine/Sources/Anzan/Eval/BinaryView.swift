@@ -102,3 +102,127 @@ public struct BinaryView: Sendable, Equatable {
         }
     }
 }
+
+// MARK: - Bit-field formats (named bit ranges)
+
+extension BinaryView {
+    /// A field in a format: a named bit range, optionally with per-bit FLAG names
+    /// (high→low, count == width) that give each bit a meaning — `owner` as
+    /// `["r","w","x"]`. `flags == nil` is a plain numeric field.
+    public struct FieldSpec: Sendable, Equatable {
+        public let name: String
+        public let width: Int
+        public let flags: [String]?
+        public init(name: String, width: Int, flags: [String]? = nil) {
+            self.name = name; self.width = width; self.flags = flags
+        }
+    }
+
+    /// One named bit range decoded from the value. A format packs fields into the
+    /// LOW bits, listed high→low, so they read left-to-right in the grid as
+    /// `[unlabeled high bits][f1][f2]…[fN]`.
+    public struct Field: Sendable, Equatable {
+        public let name: String
+        public let width: Int
+        public let lowBit: Int      // 0 = LSB
+        public let value: BigInt    // the field's unsigned value
+        public let flags: [String]? // per-bit flag names (high→low), nil = numeric
+
+        /// The decoded meaning of a flag field: single-char flags read
+        /// positionally with `-` for clear bits (`r-x`); multi-char flags list
+        /// only the set ones (`ACK SYN`, or `—` when none). nil for numeric.
+        public var flagString: String? {
+            guard let flags else { return nil }
+            if flags.allSatisfy({ $0.count == 1 }) {
+                return flags.enumerated().map { i, name in
+                    isSet(bitFromTop: i) ? name : "-"
+                }.joined()
+            }
+            let set = flags.enumerated().compactMap { i, name in
+                isSet(bitFromTop: i) ? name : nil
+            }
+            return set.isEmpty ? "—" : set.joined(separator: " ")
+        }
+
+        /// Is the flag at position `i` (0 = the field's high bit) set?
+        public func isSet(bitFromTop i: Int) -> Bool {
+            (value >> BigInt(width - 1 - i)) & 1 == 1
+        }
+    }
+
+    /// Parse a layout from a map value. Each entry's value is either a positive
+    /// integer bit WIDTH (`owner: 3`) or an array of per-bit FLAG names
+    /// (`owner: ["r","w","x"]`, width = count); insertion order is preserved
+    /// (first = highest field). Returns nil if any entry is neither.
+    public static func layout(from value: Value) -> [FieldSpec]? {
+        guard case .map(let entries) = value, !entries.isEmpty else { return nil }
+        var layout: [FieldSpec] = []
+        for entry in entries {
+            switch entry.value {
+            case .number(let n):
+                guard n.isInteger, let width = n.intValue, width >= 1 else { return nil }
+                layout.append(FieldSpec(name: entry.key, width: width))
+            case .array(let items):
+                guard !items.isEmpty else { return nil }
+                var names: [String] = []
+                for item in items {
+                    guard case .string(let name) = item else { return nil }
+                    names.append(name)
+                }
+                layout.append(FieldSpec(name: entry.key, width: names.count, flags: names))
+            default:
+                return nil
+            }
+        }
+        return layout
+    }
+
+    /// Build a format map from numeric (name, width) pairs — the inverse of
+    /// `layout(from:)` (the `MapEntry` initializer is module-internal).
+    public static func formatMap(_ pairs: [(name: String, width: Int)]) -> Value {
+        .map(pairs.map { Value.MapEntry(key: $0.name, value: .number(BigDecimal($0.width))) })
+    }
+
+    /// Build a format map from flag fields — each value is an array of per-bit
+    /// flag names (`owner: ["r","w","x"]`).
+    public static func flagFormatMap(_ pairs: [(name: String, flags: [String])]) -> Value {
+        .map(pairs.map { pair in
+            Value.MapEntry(key: pair.name, value: .array(pair.flags.map { Value.string($0) }))
+        })
+    }
+
+    /// The total width a layout occupies.
+    public static func layoutWidth(_ layout: [FieldSpec]) -> Int {
+        layout.reduce(0) { $0 + $1.width }
+    }
+
+    /// Decode the current value into `layout`'s fields (high→low, matching the
+    /// grid). Bits above the layout's total are simply unlabeled.
+    public func fields(_ layout: [FieldSpec]) -> [Field] {
+        var top = Self.layoutWidth(layout)
+        return layout.map { f in
+            let low = top - f.width
+            top = low
+            let mask = (BigInt(1) << f.width) - 1
+            let value = low >= 0 ? (pattern >> low) & mask : BigInt(0)
+            return Field(name: f.name, width: f.width, lowBit: max(low, 0), value: value, flags: f.flags)
+        }
+    }
+
+    /// A new view with field `name` set to `value` (clamped to the field's
+    /// width), every other bit unchanged. Unknown name → unchanged.
+    public func setting(field name: String, to value: BigInt, layout: [FieldSpec]) -> BinaryView {
+        var top = Self.layoutWidth(layout)
+        let registerMask = (BigInt(1) << width) - 1
+        for f in layout {
+            let low = top - f.width
+            top = low
+            guard f.name == name, low >= 0 else { continue }
+            let fieldMask = ((BigInt(1) << f.width) - 1) << low
+            let cleared = pattern & (registerMask ^ fieldMask)
+            let placed = ((max(value, 0) << low) & fieldMask)
+            return BinaryView(kind: kind, width: width, pattern: cleared | placed)
+        }
+        return self
+    }
+}

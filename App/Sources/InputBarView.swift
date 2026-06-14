@@ -83,6 +83,19 @@ struct InputBarView: View {
                     return .handled
                 }
 
+            // Binary bit-editor toggle — only in Programmer mode (where the
+            // editor lives); accented when shown. Mirrors ⌥⌘B / the ✕ on the panel.
+            if session.mode == .programmer {
+                Button { session.binaryEditorShown.toggle() } label: {
+                    Text("01")
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(session.binaryEditorShown
+                                         ? theme.accent.color : theme.secondaryText.color)
+                }
+                .buttonStyle(.plain)
+                .help("Show/hide the binary editor (⌥⌘B)")
+            }
+
             // Input dialect (docs/MODES.md): a compact status affordance — the
             // icon shows the active mode, the menu switches it. Accented when not
             // Normal so a non-default dialect is visible at a glance.

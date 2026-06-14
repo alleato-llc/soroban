@@ -1,4 +1,5 @@
 import SorobanEngine
+import BigInt
 import Observation
 import Foundation
 
@@ -105,6 +106,105 @@ final class CalculatorSession {
 
     /// Reset the grid to `ans`, discarding staged bit edits.
     func cancelBinaryEdits() { binaryDraft = nil }
+
+    // MARK: Binary bit-editor — formats (named bit ranges)
+
+    /// The active bit-field format — a map `{owner: 3, …}` overlaid on the grid
+    /// to label bit ranges; nil = raw bits. A presentational lens, not a value
+    /// type: presets are built-in, custom formats persist by being SAVED as an
+    /// ordinary map variable in the log (see `saveFormat`).
+    var activeFormat: Value?
+
+    /// The active format decoded to ordered fields (each with optional per-bit flags).
+    var activeLayout: [BinaryView.FieldSpec]? {
+        activeFormat.flatMap { BinaryView.layout(from: $0) }
+    }
+
+    /// Built-in formats shipped with the app (not language constructs). Flag
+    /// fields decode each bit to a meaning (`r-x`); RGB565 is plain numeric.
+    static let binaryFormatPresets: [(name: String, format: Value)] = [
+        ("Unix permissions", BinaryView.flagFormatMap([
+            ("owner", ["r", "w", "x"]), ("group", ["r", "w", "x"]), ("other", ["r", "w", "x"])])),
+        ("TCP flags", BinaryView.flagFormatMap([
+            ("flags", ["CWR", "ECE", "URG", "ACK", "PSH", "RST", "SYN", "FIN"])])),
+        ("RGB565", BinaryView.formatMap([("r", 5), ("g", 6), ("b", 5)])),
+    ]
+
+    /// Custom/saved formats persisted in the workbook — any environment variable
+    /// that is a map of positive-integer widths reads back as a format.
+    var savedFormats: [(name: String, format: Value)] {
+        logVariables
+            .compactMap { BinaryView.layout(from: $0.value) != nil ? ($0.key, $0.value) : nil }
+            .sorted { $0.0 < $1.0 }
+    }
+
+    /// The active format as an editable spec string ("owner:3 group:3 other:3").
+    var activeFormatSpec: String {
+        (activeLayout ?? []).map { "\($0.name):\($0.width)" }.joined(separator: " ")
+    }
+
+    /// The display name of the active format for the menu label — a preset/saved
+    /// name when it matches one, else "Custom"; nil when no format is active.
+    var activeFormatName: String? {
+        guard let format = activeFormat else { return nil }
+        if let preset = Self.binaryFormatPresets.first(where: { $0.format == format }) { return preset.name }
+        if let saved = savedFormats.first(where: { $0.format == format }) { return saved.name }
+        return "Custom"
+    }
+
+    func applyFormat(_ value: Value?) {
+        activeFormat = value.flatMap { BinaryView.layout(from: $0) != nil ? $0 : nil }
+        fitWidthToFormat()
+    }
+
+    /// Widen a plain register to at least the active format's total, so the
+    /// fields aren't clipped by a too-narrow width (a fixed-width int can't grow).
+    private func fitWidthToFormat() {
+        guard let layout = activeLayout else { return }
+        let total = BinaryView.layoutWidth(layout)
+        if total > binaryWidth, let fit = BinaryView.editableWidths.first(where: { $0 >= total }) {
+            binaryWidth = fit
+        }
+    }
+
+    /// Parse a custom spec ("owner:3 group:3", space/comma separated) into the
+    /// active format; an empty/invalid spec clears it.
+    func applyFormatSpec(_ spec: String) {
+        var pairs: [(name: String, width: Int)] = []
+        for token in spec.split(whereSeparator: { $0 == " " || $0 == "," }) {
+            let parts = token.split(separator: ":")
+            guard parts.count == 2, let width = Int(parts[1]), width >= 1 else { continue }
+            pairs.append((String(parts[0]), width))
+        }
+        activeFormat = pairs.isEmpty ? nil : BinaryView.formatMap(pairs)
+        fitWidthToFormat()
+    }
+
+    /// Persist the active format as `name = {…}` — an ordinary log assignment, so
+    /// it lives in the workbook and reappears in `savedFormats`. Preserves any
+    /// in-progress input line.
+    func saveFormat(named name: String) {
+        guard let format = activeFormat else { return }
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+        let stash = input
+        input = "\(trimmed) = \(format.description)"
+        submit()
+        suppressNextSuggestionRefresh = true
+        input = stash
+    }
+
+    /// The current binary value decoded into the active format's fields.
+    var binaryFields: [BinaryView.Field] {
+        guard let layout = activeLayout, case .success(let view) = binaryView else { return [] }
+        return view.fields(layout)
+    }
+
+    /// Edit a field by value (writes only its bit range, clamped), staging a draft.
+    func setBinaryField(_ name: String, to value: BigInt) {
+        guard let layout = activeLayout, case .success(let view) = binaryView else { return }
+        binaryDraft = view.setting(field: name, to: value, layout: layout).value
+    }
 
     // MARK: Function reference
 

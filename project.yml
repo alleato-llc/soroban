@@ -8,6 +8,11 @@ options:
 packages:
   SorobanEngine:
     path: Engine
+  BigInt:
+    # The app speaks BigInt directly (bit-field values in the binary editor).
+    # Keep in sync with Engine/Package.swift's BigInt pin.
+    url: https://github.com/attaswift/BigInt.git
+    from: 5.3.0
   PickleKit:
     url: https://github.com/alleato-llc/pickle-kit.git
     # Revision-pinned (no upstream tags yet) — keep in sync with
@@ -25,6 +30,8 @@ targets:
     dependencies:
       - package: SorobanEngine
         product: SorobanEngine
+      - package: BigInt
+        product: BigInt
     # App icon PNGs are derived artifacts (gitignored) — scripts/generate_icon.py
     # is the source of truth and regenerates them before every build.
     preBuildScripts:
