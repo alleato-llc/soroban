@@ -13,12 +13,14 @@ definition), **notation-mirroring** (`f(x) = x * 2`, `2x`, `∑_i=1^10(i^2)`
 read like the math they denote), and **small** (no I/O, no loops with side
 effects — the host provides persistence and interaction).
 
-This document specifies the canonical language. Two companion specs cover
-extensions: **[MODES.md](https://github.com/alleato-llc/soroban/blob/main/docs/MODES.md)** — the Programmer/Finance input-display *dialects*
-(what the glyphs `^ % & | << >> ~` mean per mode, over one canonical AST) — and
-**[FIXED-WIDTH.md](https://github.com/alleato-llc/soroban/blob/main/docs/FIXED-WIDTH.md)** — the bounded, checked `Int`/`UInt` integer types — and
+This document specifies the canonical language. Companion specs cover features
+with their own depth: **[MODES.md](https://github.com/alleato-llc/soroban/blob/main/docs/MODES.md)** — the Programmer/Finance input-display *dialects*
+(what the glyphs `^ % & | << >> ~` mean per mode, over one canonical AST); and
+**[FIXED-WIDTH.md](https://github.com/alleato-llc/soroban/blob/main/docs/FIXED-WIDTH.md)** — the bounded, checked `Int`/`UInt` integer types; and
 **[DECIMAL.md](https://github.com/alleato-llc/soroban/blob/main/docs/DECIMAL.md)** — fixed-precision `Decimal(value, precision, scale)` (or the short forms `Decimal(value)` / `Decimal(value, scale)`) (the money
-type). The workbook container is specified in [FORMAT.md](https://github.com/alleato-llc/soroban/blob/main/docs/FORMAT.md); app behaviors
+type); and **[MODULES.md](https://github.com/alleato-llc/soroban/blob/main/docs/MODULES.md)** — the module system (namespaces, qualified
+names, and imports), summarized in §9. The workbook container is specified in
+[FORMAT.md](https://github.com/alleato-llc/soroban/blob/main/docs/FORMAT.md); app behaviors
 (themes, grid UX) live in the [README](https://github.com/alleato-llc/soroban/blob/main/README.md).
 
 ## At a glance
@@ -69,7 +71,7 @@ Anzan is small enough to name its ancestors precisely:
   spellings and *checked* arithmetic — an overflow is an error, in the
   discipline of Ada's range types, never C's silent wraparound. Programmer
   mode's bitwise operators (`^ & | << >> ~`) follow Python's glyphs and
-  precedence (see [Language modes](#language-modes-presentational-dialects)).
+  precedence (see [Language modes](#4-language-modes-presentational-dialects)).
 - **Unix** — `#` comments, doc-comments-as-man-pages (`man pmt`), and a
   REPL/pipe CLI with honest exit codes.
 
@@ -181,15 +183,18 @@ Letters, digits, and `_`; can't start with a digit. **Variables are
 case-sensitive** (`Rate` and `rate` are different); **function calls are
 case-insensitive** (`PMT(…)` ≡ `pmt(…)`). One case-insensitive namespace
 covers all function names — you cannot define a function whose name collides
-with a built-in.
+with a built-in. Names may be **qualified** with the `::` token
+(`Geometry::midpoint`) to reach a member of a namespace — distinct from `.`
+member access (§9).
 
 ### Reserved names
 
 `ans` `pi` `π` `tau` `τ` `e` `true` `false` `Json` `Rounding` `sigma` `if`
 `man` `manual` `help` cannot be assigned to. Identifiers beginning `sigma_` / `product_` are reserved for
-the indexed reduction forms (§8). `data` is a **contextual** keyword — only
-the exact shape `data Name {` starts a declaration (§7), so `data = 5` is
-still an assignment.
+the indexed reduction forms (§10). `data`, `namespace`, and `import` are
+**contextual** keywords — only the exact shapes `data Name {`,
+`namespace Name {`, and `import Name` start those forms (§8, §9), so
+`data = 5` and `namespace = 5` remain assignments.
 
 ### Comments
 
@@ -200,7 +205,7 @@ a comment. Comments come in three roles:
   normally; the comment is kept and shown dimmed beside the result (and on a
   grid formula cell, retained in the raw).
 - **Trailing a function or `data` definition**: it **is** the definition's
-  documentation, shown by `man()` (§5, §7).
+  documentation, shown by `man()` (§6, §8).
 - **A comment-only line** (`# revisit in Q4`): a first-class **note** — a
   recorded annotation, not a parse error and not a no-op. It never touches
   `ans`. In a grid cell, a comment-only cell is a note: dim, holds no value,
@@ -218,7 +223,7 @@ spelling (`*`, `/`, `-`, `sqrt(…)`, `pi`, `tau`, `sigma…`, `product…`).
 `:digits` (column A–Z, row 1–1000). `Sheet!A:1` and `'Q1 Budget'!A:1`
 qualify by worksheet; a bare `'Name'` is a named-cell reference. `..` builds
 a range (`A:1..B:9`). These tokens are part of the language, but they
-resolve only where a host wires them (§10).
+resolve only where a host wires them (§12).
 
 ## 2. Values
 
@@ -226,15 +231,15 @@ Every expression evaluates to one of:
 
 | Type | Literal | Notes |
 |---|---|---|
-| number | `1.5`, `2.5e-3` | arbitrary-precision decimal (§4) |
+| number | `1.5`, `2.5e-3` | arbitrary-precision decimal (§5) |
 | string | `"text"` | |
 | array | `[1, 2, 3]` | heterogeneous, nests freely |
 | map | `{name: "Ada", age: 36}` | insertion-ordered; keys case-sensitive |
-| function | `x -> x * 2`, or a bare function name | first-class (§6) |
-| record | `Person(name: "Ada", …)` | an instance of a declared `data` type (§7) |
+| function | `x -> x * 2`, or a bare function name | first-class (§7) |
+| record | `Person(name: "Ada", …)` | an instance of a declared `data` type (§8) |
 | fixed-width int | `Int32(255)`, `UInt8(255)` (or `Int(255, 32)`, `UInt(255, 8)`) | a bounded, checked integer — exact, but overflow is an error, not a wraparound ([FIXED-WIDTH.md](https://github.com/alleato-llc/soroban/blob/main/docs/FIXED-WIDTH.md)) |
 | fixed-precision decimal | `Decimal(10.5, 5, 2)`, `Decimal(0.5)`, `Decimal(0.5, 2)` | SQL DECIMAL(p,s) / money: rounds to `scale`, checked `precision` (≤ 1000), configurable rounding; short forms capture the value at max precision ([DECIMAL.md](https://github.com/alleato-llc/soroban/blob/main/docs/DECIMAL.md)) |
-| handle | *(no literal)* | an opaque, read-only host object — a `Workbook`, worksheet, or cell — navigated with `.` and `[]` (§10) |
+| handle | *(no literal)* | an opaque, read-only host object — a `Workbook`, worksheet, or cell — navigated with `.` and `[]` (§12) |
 
 Structures are **immutable** — there is no element assignment; rebind the
 variable. Values render canonically: `description` re-parses to an equal
@@ -284,10 +289,10 @@ operator**, so it's a parse error nudging toward `*`, not a silent product. For
 
 The table above is the **canonical (Normal) dialect**: `^` is power, `%` is
 percent, and bit operations are functions. Programmer mode re-spells some of
-those glyphs as bitwise/modulo operators — see [Language modes](#language-modes-presentational-dialects)
+those glyphs as bitwise/modulo operators — see [Language modes](#4-language-modes-presentational-dialects)
 next.
 
-## Language modes (presentational dialects)
+## 4. Language modes (presentational dialects)
 
 A **mode** changes only how glyphs are *typed and displayed* — never what a
 formula means. Every mode parses to the same canonical AST and stores the same
@@ -315,7 +320,7 @@ Finance, is a clear error, not a misparse. Because only the canonical (Normal)
 form is ever stored, switching modes and reloading are lossless — and Normal
 must stay byte-identical to the pre-modes grammar (it's the regression oracle).
 
-## 4. The exactness model
+## 5. The exactness model
 
 Numbers are arbitrary-precision decimals (`BigInt` significand × 10^exponent,
 always normalized).
@@ -332,7 +337,7 @@ always normalized).
 Constants `pi`/`π`, `tau`/`τ`, `e` are predefined to ~60 significant digits —
 more than the division context, so they never limit a result.
 
-## 5. Variables, `ans`, functions
+## 6. Variables, `ans`, functions
 
 **Assignment** `x = 12 * 80.5` binds a global and shows the value. A leading
 `=` on any line is tolerated (pasted cell formulas just work).
@@ -345,7 +350,7 @@ trailing `# comment` becomes the function's documentation, shown by
 `man f`. Definitions may appear in any order; names resolve at **call
 time** — which also means a body's free variables read the *current* global.
 Parameters may be **type-annotated** (`f(p: Point) = …`) for dispatch, and a
-definition's name may be an operator symbol — see §7:
+definition's name may be an operator symbol — see §8:
 
 ```
 x = 10
@@ -361,10 +366,10 @@ does not splat).
 **Recursion** is a first-class idiom (`fact(n) = if(n <= 1, 1, n * fact(n-1))`).
 Tail-recursive calls run at constant stack to any honest depth; non-tail
 recursion grows the stack onto fresh segments as needed. Sanity limits
-(§11) convert runaway recursion into a clean error with a hint about the
+(§13) convert runaway recursion into a clean error with a hint about the
 missing base case.
 
-## 6. Lambdas and function values
+## 7. Lambdas and function values
 
 `x -> body` and `(a, b) -> body` are function literals, legal anywhere an
 expression is. They **capture surrounding locals by value** at creation:
@@ -381,7 +386,7 @@ references stay symbolic and **re-resolve at call time** (an alias follows a
 later redefinition); lambdas carry their own bodies. Higher-order built-ins:
 `map`, `filter`, `reduce`.
 
-## 7. Data types
+## 8. Data types
 
 `data` declares a **typed record** — a map with a contract:
 
@@ -529,7 +534,66 @@ These definitions are ordinary user functions: log-global or sheet-scoped
 (λ cells), case-insensitive, and persisted by their source line — overloads
 included.
 
-## 8. Conditionals and reductions
+## 9. Namespaces, qualified names, and imports
+
+Names can be grouped into **namespaces** — a scope that holds data types,
+functions, and constants. This keeps the global flat namespace (the unnamed
+top level) uncluttered as a workbook grows, and lets the built-in library be
+addressed by category. The essentials follow; the full treatment — persistence
+and the built-in module groupings included — is in
+[MODULES.md](https://github.com/alleato-llc/soroban/blob/main/docs/MODULES.md).
+
+**Qualified names** use the `::` token — distinct from `.`, which is member /
+method access. `Name::member` resolves a member *of* a namespace
+(`Finance::pmt`, `Geometry::midpoint`, `Bits::BitFormat`); namespaces nest, so
+`A::B::member` reaches through them. Namespace names are capitalized, like data
+types.
+
+**Declaration** is a `namespace Name { … }` block. Members are `;`-separated
+(the separator is required — a function body would otherwise run into the next
+member via implicit multiplication; a trailing `;` is fine):
+
+```
+namespace Geometry {
+    data Point { x: Number, y: Number };
+    data Line  { a: Point, b: Point };
+    midpoint(l: Line) = Point(x: (l.a.x + l.b.x) / 2, y: (l.a.y + l.b.y) / 2)
+}
+Geometry::midpoint(seg)
+```
+
+Inside the block names resolve locally first; from outside they're reached as
+`Geometry::Point`, `Geometry::midpoint`. A namespace is **reopenable** — a
+later block of the same name appends to it.
+
+**`import Name`** brings a namespace's members into the session so they can be
+called **unqualified**; the qualified form keeps working regardless:
+
+```
+import Geometry
+midpoint(seg)            # unqualified, after the import
+Geometry::midpoint(seg)  # always works, import or not
+```
+
+Imports draw from built-in modules and user namespaces. **Conflicts are
+loud** — importing a name that collides with an existing global is an error,
+not silent shadowing. (Cross-workbook imports — pulling names from another
+`.soroban` — are deferred.)
+
+**Built-ins are modules too.** The standard library is grouped into namespaces
+— `Math`, `Stats`, `Finance`, `Programmer`, `Dates`, `Logic`, `Data`,
+`Accounting`, `Controls`, `Core` — so every built-in is also reachable as
+`Module::name` (`Finance::pmt`, `Stats::stdev`). A curated **global prelude**
+keeps the everyday names usable bare (`pmt`, `sqrt`, `sum` need no import), so
+existing workbooks, cells, and the CLI are unaffected; the namespaced spelling
+is an additive alias.
+
+**Persistence.** A user namespace persists as its source lines (like `data`
+and function definitions); imports are recorded per workbook and replayed on
+open *before* the definitions that rely on them — so the restore order is
+**imports → namespaces / types → functions → variables**.
+
+## 10. Conditionals and reductions
 
 **`if(cond, then, else)`** is a special form: only the taken branch
 evaluates (`if(1, 2, 1/0)` → `2`), so recursion can guard itself. The
@@ -546,7 +610,7 @@ condition must be a number; comparisons return 1/0.
   `∑_i=(n-1)^10(i)`. An empty range yields the identity (∑ → 0, ∏ → 1); a
   span over 100,000 terms is an error.
 
-## 9. Documentation: `man` / `manual` / `help`
+## 11. Documentation: `man` / `manual` / `help`
 
 `man NAME` (aliases `manual`, `help`) is a special form, written unix-style with
 a space and **no parentheses** — `man pmt`, `manual sum`, `help if`. The argument
@@ -555,7 +619,7 @@ for built-ins, special forms, user functions, and data types (whose docs
 come from their trailing `# comment`). Every built-in ships documentation,
 and every documented example is evaluated by the test suite.
 
-## 10. Hosted forms: cells, ranges, named cells
+## 12. Hosted forms: cells, ranges, named cells
 
 These constructs are part of the grammar but resolve only where the host
 provides a sheet:
@@ -682,7 +746,7 @@ classification, λ/𝑖/𝑫 definition cells, control cells like
 `rate = slider(…)`) — see the [README](https://github.com/alleato-llc/soroban/blob/main/README.md); they're behaviors of
 the grid, not of the language.
 
-## 11. Limits
+## 13. Limits
 
 | Limit | Value | On breach |
 |---|---|---|
@@ -693,7 +757,7 @@ the grid, not of the language.
 | `fromJson` nesting | 128 levels | error |
 | Grid (hosted) | 26 columns × 1,000 rows | (host) |
 
-## 12. Errors
+## 14. Errors
 
 All errors are typed and carry a message; lex/parse errors carry a character
 offset, which hosts render as a caret under the offending column:
@@ -716,13 +780,13 @@ is the **canonical (Normal-dialect)** grammar; Programmer mode adds a bitwise
 operator band (`|` · `^` · `&` · `<< >>`, between comparison and additive) plus
 prefix `~`, parsing to the same canonical bitwise functions — see
 [MODES.md](https://github.com/alleato-llc/soroban/blob/main/docs/MODES.md).
-The **module system** — `namespace Name { … }` blocks holding data types,
-functions, and constants (nesting too: `A::B::member`), `Name::member` qualified
-names (the `::` token), and `import Name` — is an extension specced in
+The **module system** (§9) — `namespace` blocks, `Name::member` qualified names
+(the `::` token), and `import Name` — is included in the productions below; its
+full semantics are in
 [MODULES.md](https://github.com/alleato-llc/soroban/blob/main/docs/MODULES.md).
 
 ```
-line        = datadef | definition | assignment | expression ;
+line        = namespacedef | import | datadef | definition | assignment | expression ;
 assignment  = IDENT "=" expression ;
 definition  = ( IDENT | OPSYM ) "(" [ param { "," param } ] ")" "=" expression [ COMMENT ] ;
 param       = IDENT [ ":" TYPENAME ] ;     (* typed params dispatch by argument type *)
@@ -732,6 +796,9 @@ field       = IDENT ":" fieldType ;
 fieldType   = "Number" | "String" | "Boolean" | TYPENAME    (* scalar casing free; TYPENAME = a data type *)
             | "[" fieldType "]"                              (* list, nests *)
             | "{" "String" ":" fieldType "}" ;               (* string-keyed map *)
+namespacedef= "namespace" TYPENAME "{" [ nsmember { ";" nsmember } [ ";" ] ] "}" ;
+nsmember    = datadef | definition | assignment ;   (* types, functions, constants *)
+import      = "import" qualname ;
 
 expression  = lambda | comparison ;
 lambda      = ( IDENT | "(" [ IDENT { "," IDENT } ] ")" ) "->" expression ;
@@ -744,9 +811,10 @@ power       = postfix [ "^" unary ] ;                 (* right-assoc, signed exp
 postfix     = primary { "[" expression "]" | "." IDENT [ "(" [ argument { "," argument } ] ")" ] | "%" } ;
             (* ".name" is member access; ".name(args)" is a method call; trailing "%" is percent (× 0.01) *)
 primary     = NUMBER | STRING | CELLREF | NAMEREF | constant
-            | IDENT | call | reduction | conditional
+            | IDENT | qualname | call | reduction | conditional
             | "(" expression ")" | array | map ;
 call        = IDENT "(" [ argument { "," argument } | namedargs ] ")" ;
+qualname    = TYPENAME "::" ( IDENT | TYPENAME ) { "::" ( IDENT | TYPENAME ) } ;  (* namespace member; "::" ≠ "." *)
 argument    = expression | range ;                    (* ranges only here *)
 namedargs   = IDENT ":" expression { "," IDENT ":" expression } ;  (* ≡ one map argument *)
 range       = CELLREF ".." CELLREF ;

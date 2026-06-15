@@ -1,26 +1,18 @@
-# Modules — generic data types, namespaces, and imports (design)
+# Modules — namespaces, imports, and generic data types
 
-> **Status: COMPLETE.** Phase 1 (generic data field types), phase 2a-i
-> (namespaced *data types*), and phase 2a-ii (namespaced *functions* with the
-> home-namespace resolver — siblings resolve unqualified at call time, incl.
-> typed-parameter dispatch and recursion), phase 2b (`import` — unqualified
-> access with loud conflicts), phase 2c (workbook persistence of namespaces and
-> imports), phase 3 (builtins reachable as `Module::name` behind the global
-> prelude), phase 4 (the `Bits` module — `BitFormat`/`BitField`), and phase 5
-> (the binary editor saves/reads typed `Bits::BitFormat` records) are all
-> **implemented and tested**, as are the formerly-deferred extensions —
-> **namespaced constants** (`namespace M { c = expr }`), **nested namespaces**
-> (`A::B::c`, with sibling resolution walking up the chain and parent-type
-> references qualified), and **enum bit-fields** (`kind: "enum"` + a `values`
-> label list, decoded in the viewer as a labeled picker). Only the `at:`
-> explicit-position field stays deferred (positions are implied by field order).
-> A foundational language
-> initiative, specced before code (like `docs/MODES.md` / `docs/DECIMAL.md`). It
-> is **the largest single direction proposed for the language**, and the design
-> deliberately took the *expansive* option on every axis (decisions below). It
-> shipped as independently green phases; phase 1 was the cheapest and most
-> broadly useful. No customers exist yet, so reorganizing existing builtins was
-> on the table.
+> **Status: implemented.** Namespaces (`namespace Name { … }`, the `::`
+> qualification token, nesting `A::B::c`, and namespaced data types, functions,
+> and constants), `import` (unqualified access with loud conflicts, persisted
+> per-workbook and replayed on open), builtins reachable as `Module::name`
+> behind a curated global prelude, generic `data` fields (lists `[T]`, nested
+> `[[T]]`, map-typed `{String: T}`), and the `Bits` module (`BitFormat` /
+> `BitField`, including enum bit-fields decoded as a labeled picker) are all
+> implemented and tested. Only the `at:` explicit-position field stays deferred
+> (positions follow field order).
+>
+> This is the **companion spec to [ANZAN.md §9](ANZAN.md#9-namespaces-qualified-names-and-imports)** — that section is the summary;
+> the design decisions and the per-phase history that shipped this feature are
+> recorded in the sections below.
 
 ## Motivation
 
