@@ -45,7 +45,7 @@ struct BinaryFormatTests {
         let decoded = roundTrip(bare)
         #expect(decoded?.map(\.name) == ["a", "b", "c"])
         #expect(decoded?.map(\.width) == [4, 4, 4])
-        #expect(decoded?.map(\.color) == Array(BinaryEditorPalette.names.prefix(3)))
+        #expect(decoded?.compactMap(\.color) == Array(BinaryEditorPalette.names.prefix(3)))
     }
 
     @Test func everyPresetDecodesAndIsWellFormed() {
