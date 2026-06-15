@@ -2,6 +2,7 @@ import SorobanEngine
 import BigInt
 import Observation
 import Foundation
+import BinaryEditorKit
 
 /// Drives the log + input UI: evaluates lines, records history, and provides
 /// ↑/↓ recall over past inputs (persisted across launches).
@@ -120,30 +121,9 @@ final class CalculatorSession {
         activeFormat.flatMap { BinaryView.layout(from: $0) }
     }
 
-    /// Built-in formats shipped with the app (not language constructs). Flag
-    /// fields decode each bit to a meaning (`r-x`); RGB565 is plain numeric.
-    static let binaryFormatPresets: [(name: String, format: Value)] = [
-        ("Unix permissions", BinaryView.flagFormatMap([
-            ("owner", ["r", "w", "x"]), ("group", ["r", "w", "x"]), ("other", ["r", "w", "x"])])),
-        ("TCP flags", BinaryView.flagFormatMap([
-            ("flags", ["CWR", "ECE", "URG", "ACK", "PSH", "RST", "SYN", "FIN"])])),
-        ("RGB565", BinaryView.formatMap([("r", 5), ("g", 6), ("b", 5)])),
-        // A 32-bit register split into four octets — type an IP as a plain
-        // integer (or 0x address) and read/edit it dotted-quad style.
-        ("IPv4 address", BinaryView.formatMap([
-            ("octet1", 8), ("octet2", 8), ("octet3", 8), ("octet4", 8)])),
-        // 48-bit MAC, six hex octets (register rounds up to 64 — 48 isn't a
-        // width): the high three octets are the OUI (vendor), the low three the
-        // device.
-        ("MAC address", BinaryView.numericFormatMap([
-            ("oui1", 8, 16), ("oui2", 8, 16), ("oui3", 8, 16),
-            ("nic1", 8, 16), ("nic2", 8, 16), ("nic3", 8, 16)])),
-        // 128-bit IPv6, eight 16-bit hextets, shown in hex (the conventional
-        // colon form).
-        ("IPv6 address", BinaryView.numericFormatMap([
-            ("h1", 16, 16), ("h2", 16, 16), ("h3", 16, 16), ("h4", 16, 16),
-            ("h5", 16, 16), ("h6", 16, 16), ("h7", 16, 16), ("h8", 16, 16)])),
-    ]
+    /// Built-in formats — the shared set in `BinaryEditorKit` (so the calculator
+    /// and Tama present the same presets).
+    static let binaryFormatPresets = BinaryEditorPresets.standard
 
     /// Custom/saved formats persisted in the workbook — any environment variable
     /// that is a map of positive-integer widths reads back as a format.
@@ -151,11 +131,6 @@ final class CalculatorSession {
         logVariables
             .compactMap { BinaryView.layout(from: $0.value) != nil ? ($0.key, $0.value) : nil }
             .sorted { $0.0 < $1.0 }
-    }
-
-    /// The active format as an editable spec string ("owner:3 group:3 other:3").
-    var activeFormatSpec: String {
-        (activeLayout ?? []).map { "\($0.name):\($0.width)" }.joined(separator: " ")
     }
 
     /// The display name of the active format for the menu label — a preset/saved
@@ -182,64 +157,13 @@ final class CalculatorSession {
         }
     }
 
-    /// Parse a custom spec ("owner:3 group:3", space/comma separated) into the
-    /// active format; an empty/invalid spec clears it.
-    func applyFormatSpec(_ spec: String) {
-        var pairs: [(name: String, width: Int)] = []
-        for token in spec.split(whereSeparator: { $0 == " " || $0 == "," }) {
-            let parts = token.split(separator: ":")
-            guard parts.count == 2, let width = Int(parts[1]), width >= 1 else { continue }
-            pairs.append((String(parts[0]), width))
-        }
-        activeFormat = pairs.isEmpty ? nil : BinaryView.formatMap(pairs)
-        fitWidthToFormat()
-    }
-
-    /// The `Bits` module schema — a typed home for saved formats (docs/MODULES.md
-    /// phases 4–5). Emitted once per workbook, before the first saved format, so
-    /// formats persist as typed records (`Bits::BitFormat`) rather than loose maps.
-    /// A field's `kind` is "numeric", "flags" (per-bit names), or "enum" (value
-    /// labels); the unused list is empty. `color` is a presentational palette name.
-    static let bitsNamespaceSource =
-        "namespace Bits { data BitField { name: String, bits: Number, kind: String, "
-        + "flags: [String], values: [String], color: String, base: Number }; "
-        + "data BitFormat { fields: [BitField] } }"
-
-    /// The bit-field band palette, by NAME — the persisted `color` of a field is
-    /// one of these; the view maps each name to a real (theme-adapting) color.
-    static let fieldColorNames = ["blue", "green", "orange", "purple", "pink", "teal"]
-
-    /// A layout rendered as a `Bits::BitFormat(...)` constructor call — the typed,
-    /// re-parseable form the binary editor saves. A field with no explicit color
-    /// gets the palette name for its position.
-    private static func bitFormatSource(_ layout: [BinaryView.FieldSpec]) -> String {
-        func list(_ strings: [String]) -> String {
-            strings.map { "\"\($0)\"" }.joined(separator: ", ")
-        }
-        let fields = layout.enumerated().map { index, spec -> String in
-            let kind: String, flags: [String], values: [String]
-            if let f = spec.flags, !f.isEmpty {
-                kind = "flags"; flags = f; values = []
-            } else if let v = spec.values, !v.isEmpty {
-                kind = "enum"; flags = []; values = v
-            } else {
-                kind = "numeric"; flags = []; values = []
-            }
-            let color = spec.color ?? fieldColorNames[index % fieldColorNames.count]
-            let base = spec.base ?? 10
-            return "Bits::BitField(name: \"\(spec.name)\", bits: \(spec.width), "
-                + "kind: \"\(kind)\", flags: [\(list(flags))], values: [\(list(values))], "
-                + "color: \"\(color)\", base: \(base))"
-        }.joined(separator: ", ")
-        return "Bits::BitFormat(fields: [\(fields)])"
-    }
-
     /// Defines the `Bits` schema once per workbook (a one-time log line),
     /// preserving any in-progress input. A no-op once `Bits::BitFormat` exists.
+    /// (Schema + serializer are the shared `BinaryEditorBits` in the engine.)
     private func ensureBitsSchema() {
         guard calculator.environment.dataType(named: "Bits::BitFormat") == nil else { return }
         let stash = input
-        input = Self.bitsNamespaceSource
+        input = BinaryEditorBits.schemaSource
         submit()
         suppressNextSuggestionRefresh = true
         input = stash
@@ -252,7 +176,7 @@ final class CalculatorSession {
     private func persistFormat(_ layout: [BinaryView.FieldSpec], named name: String) {
         let stash = input
         ensureBitsSchema()
-        input = "\(name) = \(Self.bitFormatSource(layout))"
+        input = "\(name) = \(BinaryEditorBits.formatSource(layout))"
         submit()
         if let saved = calculator.environment.userVariables[name] { activeFormat = saved }
         suppressNextSuggestionRefresh = true
@@ -275,7 +199,7 @@ final class CalculatorSession {
     func applyBuiltFormat(_ layout: [BinaryView.FieldSpec]) {
         guard !layout.isEmpty else { return }
         ensureBitsSchema()
-        if case .success(let value) = calculator.evaluateFormula(Self.bitFormatSource(layout)) {
+        if case .success(let value) = calculator.evaluateFormula(BinaryEditorBits.formatSource(layout)) {
             applyFormat(value)
         }
     }

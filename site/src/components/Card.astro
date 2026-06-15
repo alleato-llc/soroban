@@ -3,71 +3,76 @@
  *  lives — the calculator log, the grid, the `soroban` CLI, or any mix.
  *  Icon + word, so no legend is needed. All three collapse to a plain
  *  "everywhere"; omit the prop entirely for app-level features (themes)
- *  where the question doesn't apply. */
+ *  where the question doesn't apply.
+ *
+ *  The card is a native <details> disclosure: the default slot is the terse
+ *  summary line (always shown), and the `detail` named slot holds the full
+ *  prose + examples, revealed on click. */
 type Scope = "log" | "grid" | "cli";
 
 interface Props {
   title: string;
   scopes?: Scope[];
-  /** When set, the card becomes a LINK (a summary card that jumps to its
-   *  full feature section); otherwise it's a plain div. */
-  href?: string;
 }
 
-const { title, scopes = [], href } = Astro.props;
+const { title, scopes = [] } = Astro.props;
 const everywhere = (["log", "grid", "cli"] as Scope[]).every((s) =>
   scopes.includes(s),
 );
 const label = everywhere ? "everywhere" : scopes.join(" · ");
 const tooltip = everywhere ? "log, grid, and the CLI" : label;
-const Tag = href ? "a" : "div";
 ---
 
-<Tag class:list={["card", { "card-link": href }]} href={href}>
-  <div class="card-head">
-    <h3>{title}</h3>
-    {
-      scopes.length > 0 && (
-        <span class="scope" title={`Available in: ${tooltip}`}>
-          {!everywhere && scopes.includes("log") && (
-          <svg viewBox="0 0 16 16" aria-hidden="true">
-            <path
-              d="M3 3.5 8 8l-5 4.5M9 12.5h4"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.8"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-          </svg>
-        )}
-        {!everywhere && scopes.includes("grid") && (
-          <svg viewBox="0 0 16 16" aria-hidden="true">
-            <path
-              d="M2.5 2.5h11v11h-11zM2.5 8h11M8 2.5v11"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.6"
-              stroke-linejoin="round"
-            />
-          </svg>
-        )}
-        {!everywhere && scopes.includes("cli") && (
-          <svg viewBox="0 0 16 16" aria-hidden="true">
-            <path
-              d="M2.5 3.5h11v9h-11zM4.5 7l1.8 1.5L4.5 10M8 10.5h3"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-          </svg>
-        )}
-        {label}
-        </span>
-      )
-    }
+<details class="card" open>
+  <summary>
+    <div class="card-head">
+      <h3>{title}</h3>
+      {
+        scopes.length > 0 && (
+          <span class="scope" title={`Available in: ${tooltip}`}>
+            {!everywhere && scopes.includes("log") && (
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path
+                d="M3 3.5 8 8l-5 4.5M9 12.5h4"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          )}
+          {!everywhere && scopes.includes("grid") && (
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path
+                d="M2.5 2.5h11v11h-11zM2.5 8h11M8 2.5v11"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linejoin="round"
+              />
+            </svg>
+          )}
+          {!everywhere && scopes.includes("cli") && (
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path
+                d="M2.5 3.5h11v9h-11zM4.5 7l1.8 1.5L4.5 10M8 10.5h3"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          )}
+          {label}
+          </span>
+        )
+      }
+    </div>
+    <p class="card-lede"><slot /></p>
+  </summary>
+  <div class="card-detail">
+    <slot name="detail" />
   </div>
-  <p><slot /></p>
-</Tag>
+</details>

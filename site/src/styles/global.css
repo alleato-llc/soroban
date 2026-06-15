@@ -493,8 +493,9 @@ section h2 {
 
 .features {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(245px, 1fr));
-  gap: 0.9rem;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); /* two-up, one-up on narrow */
+  gap: 1rem;
+  align-items: start; /* cards size to their content; no stretching to row height */
 }
 
 .card {
@@ -502,7 +503,7 @@ section h2 {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
-  padding: 1.1rem 1.2rem;
+  padding: 1.35rem 1.5rem;
 }
 
 /* Where the feature lives: log, grid, or both — upper right of each card. */
@@ -541,7 +542,7 @@ section h2 {
 
 .card h3 {
   margin: 0;
-  font-size: 1rem;
+  font-size: 1.2rem;
   min-width: 0;
 }
 
@@ -556,7 +557,7 @@ section h2 {
   font-size: 0.85em;
 }
 
-/* ---------- feature summary + detail (nine areas, one sticky in-page nav) ---------- */
+/* ---------- feature cards: terse summary, click to expand the detail ---------- */
 
 .section-lede {
   color: var(--muted);
@@ -564,71 +565,66 @@ section h2 {
   font-size: 0.95rem;
 }
 
-/* Summary cards jump to their full section below. */
-.card-link {
+/* The card is a <details>; its <summary> is the always-visible head + lede,
+   with a chevron in the lower-right that rotates open. */
+.card > summary {
   display: block;
-  color: inherit;
-  transition:
-    border-color 0.15s ease,
-    transform 0.15s ease;
+  cursor: pointer;
+  list-style: none; /* drop the default disclosure triangle */
+  position: relative;
+  padding-right: 1.3rem; /* room for the chevron */
 }
-.card-link:hover {
+.card > summary::-webkit-details-marker {
+  display: none;
+}
+.card > summary::after {
+  content: "";
+  position: absolute;
+  right: 0.1rem;
+  top: 0.5rem;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-right: 2px solid var(--faint);
+  border-bottom: 2px solid var(--faint);
+  transform: rotate(-45deg); /* points right when closed */
+  transition: transform 0.2s ease;
+}
+.card[open] > summary::after {
+  transform: rotate(45deg); /* points down when open */
+}
+
+/* Open card shows the full detail; the terse lede is its collapsed form. */
+.card[open] > summary .card-lede {
+  display: none;
+}
+.card:hover {
   border-color: var(--accent);
-  text-decoration: none;
-  transform: translateY(-2px);
 }
-.card-link h3 {
-  color: var(--text);
+.card:hover > summary::after {
+  border-color: var(--accent);
 }
-
-/* A sticky rail of the nine feature names, riding just under the header. */
-.feature-nav {
-  position: sticky;
-  top: 3.25rem; /* header height */
-  z-index: 5;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.3rem;
-  padding: 0.6rem 0;
-  margin-bottom: 0.5rem;
-  background: color-mix(in srgb, var(--bg) 85%, transparent);
-  backdrop-filter: blur(10px);
-  border-bottom: 1px solid var(--border);
-  font-size: 0.82rem;
-}
-.feature-nav a {
-  color: var(--faint);
-  padding: 0.2rem 0.62rem;
-  border-radius: 999px;
-}
-.feature-nav a:hover {
-  color: var(--text);
-  background: var(--surface);
-  text-decoration: none;
-}
-.feature-nav a[aria-current="true"] {
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
+.card[open] {
+  border-color: var(--accent);
 }
 
-.feature {
-  scroll-margin-top: 6.2rem; /* clear the header + the sticky feature nav */
-  max-width: 760px;
-  padding: 2.2rem 0;
+/* The revealed detail prose, below the summary. */
+.card-detail {
+  margin-top: 0.9rem;
+  padding-top: 0.9rem;
   border-top: 1px solid var(--border);
 }
-.feature h2 {
-  font-size: 1.35rem;
-  margin: 0 0 0.9rem;
-}
-.feature p {
+.card-detail p {
   color: var(--muted);
   line-height: 1.6;
-  margin: 0 0 0.9rem;
+  margin: 0 0 0.8rem;
+  font-size: 0.92rem;
 }
-.feature code {
+.card-detail p:last-child {
+  margin-bottom: 0;
+}
+.card-detail code {
   color: var(--accent);
-  font-size: 0.88em;
+  font-size: 0.86em;
 }
 
 /* Top-level anchored sections only need to clear the header. */

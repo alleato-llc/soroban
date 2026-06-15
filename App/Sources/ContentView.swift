@@ -1,4 +1,5 @@
 import SwiftUI
+import BinaryEditorKit
 
 struct ContentView: View {
     @Environment(CalculatorSession.self) private var session
@@ -34,7 +35,9 @@ struct ContentView: View {
                 // Binary bit-editor — Programmer mode only, toggle with ⌥⌘B.
                 if session.mode == .programmer && session.binaryEditorShown {
                     Divider()
-                    BinaryEditorView()
+                    // The editor is generic over a host; the calculator supplies
+                    // a thin CalculatorSession-backed adapter (TamaKit seam).
+                    BinaryEditorView(host: CalculatorBinaryHost(session: session, themeManager: themeManager))
                 }
                 if !session.suggestions.isEmpty {
                     Divider()

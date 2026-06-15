@@ -8,6 +8,9 @@ options:
 packages:
   SorobanEngine:
     path: Engine
+  BinaryEditorKit:
+    # The shared binary/bit-editor UI (also consumed by the Tama sibling repo).
+    path: Kit
   BigInt:
     # The app speaks BigInt directly (bit-field values in the binary editor).
     # Keep in sync with Engine/Package.swift's BigInt pin.
@@ -30,6 +33,8 @@ targets:
     dependencies:
       - package: SorobanEngine
         product: SorobanEngine
+      - package: BinaryEditorKit
+        product: BinaryEditorKit
       - package: BigInt
         product: BigInt
     # App icon PNGs are derived artifacts (gitignored) — scripts/generate_icon.py

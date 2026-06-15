@@ -13,30 +13,43 @@ import BigInt
 ///
 /// Perf: `binaryView` is resolved ONCE per render; bit cells are an `Equatable`
 /// `BitButton` so a flip only re-renders the bit that changed.
-struct BinaryEditorView: View {
-    @Environment(CalculatorSession.self) private var session
-    @Environment(ThemeManager.self) private var themeManager
-    private var theme: Theme { themeManager.current }
+public struct BinaryEditorView<Host: BinaryEditorHost>: View {
+    let host: Host
+    private var theme: BinaryEditorTheme { host.theme }
 
-    @State private var specDraft = ""
+    public init(host: Host) { self.host = host }
+
     @State private var saveName = ""
-    @State private var showingCustom = false
     @State private var showingSave = false
 
     // Visual format builder (build mode): drag/click free bits to carve a group,
     // detail it (name/kind/labels), add it; live-preview as you go; save. The
     // logic lives in the engine's BinaryView.FormatBuilder; this view is bindings.
     @State private var building = false
-    @State private var builder = BinaryView.FormatBuilder(palette: CalculatorSession.fieldColorNames)
+    // Placeholder palette; startBuilding() rebuilds it with the real palette
+    // (a generic type's static can't seed a @State default).
+    @State private var builder = BinaryView.FormatBuilder(palette: [])
     @State private var builderName = ""
 
     /// Distinct band colors cycled per field (system colors adapt to light/dark),
-    /// paired with the NAME persisted in a field's `color`. Order matches
-    /// `CalculatorSession.fieldColorNames`.
-    private static let fieldColors: [(name: String, color: Color)] = [
-        ("blue", .blue), ("green", .green), ("orange", .orange),
-        ("purple", .purple), ("pink", .pink), ("teal", .teal),
-    ]
+    /// paired with the NAME persisted in a field's `color`. Computed (a generic
+    /// type can't hold a static STORED property).
+    private static var fieldColors: [(name: String, color: Color)] {
+        // Order + names are the engine's canonical palette; this only adds the
+        // SwiftUI Color for each (the engine treats color names as opaque).
+        BinaryEditorPalette.names.map { ($0, paletteColor(named: $0)) }
+    }
+    private static func paletteColor(named name: String) -> Color {
+        switch name {
+        case "blue": .blue
+        case "green": .green
+        case "orange": .orange
+        case "purple": .purple
+        case "pink": .pink
+        case "teal": .teal
+        default: .gray
+        }
+    }
 
     /// Map a persisted color name to a color; unknown/nil falls back to the
     /// palette cycled by `position`.
@@ -45,12 +58,9 @@ struct BinaryEditorView: View {
         return fieldColors[position % fieldColors.count].color
     }
 
-    var body: some View {
-        // Re-render when a submission changes `ans` (the engine value isn't
-        // observable; `logGeneration` is the bridge, bumped on every submit).
-        let _ = session.logGeneration
-        return Group {
-            switch session.binaryView { // resolved once; subviews take plain data
+    public var body: some View {
+        Group {
+            switch host.binaryView { // resolved once; subviews take plain data
             case .success(let view): editor(view)
             case .failure(let reason): unavailable(reason)
             }
@@ -58,20 +68,17 @@ struct BinaryEditorView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(theme.inputBackground.color.opacity(0.5))
-        .onChange(of: session.activeFormatSpec) { _, spec in specDraft = spec }
-        .onAppear { specDraft = session.activeFormatSpec }
+        .background(theme.inputBackground.opacity(0.5))
     }
 
     @ViewBuilder
     private func editor(_ view: BinaryView) -> some View {
-        let layout = session.activeLayout
+        let layout = host.activeLayout
         VStack(alignment: .leading, spacing: 6) {
             header(view)
             if building {
                 buildMode(view)
             } else {
-                if showingCustom { customRow }
                 if showingSave { saveRow }
                 if let layout { bandedGrid(view, layout) } else { plainGrid(view) }
             }
@@ -86,63 +93,58 @@ struct BinaryEditorView: View {
         return HStack(spacing: 10) {
             Text(decimal)
                 .font(theme.font())
-                .foregroundStyle(session.binaryHasEdits ? theme.accent.color : theme.resultText.color)
-                .onTapGesture(count: 2) { session.insert(value: decimal) }
+                .foregroundStyle(host.hasEdits ? theme.accent : theme.resultText)
+                .onTapGesture(count: 2) { host.insert(decimal) }
                 .help("Double-click to insert the decimal value into the expression")
             Text(hex)
                 .font(theme.font(scale: 0.8))
-                .foregroundStyle(theme.secondaryText.color)
-                .onTapGesture(count: 2) { session.insert(value: hex) }
+                .foregroundStyle(theme.secondaryText)
+                .onTapGesture(count: 2) { host.insert(hex) }
                 .help("Double-click to insert the hex value into the expression")
             Spacer()
             widthControl(view)
-            if session.binaryHasEdits {
-                Button { session.cancelBinaryEdits() } label: {
+            if host.hasEdits {
+                Button { host.cancelEdits() } label: {
                     Image(systemName: "arrow.uturn.backward")
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(theme.secondaryText.color)
+                .foregroundStyle(theme.secondaryText)
                 .help("Reset to ans")
             }
-            Button("Use") { session.useBinaryValue() }
+            Button("Use") { host.useValue() }
                 .controlSize(.small)
                 .help("Insert this value into the input line")
             formatMenu
-            Button { session.binaryEditorShown = false } label: {
+            Button { host.dismiss() } label: {
                 Image(systemName: "xmark")
             }
             .buttonStyle(.plain)
-            .foregroundStyle(theme.secondaryText.color)
+            .foregroundStyle(theme.secondaryText)
             .help("Hide the binary editor (⌥⌘B to show again)")
         }
     }
 
     private var formatMenu: some View {
         Menu {
-            Button("None") { session.applyFormat(nil) }
+            Button("None") { host.applyFormat(nil) }
             Section("Presets") {
-                ForEach(CalculatorSession.binaryFormatPresets, id: \.name) { preset in
-                    Button(preset.name) { session.applyFormat(preset.format) }
+                ForEach(host.presets, id: \.name) { preset in
+                    Button(preset.name) { host.applyFormat(preset.format) }
                 }
             }
-            if !session.savedFormats.isEmpty {
+            if !host.savedFormats.isEmpty {
                 Section("Saved") {
-                    ForEach(session.savedFormats, id: \.name) { saved in
-                        Button(saved.name) { session.applyFormat(saved.format) }
+                    ForEach(host.savedFormats, id: \.name) { saved in
+                        Button(saved.name) { host.applyFormat(saved.format) }
                     }
                 }
             }
             Divider()
             Button("Build…") { startBuilding() }
-            Button("Custom…") {
-                specDraft = session.activeFormatSpec
-                showingSave = false
-                showingCustom = true
-            }
-            Button("Save current…") { showingCustom = false; showingSave = true }
-                .disabled(session.activeFormat == nil)
+            Button("Save current…") { showingSave = true }
+                .disabled(host.activeFormat == nil)
         } label: {
-            Label(session.activeFormatName ?? "Format", systemImage: "rectangle.split.3x1")
+            Label(host.activeFormatName ?? "Format", systemImage: "rectangle.split.3x1")
                 .font(theme.font(scale: 0.8))
         }
         .menuStyle(.borderlessButton)
@@ -154,53 +156,40 @@ struct BinaryEditorView: View {
         if case .plain = view.kind {
             // Widths too narrow for the value — OR for the active format's total
             // — are grayed out; the effective width is highlighted.
-            let formatBits = session.activeLayout.map { BinaryView.layoutWidth($0) } ?? 0
+            let formatBits = host.activeLayout.map { BinaryView.layoutWidth($0) } ?? 0
             let minWidth = max(view.minimumWidth,
                                BinaryView.editableWidths.first { $0 >= formatBits } ?? 0)
             HStack(spacing: 0) {
                 ForEach(BinaryView.editableWidths, id: \.self) { w in
                     let tooSmall = w < minWidth
-                    Button("\(w)") { session.binaryWidth = w }
+                    Button("\(w)") { host.width = w }
                         .buttonStyle(.plain)
                         .font(theme.font(scale: 0.7))
                         .foregroundStyle(
-                            tooSmall ? theme.secondaryText.color.opacity(0.3)
-                            : w == view.width ? theme.accent.color : theme.secondaryText.color)
+                            tooSmall ? theme.secondaryText.opacity(0.3)
+                            : w == view.width ? theme.accent : theme.secondaryText)
                         .padding(.horizontal, 5)
                         .padding(.vertical, 2)
-                        .background(w == view.width ? theme.accent.color.opacity(0.18) : .clear)
+                        .background(w == view.width ? theme.accent.opacity(0.18) : .clear)
                         .disabled(tooSmall)
                         .help(tooSmall ? "Too narrow for this value" : "\(w)-bit register")
                 }
             }
             .overlay(RoundedRectangle(cornerRadius: 4)
-                .stroke(theme.secondaryText.color.opacity(0.25)))
+                .stroke(theme.secondaryText.opacity(0.25)))
             .clipShape(RoundedRectangle(cornerRadius: 4))
         } else {
             Text("\(view.signed ? "Int" : "UInt")\(view.width)")
                 .font(theme.font(scale: 0.8))
-                .foregroundStyle(theme.accent.color)
+                .foregroundStyle(theme.accent)
         }
     }
 
     // MARK: Progressive-disclosure rows (custom spec / save)
 
-    private var customRow: some View {
-        HStack(spacing: 8) {
-            Text("fields").font(theme.font(scale: 0.8)).foregroundStyle(theme.secondaryText.color)
-            TextField("owner:3 group:3 other:3", text: $specDraft)
-                .textFieldStyle(.roundedBorder)
-                .font(theme.font(scale: 0.8))
-                .onSubmit { applyCustom() }
-            Button("Apply") { applyCustom() }.controlSize(.small)
-            Button { showingCustom = false } label: { Image(systemName: "xmark") }
-                .buttonStyle(.plain).foregroundStyle(theme.secondaryText.color)
-        }
-    }
-
     private var saveRow: some View {
         HStack(spacing: 8) {
-            Text("save as").font(theme.font(scale: 0.8)).foregroundStyle(theme.secondaryText.color)
+            Text("save as").font(theme.font(scale: 0.8)).foregroundStyle(theme.secondaryText)
             TextField("name", text: $saveName)
                 .textFieldStyle(.roundedBorder)
                 .font(theme.font(scale: 0.8))
@@ -210,17 +199,12 @@ struct BinaryEditorView: View {
                 .controlSize(.small)
                 .disabled(saveName.trimmingCharacters(in: .whitespaces).isEmpty)
             Button { showingSave = false } label: { Image(systemName: "xmark") }
-                .buttonStyle(.plain).foregroundStyle(theme.secondaryText.color)
+                .buttonStyle(.plain).foregroundStyle(theme.secondaryText)
         }
     }
 
-    private func applyCustom() {
-        session.applyFormatSpec(specDraft)
-        showingCustom = false
-    }
-
     private func saveCurrent() {
-        session.saveFormat(named: saveName)
+        host.saveFormat(host.activeLayout ?? [], named: saveName)
         saveName = ""
         showingSave = false
     }
@@ -230,12 +214,12 @@ struct BinaryEditorView: View {
     /// Enter build mode, seeding the builder from the active format so an existing
     /// one can be tweaked. Closes the other disclosure rows.
     private func startBuilding() {
-        var seeded = BinaryView.FormatBuilder(palette: CalculatorSession.fieldColorNames)
-        seeded.seed(from: session.activeLayout ?? [])
+        var seeded = BinaryView.FormatBuilder(palette: Self.fieldColors.map(\.name))
+        seeded.seed(from: host.activeLayout ?? [])
         builder = seeded
-        let name = session.activeFormatName
+        let name = host.activeFormatName
         builderName = (name == "Custom" || name == nil) ? "" : name!
-        showingCustom = false; showingSave = false
+        showingSave = false
         building = true
     }
 
@@ -243,20 +227,20 @@ struct BinaryEditorView: View {
     private func buildMode(_ view: BinaryView) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Click the open bits to claim a group, then name it below.")
-                .font(theme.font(scale: 0.7)).foregroundStyle(theme.secondaryText.color)
+                .font(theme.font(scale: 0.7)).foregroundStyle(theme.secondaryText)
             builderStrip(view)
             if builder.pendingWidth > 0 { pendingDetail }
             HStack(spacing: 8) {
-                Text("format").font(theme.font(scale: 0.8)).foregroundStyle(theme.secondaryText.color)
+                Text("format").font(theme.font(scale: 0.8)).foregroundStyle(theme.secondaryText)
                 TextField("name", text: $builderName)
                     .textFieldStyle(.roundedBorder).font(theme.font(scale: 0.8)).frame(width: 130)
                 Button("Save") {
-                    session.saveBuiltFormat(builder.layout, named: builderName); building = false
+                    host.saveFormat(builder.layout, named: builderName); building = false
                 }
                 .controlSize(.small)
                 .disabled(builder.isEmpty || builderName.trimmingCharacters(in: .whitespaces).isEmpty)
                 Button("Apply") {
-                    session.applyBuiltFormat(builder.layout); building = false
+                    host.applyBuiltFormat(builder.layout); building = false
                 }
                 .controlSize(.small).disabled(builder.isEmpty)
                 Spacer()
@@ -282,7 +266,7 @@ struct BinaryEditorView: View {
             }
             if free == 0 && builder.isEmpty {
                 Text("widen the register to add bits")
-                    .font(theme.font(scale: 0.7)).foregroundStyle(theme.secondaryText.color)
+                    .font(theme.font(scale: 0.7)).foregroundStyle(theme.secondaryText)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -306,7 +290,7 @@ struct BinaryEditorView: View {
                 }
                 .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
                 Text("\(field.width)b · \(field.kind.rawValue.lowercased())")
-                    .font(theme.font(scale: 0.6)).foregroundStyle(theme.secondaryText.color)
+                    .font(theme.font(scale: 0.6)).foregroundStyle(theme.secondaryText)
             }
         }
         .padding(.horizontal, 8).padding(.vertical, 5)
@@ -316,7 +300,7 @@ struct BinaryEditorView: View {
             Button { builder.remove(field.id) } label: {
                 Image(systemName: "xmark.circle.fill").font(.system(size: 11))
             }
-            .buttonStyle(.plain).foregroundStyle(theme.secondaryText.color).offset(x: 4, y: -4)
+            .buttonStyle(.plain).foregroundStyle(theme.secondaryText).offset(x: 4, y: -4)
         }
     }
 
@@ -327,7 +311,7 @@ struct BinaryEditorView: View {
                 Button { builder.draftColor = entry.name } label: {
                     Circle().fill(entry.color)
                         .frame(width: 14, height: 14)
-                        .overlay(Circle().stroke(theme.resultText.color,
+                        .overlay(Circle().stroke(theme.resultText,
                                                  lineWidth: builder.draftColor == entry.name ? 2 : 0))
                 }
                 .buttonStyle(.plain)
@@ -338,15 +322,15 @@ struct BinaryEditorView: View {
 
     private func openCell(index j: Int) -> some View {
         let claimed = j <= builder.pendingWidth
-        let accent = theme.accent.color
+        let accent = theme.accent
         return Button {
             builder.claim(j)
         } label: {
             RoundedRectangle(cornerRadius: 3)
-                .fill(claimed ? accent.opacity(0.3) : theme.inputBackground.color)
+                .fill(claimed ? accent.opacity(0.3) : theme.inputBackground)
                 .frame(width: 18, height: 26)
                 .overlay(RoundedRectangle(cornerRadius: 3)
-                    .stroke(claimed ? accent : theme.secondaryText.color.opacity(0.35)))
+                    .stroke(claimed ? accent : theme.secondaryText.opacity(0.35)))
         }
         .buttonStyle(.plain)
         .help("Claim \(j) bit\(j == 1 ? "" : "s") for the next group")
@@ -354,7 +338,7 @@ struct BinaryEditorView: View {
 
     private var pendingDetail: some View {
         HStack(spacing: 8) {
-            Text("\(builder.pendingWidth)b").font(theme.font(scale: 0.78)).foregroundStyle(theme.accent.color)
+            Text("\(builder.pendingWidth)b").font(theme.font(scale: 0.78)).foregroundStyle(theme.accent)
             TextField("name", text: $builder.draftName)
                 .textFieldStyle(.roundedBorder).font(theme.font(scale: 0.8)).frame(width: 90)
             Picker("", selection: $builder.draftKind) {
@@ -483,7 +467,7 @@ struct BinaryEditorView: View {
         let indices = lo < hi ? Array((lo..<hi).reversed()) : []
         return VStack(spacing: 3) {
             Text("unused").font(theme.font(scale: 0.7))
-                .foregroundStyle(theme.secondaryText.color.opacity(0.5))
+                .foregroundStyle(theme.secondaryText.opacity(0.5))
             HStack(spacing: 3) {
                 ForEach(indices, id: \.self) { index in
                     bitButton(bits: bits, view: view, index: index, band: nil, style: style)
@@ -499,8 +483,8 @@ struct BinaryEditorView: View {
     /// Bundled visual constants so each cell doesn't re-read the theme.
     private struct BitStyle { let accent: Color; let dim: Color; let font: Font }
     private var bitStyle: BitStyle {
-        BitStyle(accent: theme.accent.color,
-                 dim: theme.secondaryText.color.opacity(0.5),
+        BitStyle(accent: theme.accent,
+                 dim: theme.secondaryText.opacity(0.5),
                  font: theme.font(scale: 0.95))
     }
 
@@ -508,7 +492,7 @@ struct BinaryEditorView: View {
                            band: Color?, style: BitStyle) -> some View {
         BitButton(set: bits[view.width - 1 - index], accent: style.accent, dim: style.dim,
                   band: band, font: style.font, index: index) {
-            session.flipBinaryBit(index)
+            host.flipBit(index)
         }
         .equatable() // skip unchanged bits on a flip
     }
@@ -519,7 +503,7 @@ struct BinaryEditorView: View {
     private func enumBinding(_ field: BinaryView.Field) -> Binding<Int> {
         Binding(
             get: { Int(exactly: field.value) ?? -1 },
-            set: { session.setBinaryField(field.name, to: BigInt($0)) })
+            set: { host.setField(field.name, to: BigInt($0)) })
     }
 
     /// Live edit of a field's value — shown in the field's base (`0x…` for hex)
@@ -531,9 +515,9 @@ struct BinaryEditorView: View {
             set: { text in
                 let trimmed = text.trimmingCharacters(in: .whitespaces)
                 if trimmed.isEmpty {
-                    session.setBinaryField(field.name, to: BigInt(0))
+                    host.setField(field.name, to: BigInt(0))
                 } else if let value = BinaryView.parse(trimmed, base: field.base ?? 10) {
-                    session.setBinaryField(field.name, to: value)
+                    host.setField(field.name, to: value)
                 }
             })
     }
@@ -556,7 +540,7 @@ struct BinaryEditorView: View {
             Spacer()
         }
         .font(theme.font(scale: 0.8))
-        .foregroundStyle(theme.secondaryText.color)
+        .foregroundStyle(theme.secondaryText)
     }
 }
 
@@ -599,11 +583,7 @@ private struct NibbleGrid: Layout {
     var lineSpacing: CGFloat = 6
 
     private func columns(maxWidth: CGFloat, nibble: CGSize, count: Int) -> Int {
-        guard count > 0, nibble.width > 0 else { return max(count, 1) }
-        let fit = max(1, Int((maxWidth + spacing) / (nibble.width + spacing)))
-        var columns = 1
-        while columns * 2 <= min(fit, count) { columns *= 2 }
-        return columns
+        nibbleColumnCount(maxWidth: maxWidth, itemWidth: nibble.width, spacing: spacing, count: count)
     }
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
