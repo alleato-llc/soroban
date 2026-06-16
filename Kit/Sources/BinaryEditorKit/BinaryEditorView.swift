@@ -488,17 +488,22 @@ public struct BinaryEditorView<Host: BinaryEditorHost>: View {
         let indices = lo < hi ? Array((lo..<hi).reversed()) : []
         return VStack(spacing: 3) {
             Text(field.name).font(theme.font(scale: 0.7)).foregroundStyle(color)
-            HStack(spacing: 3) {
-                ForEach(indices, id: \.self) { index in
-                    // Each bit gets its flag letter directly above it (the column
-                    // sizes to whichever is wider, so alignment holds for multi-
-                    // char flags too).
-                    VStack(spacing: 2) {
-                        let pos = (field.lowBit + field.width - 1) - index // 0 = field's high bit
-                        if let flags = field.flags, pos >= 0, pos < flags.count {
-                            Text(flags[pos]).font(theme.font(scale: 0.62)).foregroundStyle(color)
+            // A wide field wraps into rows (16 bits each) so it can't overflow.
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(Array(rows(of: indices).enumerated()), id: \.offset) { _, row in
+                    HStack(spacing: 3) {
+                        ForEach(row, id: \.self) { index in
+                            // Each bit gets its flag letter directly above it (the
+                            // column sizes to whichever is wider, so alignment holds
+                            // for multi-char flags too).
+                            VStack(spacing: 2) {
+                                let pos = (field.lowBit + field.width - 1) - index // 0 = field's high bit
+                                if let flags = field.flags, pos >= 0, pos < flags.count {
+                                    Text(flags[pos]).font(theme.font(scale: 0.62)).foregroundStyle(color)
+                                }
+                                bitButton(bits: bits, view: view, index: index, band: color, style: style)
+                            }
                         }
-                        bitButton(bits: bits, view: view, index: index, band: color, style: style)
                     }
                 }
             }
@@ -540,13 +545,26 @@ public struct BinaryEditorView<Host: BinaryEditorHost>: View {
         return VStack(spacing: 3) {
             Text(field.name).font(theme.font(scale: 0.7))
                 .foregroundStyle(theme.secondaryText.opacity(0.6))
-            HStack(spacing: 3) {
-                ForEach(indices, id: \.self) { index in
-                    gapBitCell(set: bits[view.width - 1 - index], index: index,
-                               reserved: field.reserved, style: style)
+            // A wide gap (e.g. a 47-bit reserve) wraps into rows, not one line.
+            VStack(alignment: .leading, spacing: 3) {
+                ForEach(Array(rows(of: indices).enumerated()), id: \.offset) { _, row in
+                    HStack(spacing: 3) {
+                        ForEach(row, id: \.self) { index in
+                            gapBitCell(set: bits[view.width - 1 - index], index: index,
+                                       reserved: field.reserved, style: style)
+                        }
+                    }
                 }
             }
             .padding(.horizontal, 4).padding(.vertical, 2)
+        }
+    }
+
+    /// Chunk bit indices into rows (16 per row) so a wide field band wraps
+    /// instead of overflowing the editor.
+    private func rows(of indices: [Int]) -> [[Int]] {
+        stride(from: 0, to: indices.count, by: 16).map {
+            Array(indices[$0 ..< min($0 + 16, indices.count)])
         }
     }
 

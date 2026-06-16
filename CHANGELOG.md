@@ -11,6 +11,13 @@ point of truth for downloads.
 
 ## [Unreleased]
 
+### Fixed
+
+- Bit editor: a wide **field band** — a Reserved/Unused gap, or any field
+  wider than the card — now **wraps** into rows instead of overflowing the
+  editor (matches the unused high band). Previously a wide reserved span ran
+  off-screen.
+
 ### Added
 
 - The **calculator** now manages its saved bit-formats in the editor too —
