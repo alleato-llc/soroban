@@ -28,6 +28,18 @@ struct BinaryFormatTests {
         #expect(roundTrip(layout) == layout)
     }
 
+    @Test func reservedAndUnusedGapsRoundTrip() {
+        let layout: [BinaryView.FieldSpec] = [
+            .init(name: "hi", width: 4, color: "blue"),
+            .init(name: "rsvd", width: 2, color: "green", reserved: true),
+            .init(name: "spare", width: 2, color: "orange", unused: true),
+        ]
+        let decoded = roundTrip(layout)
+        #expect(decoded == layout) // FieldSpec Equatable covers reserved/unused
+        #expect(decoded?.map(\.reserved) == [false, true, false])
+        #expect(decoded?.map(\.unused) == [false, false, true])
+    }
+
     @Test func aBasePersistsThroughTheSerializer() {
         for base in [2, 8, 16] {
             let layout: [BinaryView.FieldSpec] = [.init(name: "v", width: 8, color: "blue", base: base)]

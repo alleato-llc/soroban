@@ -11,6 +11,22 @@ point of truth for downloads.
 
 ## [Unreleased]
 
+### Added
+
+- **Binary bit-editor parity** (shared `BinaryEditorKit`, so both the calculator
+  and the standalone Tama app get it):
+  - A **48-bit** register width (8/16/32/48/64/128/256) — a MAC fits exactly.
+  - **Reserved** (locked, must-be-zero) and **Unused** (don't-care, editable)
+    bit-field kinds in the builder, persisted in the typed `Bits::BitFormat`
+    (`kind: "reserved"` / `"unused"`).
+  - **Build new…** vs **Edit current…** — the builder no longer silently edits
+    the active format; the Format menu is disabled mid-build.
+  - Out-of-format ("unused") bits are grayed and locked until a deliberate
+    double-click enables editing (one confirm); the unused high band wraps so a
+    wide span (e.g. IPv6 in a 256-bit register) doesn't overflow.
+  - Hosts that own their format store (Tama) gain in-editor **rename/delete** of
+    saved formats (`BinaryEditorHost.canManageSavedFormats`).
+
 ## [1.2.0] — 2026-06-15
 
 ### Added

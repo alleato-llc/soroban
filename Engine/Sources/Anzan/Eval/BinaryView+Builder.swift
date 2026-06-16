@@ -9,6 +9,7 @@ extension BinaryView {
     public struct FormatBuilder: Equatable, Sendable {
         public enum FieldKind: String, CaseIterable, Sendable, Identifiable {
             case numeric = "Numeric", flags = "Flags", enumeration = "Enum"
+            case reserved = "Reserved", unused = "Unused"
             public var id: String { rawValue }
         }
 
@@ -37,6 +38,10 @@ extension BinaryView {
                                      color: colorName)
                 case .enumeration:
                     return FieldSpec(name: name, width: width, values: labels, color: colorName)
+                case .reserved:
+                    return FieldSpec(name: name, width: width, color: colorName, reserved: true)
+                case .unused:
+                    return FieldSpec(name: name, width: width, color: colorName, unused: true)
                 }
             }
         }
@@ -66,8 +71,10 @@ extension BinaryView {
         public func freeBits(registerWidth: Int) -> Int { Swift.max(0, registerWidth - committedWidth) }
         public var layout: [FieldSpec] { fields.map(\.spec) }
         public var isEmpty: Bool { fields.isEmpty }
+        /// Reserved and Unused are nameless "gap" fields (no name required).
+        public var isGapKind: Bool { draftKind == .reserved || draftKind == .unused }
         public var canAddField: Bool {
-            pendingWidth >= 1 && !draftName.trimmingCharacters(in: .whitespaces).isEmpty
+            pendingWidth >= 1 && (isGapKind || !draftName.trimmingCharacters(in: .whitespaces).isEmpty)
         }
 
         // MARK: Mutation
@@ -81,9 +88,10 @@ extension BinaryView {
         /// (advancing the default color so successive fields differ). No-op when
         /// `canAddField` is false.
         public mutating func addField() {
-            let name = draftName.trimmingCharacters(in: .whitespaces)
-            guard pendingWidth >= 1, !name.isEmpty else { return }
-            let labels = draftKind == .numeric ? [] : Self.parseLabels(draftLabels)
+            let trimmed = draftName.trimmingCharacters(in: .whitespaces)
+            guard pendingWidth >= 1, isGapKind || !trimmed.isEmpty else { return }
+            let name = isGapKind && trimmed.isEmpty ? draftKind.rawValue.lowercased() : trimmed
+            let labels = (draftKind == .flags || draftKind == .enumeration) ? Self.parseLabels(draftLabels) : []
             fields.append(Field(id: nextID, name: name, width: pendingWidth, kind: draftKind,
                                 labels: labels, colorName: draftColor, base: draftBase))
             nextID += 1
@@ -103,7 +111,13 @@ extension BinaryView {
         public mutating func seed(from layout: [FieldSpec]) {
             fields = layout.enumerated().map { i, spec in
                 let color = spec.color ?? palette[i % palette.count]
-                if let flags = spec.flags {
+                if spec.reserved {
+                    return Field(id: i, name: spec.name, width: spec.width, kind: .reserved,
+                                 labels: [], colorName: color, base: 10)
+                } else if spec.unused {
+                    return Field(id: i, name: spec.name, width: spec.width, kind: .unused,
+                                 labels: [], colorName: color, base: 10)
+                } else if let flags = spec.flags {
                     return Field(id: i, name: spec.name, width: spec.width, kind: .flags,
                                  labels: flags, colorName: color, base: 10)
                 } else if let values = spec.values {

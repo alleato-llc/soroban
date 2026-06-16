@@ -37,6 +37,14 @@ import BigInt
     func applyBuiltFormat(_ layout: [BinaryView.FieldSpec])
     func saveFormat(_ layout: [BinaryView.FieldSpec], named name: String)
 
+    // Whether saved formats are a curated, editable store (rename/delete shown
+    // in the menu). A host whose "saved formats" are workbook variables it
+    // manages elsewhere (the calculator) leaves this false; a host with its own
+    // format file (Tama) sets it true and implements the two below.
+    var canManageSavedFormats: Bool { get }
+    func renameFormat(_ oldName: String, to newName: String)
+    func deleteFormat(_ name: String)
+
     // Environment.
     var theme: BinaryEditorTheme { get }
     func dismiss() // hide the editor (a no-op where the editor IS the window)
@@ -50,6 +58,13 @@ import BigInt
     var resultText: Color { get }
     var secondaryText: Color { get }
     var inputBackground: Color { get }
+}
+
+public extension BinaryEditorHost {
+    // Default: saved formats aren't editor-managed (the calculator's case).
+    var canManageSavedFormats: Bool { false }
+    func renameFormat(_ oldName: String, to newName: String) {}
+    func deleteFormat(_ name: String) {}
 }
 
 public extension BinaryEditorTheme {

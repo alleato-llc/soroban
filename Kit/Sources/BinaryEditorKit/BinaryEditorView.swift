@@ -22,6 +22,15 @@ public struct BinaryEditorView<Host: BinaryEditorHost>: View {
     @State private var saveName = ""
     @State private var showingSave = false
 
+    // Out-of-format ("unused") bits are locked until the user enables editing
+    // with a deliberate double-click (confirmed once per session).
+    @State private var allowUnused = false
+    @State private var confirmUnused = false
+
+    // Renaming a saved format (hosts that manage their own format store).
+    @State private var renameTarget: String?
+    @State private var renameText = ""
+
     // Visual format builder (build mode): drag/click free bits to carve a group,
     // detail it (name/kind/labels), add it; live-preview as you go; save. The
     // logic lives in the engine's BinaryView.FormatBuilder; this view is bindings.
@@ -80,8 +89,16 @@ public struct BinaryEditorView<Host: BinaryEditorHost>: View {
                 buildMode(view)
             } else {
                 if showingSave { saveRow }
+                if renameTarget != nil { renameRow }
                 if let layout { bandedGrid(view, layout) } else { plainGrid(view) }
             }
+        }
+        .confirmationDialog("Edit bits outside the format?", isPresented: $confirmUnused,
+                            titleVisibility: .visible) {
+            Button("Enable editing") { allowUnused = true }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("These bits are outside the active format — values set here will exceed the format's range.")
         }
     }
 
@@ -135,12 +152,24 @@ public struct BinaryEditorView<Host: BinaryEditorHost>: View {
             if !host.savedFormats.isEmpty {
                 Section("Saved") {
                     ForEach(host.savedFormats, id: \.name) { saved in
-                        Button(saved.name) { host.applyFormat(saved.format) }
+                        if host.canManageSavedFormats {
+                            Menu(saved.name) {
+                                Button("Apply") { host.applyFormat(saved.format) }
+                                Button("Rename…") {
+                                    renameTarget = saved.name; renameText = saved.name; showingSave = false
+                                }
+                                Button("Delete", role: .destructive) { host.deleteFormat(saved.name) }
+                            }
+                        } else {
+                            Button(saved.name) { host.applyFormat(saved.format) }
+                        }
                     }
                 }
             }
             Divider()
-            Button("Build…") { startBuilding() }
+            Button("Build new…") { startBuilding(seedFromActive: false) }
+            Button("Edit current…") { startBuilding(seedFromActive: true) }
+                .disabled(host.activeFormat == nil)
             Button("Save current…") { showingSave = true }
                 .disabled(host.activeFormat == nil)
         } label: {
@@ -149,6 +178,7 @@ public struct BinaryEditorView<Host: BinaryEditorHost>: View {
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
+        .disabled(building) // can't switch formats mid-build
     }
 
     @ViewBuilder
@@ -209,16 +239,41 @@ public struct BinaryEditorView<Host: BinaryEditorHost>: View {
         showingSave = false
     }
 
+    private var renameRow: some View {
+        HStack(spacing: 8) {
+            Text("rename to").font(theme.font(scale: 0.8)).foregroundStyle(theme.secondaryText)
+            TextField("name", text: $renameText)
+                .textFieldStyle(.roundedBorder)
+                .font(theme.font(scale: 0.8))
+                .frame(width: 140)
+                .onSubmit { commitRename() }
+            Button("Rename") { commitRename() }
+                .controlSize(.small)
+                .disabled(renameText.trimmingCharacters(in: .whitespaces).isEmpty)
+            Button { renameTarget = nil } label: { Image(systemName: "xmark") }
+                .buttonStyle(.plain).foregroundStyle(theme.secondaryText)
+        }
+    }
+
+    private func commitRename() {
+        if let old = renameTarget { host.renameFormat(old, to: renameText) }
+        renameTarget = nil
+    }
+
     // MARK: Visual format builder (build mode) — bindings over BinaryView.FormatBuilder
 
     /// Enter build mode, seeding the builder from the active format so an existing
     /// one can be tweaked. Closes the other disclosure rows.
-    private func startBuilding() {
+    private func startBuilding(seedFromActive: Bool) {
         var seeded = BinaryView.FormatBuilder(palette: Self.fieldColors.map(\.name))
-        seeded.seed(from: host.activeLayout ?? [])
+        if seedFromActive {
+            seeded.seed(from: host.activeLayout ?? [])
+            let name = host.activeFormatName
+            builderName = (name == "Custom" || name == nil) ? "" : name!
+        } else {
+            builderName = "" // a fresh format
+        }
         builder = seeded
-        let name = host.activeFormatName
-        builderName = (name == "Custom" || name == nil) ? "" : name!
         showingSave = false
         building = true
     }
@@ -361,6 +416,12 @@ public struct BinaryEditorView<Host: BinaryEditorHost>: View {
                 TextField("idle, run, halt, max", text: $builder.draftLabels)
                     .textFieldStyle(.roundedBorder).font(theme.font(scale: 0.8))
                     .help("A label per value, starting at 0")
+            case .reserved:
+                Text("locked, must-be-zero")
+                    .font(theme.font(scale: 0.7)).foregroundStyle(theme.secondaryText)
+            case .unused:
+                Text("don't-care, editable")
+                    .font(theme.font(scale: 0.7)).foregroundStyle(theme.secondaryText)
             }
             colorSwatches
             Button("Add field") { builder.addField() }
@@ -395,14 +456,24 @@ public struct BinaryEditorView<Host: BinaryEditorHost>: View {
         let total = BinaryView.layoutWidth(layout)
         let unused = view.width - total
         let style = bitStyle
-        return FlowLayout(spacing: 14, lineSpacing: 8) {
+        return VStack(alignment: .leading, spacing: 8) {
+            // The unused HIGH band is its own full-width, wrapping row so a wide
+            // span (e.g. 128 bits) doesn't overflow the editor.
             if unused > 0 {
-                unusedSegment(low: total, count: unused, bits: bits, view: view, style: style)
+                unusedBand(low: total, count: unused, bits: bits, view: view, style: style)
             }
-            ForEach(Array(fields.enumerated()), id: \.element.name) { i, field in
-                fieldSegment(field, color: Self.color(named: layout[i].color, position: i),
-                             bits: bits, view: view, style: style)
+            FlowLayout(spacing: 14, lineSpacing: 8) {
+                ForEach(Array(fields.enumerated()), id: \.element.name) { i, field in
+                    if field.reserved || field.unused {
+                        gapSegment(field, color: Self.color(named: layout[i].color, position: i),
+                                   bits: bits, view: view, style: style)
+                    } else {
+                        fieldSegment(field, color: Self.color(named: layout[i].color, position: i),
+                                     bits: bits, view: view, style: style)
+                    }
+                }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -459,23 +530,65 @@ public struct BinaryEditorView<Host: BinaryEditorHost>: View {
         }
     }
 
-    /// The dim band of bits above the format's coverage.
-    private func unusedSegment(low: Int, count: Int, bits: [Bool],
-                               view: BinaryView, style: BitStyle) -> some View {
+    /// A gap field (reserved or unused): a dim, captioned band with no value
+    /// control. Reserved bits are locked; unused bits edit once enabled.
+    private func gapSegment(_ field: BinaryView.Field, color: Color,
+                            bits: [Bool], view: BinaryView, style: BitStyle) -> some View {
+        let lo = max(field.lowBit, 0)
+        let hi = min(field.lowBit + field.width, view.width)
+        let indices = lo < hi ? Array((lo..<hi).reversed()) : []
+        return VStack(spacing: 3) {
+            Text(field.name).font(theme.font(scale: 0.7))
+                .foregroundStyle(theme.secondaryText.opacity(0.6))
+            HStack(spacing: 3) {
+                ForEach(indices, id: \.self) { index in
+                    gapBitCell(set: bits[view.width - 1 - index], index: index,
+                               reserved: field.reserved, style: style)
+                }
+            }
+            .padding(.horizontal, 4).padding(.vertical, 2)
+        }
+    }
+
+    /// The dim band of bits above the format's coverage — wraps in nibble groups
+    /// (a 128-bit unused span flows onto several lines instead of overflowing).
+    private func unusedBand(low: Int, count: Int, bits: [Bool],
+                            view: BinaryView, style: BitStyle) -> some View {
         let lo = max(low, 0)
         let hi = min(low + count, view.width)
         let indices = lo < hi ? Array((lo..<hi).reversed()) : []
-        return VStack(spacing: 3) {
+        let starts = Array(stride(from: 0, to: indices.count, by: 4))
+        return VStack(alignment: .leading, spacing: 3) {
             Text("unused").font(theme.font(scale: 0.7))
                 .foregroundStyle(theme.secondaryText.opacity(0.5))
-            HStack(spacing: 3) {
-                ForEach(indices, id: \.self) { index in
-                    bitButton(bits: bits, view: view, index: index, band: nil, style: style)
+            NibbleGrid(spacing: 14, lineSpacing: 6) {
+                ForEach(starts, id: \.self) { s in
+                    HStack(spacing: 3) {
+                        ForEach(s..<min(s + 4, indices.count), id: \.self) { k in
+                            gapBitCell(set: bits[view.width - 1 - indices[k]], index: indices[k],
+                                       reserved: false, style: style)
+                        }
+                    }
                 }
             }
-            .padding(.horizontal, 4)
-            .padding(.vertical, 2)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// One dim gap-bit cell. Reserved → locked (no gesture). Unused → a
+    /// double-click enables out-of-format editing (one confirm); once enabled a
+    /// single click toggles it.
+    private func gapBitCell(set: Bool, index: Int, reserved: Bool, style: BitStyle) -> some View {
+        Text(set ? "1" : "0")
+            .font(style.font).monospacedDigit()
+            .foregroundStyle(theme.secondaryText.opacity(set ? 0.7 : 0.4))
+            .padding(.horizontal, 2).padding(.vertical, 1)
+            .contentShape(Rectangle())
+            .onTapGesture(count: 2) { if !reserved, !allowUnused { confirmUnused = true } }
+            .onTapGesture(count: 1) { if !reserved, allowUnused { host.flipBit(index) } }
+            .help(reserved ? "bit \(index) — reserved (locked)"
+                  : allowUnused ? "bit \(index) — outside the format"
+                  : "Outside the format — double-click to enable editing")
     }
 
     // MARK: Bit cell

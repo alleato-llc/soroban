@@ -29,7 +29,11 @@ public enum BinaryEditorBits {
         }
         let fields = layout.enumerated().map { index, spec -> String in
             let kind: String, flags: [String], values: [String]
-            if let f = spec.flags, !f.isEmpty {
+            if spec.reserved {
+                kind = "reserved"; flags = []; values = []
+            } else if spec.unused {
+                kind = "unused"; flags = []; values = []
+            } else if let f = spec.flags, !f.isEmpty {
                 kind = "flags"; flags = f; values = []
             } else if let v = spec.values, !v.isEmpty {
                 kind = "enum"; flags = []; values = v

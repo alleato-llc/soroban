@@ -377,4 +377,22 @@ struct FormatBuilderTests {
         // The layout reconstructs the same specs.
         #expect(b.layout == original)
     }
+
+    @Test func gapFieldsNeedNoNameAndCarryTheirKind() {
+        var b = builder()
+        // Reserved: no name required; defaults the name to the kind.
+        b.claim(8); b.draftKind = .reserved
+        #expect(b.canAddField)
+        b.addField()
+        #expect(b.layout[0].reserved && b.layout[0].name == "reserved")
+        // Unused: an editable gap.
+        b.claim(4); b.draftKind = .unused
+        b.addField()
+        #expect(b.layout[1].unused && b.layout[1].name == "unused")
+        // seed round-trips both gap kinds.
+        var c = builder()
+        c.seed(from: b.layout)
+        #expect(c.fields.map(\.kind) == [.reserved, .unused])
+        #expect(c.layout == b.layout)
+    }
 }

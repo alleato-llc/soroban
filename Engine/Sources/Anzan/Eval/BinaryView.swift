@@ -12,7 +12,7 @@ import BigInt
 /// not editable and carry a reason the host can explain.
 public struct BinaryView: Sendable, Equatable {
     /// Display widths a plain integer may use (the bit grid). Capped at `maxWidth`.
-    public static let editableWidths = [8, 16, 32, 64, 128, 256]
+    public static let editableWidths = [8, 16, 32, 48, 64, 128, 256]
     public static let maxWidth = 256
 
     /// Why a value can't be bit-edited (the host shows the matching hint).
@@ -135,10 +135,16 @@ extension BinaryView {
         /// or 16. nil (or 10) is decimal; the others read `0b…`/`0o…`/`0x…`.
         /// Presentation only, like `color` — ignored for flags/enum fields.
         public let base: Int?
+        /// A RESERVED gap — locked, must-be-zero bits (display only).
+        public let reserved: Bool
+        /// An UNUSED gap — don't-care bits: unlabeled, but still editable.
+        public let unused: Bool
         public init(name: String, width: Int, flags: [String]? = nil,
-                    values: [String]? = nil, color: String? = nil, base: Int? = nil) {
+                    values: [String]? = nil, color: String? = nil, base: Int? = nil,
+                    reserved: Bool = false, unused: Bool = false) {
             self.name = name; self.width = width; self.flags = flags
             self.values = values; self.color = color; self.base = base
+            self.reserved = reserved; self.unused = unused
         }
     }
 
@@ -153,6 +159,16 @@ extension BinaryView {
         public let flags: [String]?  // per-bit flag names (high→low), nil = not flags
         public let values: [String]? // enum value labels (value indexes them), nil = not enum
         public let base: Int?        // display radix for a numeric field (2/8/10/16), nil = 10
+        public let reserved: Bool    // a locked, must-be-zero gap (display only)
+        public let unused: Bool      // a don't-care gap (unlabeled but editable)
+
+        public init(name: String, width: Int, lowBit: Int, value: BigInt,
+                    flags: [String]? = nil, values: [String]? = nil, base: Int? = nil,
+                    reserved: Bool = false, unused: Bool = false) {
+            self.name = name; self.width = width; self.lowBit = lowBit; self.value = value
+            self.flags = flags; self.values = values; self.base = base
+            self.reserved = reserved; self.unused = unused
+        }
 
         /// The decoded meaning of a flag field: single-char flags read
         /// positionally with `-` for clear bits (`r-x`); multi-char flags list
@@ -256,7 +272,13 @@ extension BinaryView {
                 let base = normalizedBase(member(field.entries, "base"))
                 let flags = stringList(member(field.entries, "flags"))
                 let values = stringList(member(field.entries, "values"))
-                if (kind == "flags" || kind == nil), let flags, !flags.isEmpty {
+                if kind == "reserved", case .number(let bits)? = member(field.entries, "bits"),
+                   bits.isInteger, let width = bits.intValue, width >= 1 {
+                    layout.append(FieldSpec(name: name, width: width, color: color, reserved: true))
+                } else if kind == "unused", case .number(let bits)? = member(field.entries, "bits"),
+                          bits.isInteger, let width = bits.intValue, width >= 1 {
+                    layout.append(FieldSpec(name: name, width: width, color: color, unused: true))
+                } else if (kind == "flags" || kind == nil), let flags, !flags.isEmpty {
                     layout.append(FieldSpec(name: name, width: flags.count, flags: flags, color: color))
                 } else if (kind == "enum" || kind == nil), let values, !values.isEmpty,
                           case .number(let bits)? = member(field.entries, "bits"),
@@ -336,7 +358,8 @@ extension BinaryView {
             let mask = (BigInt(1) << f.width) - 1
             let value = low >= 0 ? (pattern >> low) & mask : BigInt(0)
             return Field(name: f.name, width: f.width, lowBit: max(low, 0), value: value,
-                         flags: f.flags, values: f.values, base: f.base)
+                         flags: f.flags, values: f.values, base: f.base,
+                         reserved: f.reserved, unused: f.unused)
         }
     }
 

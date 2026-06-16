@@ -30,7 +30,7 @@ group and name them, and a way to share library code.
 | C | Qualification token is **`::`**; imports are `import NAME`. |
 | D | Existing builtins are **reorganized into modules**, but a **global prelude** keeps the common ones usable bare (`pmt` works; `Finance::pmt` is an additive alias; `import` optional). |
 | E | `data` fields gain **full generality**: lists `[T]`, nested lists `[[T]]`, and **map-typed** fields `{String: T}`. |
-| F | A `BitField` carries an explicit **`kind`** field (`"numeric"`/`"flags"`/`"enum"`). |
+| F | A `BitField` carries an explicit **`kind`** field (`"numeric"`/`"flags"`/`"enum"`/`"reserved"`/`"unused"`). |
 
 ## 1 — Generic data field types  *(phase 1)*
 
@@ -123,7 +123,8 @@ every builtin is *also* reachable as `Module::name` (`Finance::pmt`,
 
 ## 5 — The `Bits` module + binary editor  *(phases 4–5)*
 
-The shipped schema carries an explicit `kind` ("numeric" / "flags" / "enum") plus
+The shipped schema carries an explicit `kind` ("numeric" / "flags" / "enum" /
+"reserved" / "unused") plus
 the two label lists (`at:` explicit positioning stays deferred — positions follow
 field order):
 
@@ -135,11 +136,13 @@ namespace Bits {
 }
 ```
 
-Three field flavors, by `kind`: a **numeric** field of `bits` width; a **flags**
-field whose `flags` name each bit high→low (`r-x`); or an **enum** field whose
+Five field flavors, by `kind`: a **numeric** field of `bits` width; a **flags**
+field whose `flags` name each bit high→low (`r-x`); an **enum** field whose
 unsigned value indexes the `values` label list (value 1 of
-`["idle","run","halt","max"]` → "run"). When `kind` is absent (a hand-built
-record), the reader derives it from which list is non-empty.
+`["idle","run","halt","max"]` → "run"); a **reserved** gap (locked,
+must-be-zero — display only); and an **unused** gap (don't-care bits —
+unlabeled but editable). When `kind` is absent (a hand-built record), the reader
+derives numeric/flags/enum from which list is non-empty.
 
 The binary editor's Save (`CalculatorSession.saveFormat`) emits the `Bits` schema
 once per workbook (when `Bits::BitFormat` isn't yet defined), then the format as
