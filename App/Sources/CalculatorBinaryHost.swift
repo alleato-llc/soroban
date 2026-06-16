@@ -40,6 +40,13 @@ import BinaryEditorKit
         session.saveBuiltFormat(layout, named: name)    // → a workbook log variable
     }
 
+    // The calculator now manages its saved-format variables in-editor too.
+    var canManageSavedFormats: Bool { true }
+    func renameFormat(_ oldName: String, to newName: String) {
+        session.renameSavedFormat(oldName, to: newName)
+    }
+    func deleteFormat(_ name: String) { session.deleteSavedFormat(name) }
+
     var theme: BinaryEditorTheme { CalculatorEditorTheme(theme: themeManager.current) }
     func dismiss() { session.binaryEditorShown = false }
 }

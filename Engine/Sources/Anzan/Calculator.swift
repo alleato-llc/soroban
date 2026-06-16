@@ -133,6 +133,19 @@ public final class Calculator {
 
     /// Evaluates a spreadsheet cell formula: identical semantics except `ans`
     /// is left untouched, so grid recalculation never disturbs the log session.
+    /// Set a user variable directly, off the log — for host-managed edits like
+    /// renaming a saved bit-format. Persists with the workbook (bumps the
+    /// environment's changeCount) without adding a history line.
+    public func setUserVariable(_ name: String, to value: Value) {
+        environment[name] = value
+    }
+
+    /// Remove a user variable directly, off the log (the counterpart to
+    /// `setUserVariable` — e.g. deleting a saved bit-format).
+    public func removeUserVariable(_ name: String) {
+        environment[name] = nil
+    }
+
     public func evaluateFormula(_ input: String) -> Result<Value, EngineError> {
         do {
             // Cells are always canonical — log-only mode scope (docs/MODES.md).

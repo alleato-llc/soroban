@@ -10,6 +10,20 @@ struct CalculatorTests {
         #expect(calc.environment.ans == .number(BigDecimal(42)))
     }
 
+    @Test func setAndRemoveUserVariableOffLog() {
+        let calc = Calculator()
+        _ = calc.evaluate("perm = 42")
+        #expect(calc.environment.userVariables["perm"] == .number(BigDecimal(42)))
+        // Rename: re-store under a new name, drop the old (no history line).
+        calc.setUserVariable("acl", to: .number(BigDecimal(42)))
+        calc.removeUserVariable("perm")
+        #expect(calc.environment.userVariables["perm"] == nil)
+        #expect(calc.environment.userVariables["acl"] == .number(BigDecimal(42)))
+        // Delete.
+        calc.removeUserVariable("acl")
+        #expect(calc.environment.userVariables["acl"] == nil)
+    }
+
     @Test func errorsComeBackAsFailures() {
         let calc = Calculator()
         #expect(calc.evaluate("1 +").isFailure)

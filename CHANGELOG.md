@@ -13,6 +13,15 @@ point of truth for downloads.
 
 ### Added
 
+- The **calculator** now manages its saved bit-formats in the editor too —
+  **rename/delete** from the Format menu (previously only the standalone Tama
+  app could; the calculator's were managed via the log). Backed by new
+  off-log primitives `Calculator.setUserVariable` / `removeUserVariable`.
+
+## [1.3.0] — 2026-06-16
+
+### Added
+
 - **Binary bit-editor parity** (shared `BinaryEditorKit`, so both the calculator
   and the standalone Tama app get it):
   - A **48-bit** register width (8/16/32/48/64/128/256) — a MAC fits exactly.
@@ -90,7 +99,8 @@ point of truth for downloads.
 - First public release of Soroban — an exact-arithmetic spreadsheet calculator
   for macOS, built on a 50-digit exact decimal engine with the Anzan language.
 
-[Unreleased]: https://github.com/alleato-llc/soroban/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/alleato-llc/soroban/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/alleato-llc/soroban/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/alleato-llc/soroban/compare/v1.1.9...v1.2.0
 [1.1.9]: https://github.com/alleato-llc/soroban/releases/tag/v1.1.9
 [1.1.8]: https://github.com/alleato-llc/soroban/releases/tag/v1.1.8

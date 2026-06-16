@@ -212,6 +212,31 @@ final class CalculatorSession {
         fitWidthToFormat()
     }
 
+    /// Rename a saved format (host-managed): re-store its value under the new
+    /// name and drop the old. The active format follows automatically — its
+    /// value is unchanged, so the menu re-labels via the value match.
+    func renameSavedFormat(_ oldName: String, to newName: String) {
+        let trimmed = newName.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty, trimmed != oldName,
+              let value = calculator.environment.userVariables[oldName],
+              BinaryView.layout(from: value) != nil else { return }
+        calculator.setUserVariable(trimmed, to: value)
+        calculator.removeUserVariable(oldName)
+        environmentGeneration += 1
+        workbook.noteContentChanged()
+    }
+
+    /// Delete a saved format (host-managed): drop the variable. If it was the
+    /// active format, clear it (the value would otherwise dangle as "Custom").
+    func deleteSavedFormat(_ name: String) {
+        guard calculator.environment.userVariables[name] != nil else { return }
+        let wasActive = activeFormatName == name
+        calculator.removeUserVariable(name)
+        if wasActive { applyFormat(nil) }
+        environmentGeneration += 1
+        workbook.noteContentChanged()
+    }
+
     /// The current binary value decoded into the active format's fields.
     var binaryFields: [BinaryView.Field] {
         guard let layout = activeLayout, case .success(let view) = binaryView else { return [] }
