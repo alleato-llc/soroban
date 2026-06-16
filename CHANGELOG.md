@@ -13,6 +13,14 @@ point of truth for downloads.
 
 ### Fixed
 
+- Bit-editor builder: a single claim can now span **all** the free bits, not
+  just 32 — so you can reserve e.g. 47 of 48 bits in one field instead of being
+  left with a chunk still "available". (The open cells wrap.)
+
+## [1.4.0] — 2026-06-16
+
+### Fixed
+
 - Bit editor: a wide **field band** — a Reserved/Unused gap, or any field
   wider than the card — now **wraps** into rows instead of overflowing the
   editor (matches the unused high band). Previously a wide reserved span ran
@@ -106,7 +114,8 @@ point of truth for downloads.
 - First public release of Soroban — an exact-arithmetic spreadsheet calculator
   for macOS, built on a 50-digit exact decimal engine with the Anzan language.
 
-[Unreleased]: https://github.com/alleato-llc/soroban/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/alleato-llc/soroban/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/alleato-llc/soroban/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/alleato-llc/soroban/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/alleato-llc/soroban/compare/v1.1.9...v1.2.0
 [1.1.9]: https://github.com/alleato-llc/soroban/releases/tag/v1.1.9

@@ -309,9 +309,9 @@ public struct BinaryEditorView<Host: BinaryEditorHost>: View {
     /// j-bit pending group; the claimed cells highlight.
     private func builderStrip(_ view: BinaryView) -> some View {
         let free = builder.freeBits(registerWidth: view.width)
-        // One group claims up to 32 bits at a time (plenty for any real subfield);
-        // more open bits become further groups, so the whole register is reachable.
-        let shown = min(free, 32)
+        // Claim up to ALL the free bits in one group — a reserved/unused gap can
+        // span most of a wide register (e.g. 47 of 48). The cells wrap.
+        let shown = free
         return FlowLayout(spacing: 8, lineSpacing: 8) {
             ForEach(Array(builder.fields.enumerated()), id: \.element.id) { i, field in
                 committedBand(field, position: i)
