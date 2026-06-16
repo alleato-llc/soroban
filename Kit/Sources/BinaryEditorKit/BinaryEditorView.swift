@@ -184,25 +184,30 @@ public struct BinaryEditorView<Host: BinaryEditorHost>: View {
     @ViewBuilder
     private func widthControl(_ view: BinaryView) -> some View {
         if case .plain = view.kind {
-            // Widths too narrow for the value — OR for the active format's total
-            // — are grayed out; the effective width is highlighted.
-            let formatBits = host.activeLayout.map { BinaryView.layoutWidth($0) } ?? 0
-            let minWidth = max(view.minimumWidth,
-                               BinaryView.editableWidths.first { $0 >= formatBits } ?? 0)
+            // With a format active the width is FIXED to the format's size (a
+            // format defines how many bits it covers — IPv4 is 32, MAC 48, IPv6
+            // 128). Otherwise widths too narrow for the value are grayed out.
+            let locked: Int? = host.activeLayout.map { layout -> Int in
+                let total = BinaryView.layoutWidth(layout)
+                return BinaryView.editableWidths.first { $0 >= total } ?? BinaryView.maxWidth
+            }
+            let minWidth = view.minimumWidth
+            let active = locked ?? view.width
             HStack(spacing: 0) {
                 ForEach(BinaryView.editableWidths, id: \.self) { w in
-                    let tooSmall = w < minWidth
-                    Button("\(w)") { host.width = w }
+                    let enabled = locked == nil ? w >= minWidth : w == locked
+                    Button("\(w)") { if locked == nil { host.width = w } }
                         .buttonStyle(.plain)
                         .font(theme.font(scale: 0.7))
                         .foregroundStyle(
-                            tooSmall ? theme.secondaryText.opacity(0.3)
-                            : w == view.width ? theme.accent : theme.secondaryText)
+                            !enabled ? theme.secondaryText.opacity(0.3)
+                            : w == active ? theme.accent : theme.secondaryText)
                         .padding(.horizontal, 5)
                         .padding(.vertical, 2)
-                        .background(w == view.width ? theme.accent.opacity(0.18) : .clear)
-                        .disabled(tooSmall)
-                        .help(tooSmall ? "Too narrow for this value" : "\(w)-bit register")
+                        .background(w == active ? theme.accent.opacity(0.18) : .clear)
+                        .disabled(!enabled)
+                        .help(locked != nil ? (w == active ? "\(w)-bit — fixed by the active format" : "Width is fixed by the active format")
+                              : enabled ? "\(w)-bit register" : "Too narrow for this value")
                 }
             }
             .overlay(RoundedRectangle(cornerRadius: 4)

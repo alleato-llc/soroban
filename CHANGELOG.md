@@ -11,6 +11,15 @@ point of truth for downloads.
 
 ## [Unreleased]
 
+### Changed
+
+- A bit-field **format now fixes the register width** to its own size — IPv4 is
+  32 bits, MAC 48, IPv6 128; applying one snaps the width (up or down) and the
+  width selector locks to it. No more widening a format into meaningless unused
+  high bits. (Applies to built-in and saved formats alike.)
+
+## [1.4.1] — 2026-06-16
+
 ### Fixed
 
 - Bit-editor builder: a single claim can now span **all** the free bits, not
@@ -114,7 +123,8 @@ point of truth for downloads.
 - First public release of Soroban — an exact-arithmetic spreadsheet calculator
   for macOS, built on a 50-digit exact decimal engine with the Anzan language.
 
-[Unreleased]: https://github.com/alleato-llc/soroban/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/alleato-llc/soroban/compare/v1.4.1...HEAD
+[1.4.1]: https://github.com/alleato-llc/soroban/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/alleato-llc/soroban/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/alleato-llc/soroban/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/alleato-llc/soroban/compare/v1.1.9...v1.2.0

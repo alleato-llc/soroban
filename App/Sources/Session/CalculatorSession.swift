@@ -151,8 +151,9 @@ final class CalculatorSession {
     /// fields aren't clipped by a too-narrow width (a fixed-width int can't grow).
     private func fitWidthToFormat() {
         guard let layout = activeLayout else { return }
-        let total = BinaryView.layoutWidth(layout)
-        if total > binaryWidth, let fit = BinaryView.editableWidths.first(where: { $0 >= total }) {
+        // A format owns its register width — snap to it (grow OR shrink), so
+        // IPv4 is 32 bits, MAC 48, IPv6 128 — never wider.
+        if let fit = BinaryView.editableWidths.first(where: { $0 >= BinaryView.layoutWidth(layout) }) {
             binaryWidth = fit
         }
     }
