@@ -13,6 +13,14 @@ point of truth for downloads.
 
 ### Changed
 
+- Docs: documented the `[skip ci]` convention for docs / CHANGELOG / test-only
+  commits (salpa tags every push to `main` but never edits this file, so
+  `[Unreleased]` entries are promoted to a dated `[vX.Y.Z]` by hand).
+
+## [1.4.5] — 2026-06-17
+
+### Changed
+
 - Docs: `docs/PROGRAMMER.md`, `docs/MODULES.md`, `README.md`, and `CLAUDE.md`
   now cover the expanded preset catalog, all **five** field kinds (numeric /
   flags / enum / **reserved** / **unused**), the `base` field in the `Bits`
@@ -152,7 +160,8 @@ point of truth for downloads.
 - First public release of Soroban — an exact-arithmetic spreadsheet calculator
   for macOS, built on a 50-digit exact decimal engine with the Anzan language.
 
-[Unreleased]: https://github.com/alleato-llc/soroban/compare/v1.4.4...HEAD
+[Unreleased]: https://github.com/alleato-llc/soroban/compare/v1.4.5...HEAD
+[1.4.5]: https://github.com/alleato-llc/soroban/compare/v1.4.4...v1.4.5
 [1.4.4]: https://github.com/alleato-llc/soroban/compare/v1.4.3...v1.4.4
 [1.4.3]: https://github.com/alleato-llc/soroban/compare/v1.4.2...v1.4.3
 [1.4.2]: https://github.com/alleato-llc/soroban/compare/v1.4.1...v1.4.2

@@ -86,6 +86,20 @@ git checkout -b feature/thing     # CI runs tests on every push
   xcrun stapler validate Soroban-1.0.0.dmg
   ```
 
+## Keeping the CHANGELOG in sync
+
+salpa tags and ships, but **never edits `CHANGELOG.md`**. So:
+
+- Write each change under `## [Unreleased]` in the **same commit** as the code.
+- When a version ships (or you notice the file has drifted), **promote** those
+  notes into a dated `## [vX.Y.Z]` section and add the compare-link in the
+  footer. A one-version lag (newest change still under `[Unreleased]`) is
+  normal — don't chase your own tail.
+- A commit that should **not** cut a release — docs-only, a CHANGELOG
+  promotion, or test-only — must carry **`[skip ci]`** in its message (same
+  rule as site-only commits). Otherwise every push to `main` bumps a patch
+  version, and the promotion commit itself would cut a fresh release.
+
 ## Notes
 
 - The runner builds with Xcode 26.2 on `macos-26` (PickleKit's Gherkin
