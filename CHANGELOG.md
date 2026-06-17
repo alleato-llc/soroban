@@ -11,6 +11,22 @@ point of truth for downloads.
 
 ## [Unreleased]
 
+### Changed
+
+- Docs: `docs/PROGRAMMER.md`, `docs/MODULES.md`, `README.md`, and `CLAUDE.md`
+  now cover the expanded preset catalog, all **five** field kinds (numeric /
+  flags / enum / **reserved** / **unused**), the `base` field in the `Bits`
+  schema, and the `formatValue` encoder.
+
+## [1.4.4] — 2026-06-17
+
+### Changed
+
+- Internal only: real-world decode tests for the new bit-formats (IEEE 754,
+  `st_mode`, EFLAGS, RGBA8888) — no user-facing change.
+
+## [1.4.3] — 2026-06-17
+
 ### Added
 
 - **13 new built-in bit-formats** across four groups: floating point (IEEE 754
@@ -21,6 +37,8 @@ point of truth for downloads.
   `BinaryView.formatValue([FieldSpec])` encoder that round-trips enum /
   reserved / unused fields (and duplicate field names like EFLAGS's repeated
   `reserved`/`flags`).
+
+## [1.4.2] — 2026-06-16
 
 ### Changed
 
@@ -134,7 +152,10 @@ point of truth for downloads.
 - First public release of Soroban — an exact-arithmetic spreadsheet calculator
   for macOS, built on a 50-digit exact decimal engine with the Anzan language.
 
-[Unreleased]: https://github.com/alleato-llc/soroban/compare/v1.4.1...HEAD
+[Unreleased]: https://github.com/alleato-llc/soroban/compare/v1.4.4...HEAD
+[1.4.4]: https://github.com/alleato-llc/soroban/compare/v1.4.3...v1.4.4
+[1.4.3]: https://github.com/alleato-llc/soroban/compare/v1.4.2...v1.4.3
+[1.4.2]: https://github.com/alleato-llc/soroban/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/alleato-llc/soroban/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/alleato-llc/soroban/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/alleato-llc/soroban/compare/v1.2.0...v1.3.0

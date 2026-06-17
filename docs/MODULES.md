@@ -208,7 +208,8 @@ as an editable value.
    prelude — nothing renamed, all existing programs unchanged). `import` of a
    builtin module is a no-op (already in the prelude).
 4. ✅ **The `Bits` module** — `BitFormat` / `BitField` with `kind`-tagged
-   numeric / flags / enum fields (`{ name, bits, kind, flags, values }`). The
+   numeric / flags / enum / reserved / unused fields
+   (`{ name, bits, kind, flags, values, color, base }`). The
    engine reads such a record into `[FieldSpec]` via `BinaryView.layout(from:)`
    (`.record` case, choosing by `kind`), `BinaryViewTests`
    (`layoutParsesATypedBitFormatRecord`, `enumFieldDecodesItsValueToALabel`).

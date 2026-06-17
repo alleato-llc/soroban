@@ -65,9 +65,12 @@ on an otherwise-empty input line prefixes `ans` automatically — `*2` becomes
 
 A raw register is bits; a **format** labels named bit ranges so the register
 reads as a diagram — a permission mask, a packed struct, a protocol header.
-Apply one from **Format ▾** (presets like Unix permissions, TCP flags, RGB565),
-and each field becomes a captioned, color-coded band. A field is one of three
-kinds:
+Apply one from **Format ▾** — the built-ins span permissions/networking (Unix
+permissions, TCP flags, IPv4/IPv6, MAC, DNS header flags, VLAN 802.1Q, IPv4
+DSCP/ECN), color (RGB565, RGBA8888/4444, ARGB1555), floating point (IEEE 754
+float/double/half, bfloat16), and systems (x86 EFLAGS, Unix `st_mode`, FAT
+date/time) — and each field becomes a captioned, color-coded band. A field is
+one of five kinds:
 
 - **numeric** — a plain value you can type into (clamped to the field's width).
 - **flags** — one name per bit, high→low; the readout decodes positionally
@@ -75,9 +78,13 @@ kinds:
 - **enum** — the field's unsigned value indexes a label list; value `2` of
   `["idle", "run", "halt", "max"]` reads `halt`. Enum fields render as a labeled
   picker.
+- **reserved** — a locked, must-be-zero gap; shown but never editable.
+- **unused** — a don't-care gap: unlabeled but still editable (a deliberate
+  double-click unlocks it, then a single click toggles).
 
-Fields pack contiguously into the low bits, listed high→low; any higher bits are
-shown as "unused."
+Fields pack contiguously into the low bits, listed high→low; any higher bits
+above the format are shown as "unused" too (likewise locked until you enable
+them).
 
 A **numeric** field also carries a display **base** — decimal (the default) or
 hex — so an octet can read `0x1b` instead of `27`. It's presentation only (the
@@ -92,7 +99,8 @@ workbook and survives reopen:
 
 ```
 namespace Bits { data BitField { name: String, bits: Number, kind: String,
-                                  flags: [String], values: [String], color: String };
+                                  flags: [String], values: [String], color: String,
+                                  base: Number };
                  data BitFormat { fields: [BitField] } }
 
 perms = Bits::BitFormat(fields: [
