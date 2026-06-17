@@ -97,6 +97,49 @@ struct BinaryFormatTests {
         #expect(decoded?.map(\.reserved) == [true, false, true, false])
     }
 
+    /// Decode real, known-good values through the new presets — the proof the
+    /// layouts are not just the right *width* but the right *bits*, decoded by
+    /// the same `fields()` path the editor uses.
+    @Test func richPresetsDecodeRealWorldValues() {
+        func decode(_ name: String, _ pattern: BigInt, width: Int) -> [BinaryView.Field]? {
+            guard let format = BinaryEditorPresets.standard.first(where: { $0.name == name })?.format,
+                  let layout = BinaryView.layout(from: format) else { return nil }
+            return BinaryView(kind: .plain, width: width, pattern: pattern).fields(layout)
+        }
+        func field(_ fs: [BinaryView.Field]?, _ name: String) -> BinaryView.Field? {
+            fs?.first { $0.name == name }
+        }
+
+        // IEEE 754 float 1.0 = 0x3F800000 → sign 0, exponent 127 (biased), mantissa 0.
+        let f = decode("IEEE 754 float", BigInt(0x3F80_0000), width: 32)
+        #expect(field(f, "sign")?.value == 0)
+        #expect(field(f, "exponent")?.value == 127)
+        #expect(field(f, "mantissa")?.value == 0)
+        // IEEE 754 double -2.0 = 0xC000000000000000 → sign 1, exponent 1024, mantissa 0.
+        let d = decode("IEEE 754 double", (BigInt(1) << 63) | (BigInt(1) << 62), width: 64)
+        #expect(field(d, "sign")?.value == 1)
+        #expect(field(d, "exponent")?.value == 1024)
+
+        // Unix st_mode 0o100644 = regular file (type 0x8), rw-r--r--.
+        let m = decode("Unix mode (st_mode)", BigInt(0o100644), width: 16)
+        #expect(field(m, "type")?.value == 8)        // S_IFREG high nibble
+        #expect(field(m, "owner")?.flagString == "rw-")
+        #expect(field(m, "group")?.flagString == "r--")
+        #expect(field(m, "other")?.flagString == "r--")
+
+        // x86 EFLAGS 0x45 → CF (bit 0), PF (bit 2), ZF (bit 6) set; nothing else.
+        let e = decode("x86 EFLAGS", BigInt(0x45), width: 32)
+        #expect(field(e, "CF")?.flagString == "CF")
+        #expect(field(e, "PF")?.flagString == "PF")
+        #expect(e?.first { $0.flags?.contains("ZF") == true }?.flagString == "ZF")
+        #expect(e?.first { $0.flags?.contains("CWR") == true } == nil) // sanity: no cross-format leakage
+
+        // RGBA8888 0xAABBCCDD → r=0xAA, g=0xBB, b=0xCC, a=0xDD (hex readout).
+        let c = decode("RGBA8888", BigInt(0xAABB_CCDD), width: 32)
+        #expect(field(c, "r")?.valueText == "0xaa")
+        #expect(field(c, "a")?.valueText == "0xdd")
+    }
+
     @Test func everyPresetDecodesAndIsWellFormed() {
         for (name, format) in BinaryEditorPresets.standard {
             let layout = BinaryView.layout(from: format)
