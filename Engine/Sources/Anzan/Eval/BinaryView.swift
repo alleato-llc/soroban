@@ -246,11 +246,20 @@ extension BinaryView {
                     }
                     layout.append(FieldSpec(name: entry.key, width: names.count, flags: names))
                 case .map(let inner):
-                    // A numeric field with a display base: `{bits: 8, base: 16}`.
+                    // A richer field map: `{bits, base}` numeric, `{bits, values}`
+                    // enum, or `{bits, reserved}` / `{bits, unused}` gap.
                     guard case .number(let n)? = member(inner, "bits"),
                           n.isInteger, let width = n.intValue, width >= 1 else { return nil }
-                    layout.append(FieldSpec(name: entry.key, width: width,
-                                            base: normalizedBase(member(inner, "base"))))
+                    if flagSet(member(inner, "reserved")) {
+                        layout.append(FieldSpec(name: entry.key, width: width, reserved: true))
+                    } else if flagSet(member(inner, "unused")) {
+                        layout.append(FieldSpec(name: entry.key, width: width, unused: true))
+                    } else if let values = stringList(member(inner, "values")), !values.isEmpty {
+                        layout.append(FieldSpec(name: entry.key, width: width, values: values))
+                    } else {
+                        layout.append(FieldSpec(name: entry.key, width: width,
+                                                base: normalizedBase(member(inner, "base"))))
+                    }
                 default:
                     return nil
                 }
@@ -315,6 +324,40 @@ extension BinaryView {
     private static func normalizedBase(_ value: Value?) -> Int? {
         guard case .number(let n)? = value, n.isInteger, let b = n.intValue else { return nil }
         return (b == 2 || b == 8 || b == 16) ? b : nil
+    }
+
+    /// A boolean-ish loose-map flag — Anzan has no Bool, so "true" is the number 1.
+    private static func flagSet(_ value: Value?) -> Bool {
+        if case .number(let n)? = value { return !n.isZero }
+        return false
+    }
+
+    /// Build a loose-map format `Value` from an explicit layout — the general
+    /// constructor that also encodes enum / reserved / unused fields (which the
+    /// homogeneous `formatMap` / `flagFormatMap` / `numericFormatMap` can't).
+    /// Round-trips through `layout(from:)`. Used for the richer built-in presets.
+    public static func formatValue(_ layout: [FieldSpec]) -> Value {
+        .map(layout.map { spec in
+            let value: Value
+            if spec.reserved {
+                value = .map([.init(key: "bits", value: .number(BigDecimal(spec.width))),
+                              .init(key: "reserved", value: .number(BigDecimal(1)))])
+            } else if spec.unused {
+                value = .map([.init(key: "bits", value: .number(BigDecimal(spec.width))),
+                              .init(key: "unused", value: .number(BigDecimal(1)))])
+            } else if let flags = spec.flags, !flags.isEmpty {
+                value = .array(flags.map { Value.string($0) })
+            } else if let values = spec.values, !values.isEmpty {
+                value = .map([.init(key: "bits", value: .number(BigDecimal(spec.width))),
+                              .init(key: "values", value: .array(values.map { Value.string($0) }))])
+            } else if let base = spec.base {
+                value = .map([.init(key: "bits", value: .number(BigDecimal(spec.width))),
+                              .init(key: "base", value: .number(BigDecimal(base)))])
+            } else {
+                value = .number(BigDecimal(spec.width))
+            }
+            return Value.MapEntry(key: spec.name, value: value)
+        })
     }
 
     /// Build a format map from numeric (name, width) pairs — the inverse of

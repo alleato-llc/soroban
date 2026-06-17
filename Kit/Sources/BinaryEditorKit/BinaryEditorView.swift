@@ -468,7 +468,7 @@ public struct BinaryEditorView<Host: BinaryEditorHost>: View {
                 unusedBand(low: total, count: unused, bits: bits, view: view, style: style)
             }
             FlowLayout(spacing: 14, lineSpacing: 8) {
-                ForEach(Array(fields.enumerated()), id: \.element.name) { i, field in
+                ForEach(Array(fields.enumerated()), id: \.offset) { i, field in
                     if field.reserved || field.unused {
                         gapSegment(field, color: Self.color(named: layout[i].color, position: i),
                                    bits: bits, view: view, style: style)

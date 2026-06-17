@@ -60,6 +60,43 @@ struct BinaryFormatTests {
         #expect(decoded?.compactMap(\.color) == Array(BinaryEditorPalette.names.prefix(3)))
     }
 
+    /// `formatValue` is the loose-map encoder for the richer presets (enum /
+    /// reserved / flags / numeric in one layout, including duplicate field
+    /// names like EFLAGS's repeated "reserved"). It must round-trip through
+    /// `layout(from:)` directly (no serializer hop — presets ship as Values).
+    @Test func formatValueRoundTripsMixedFields() {
+        let layout: [BinaryView.FieldSpec] = [
+            .init(name: "QR", width: 1, flags: ["QR"]),
+            .init(name: "Opcode", width: 4, values: ["QUERY", "IQUERY", "STATUS"]),
+            .init(name: "Z", width: 3, reserved: true),
+            .init(name: "spare", width: 2, unused: true),
+            .init(name: "addr", width: 8, base: 16),
+        ]
+        let decoded = BinaryView.layout(from: BinaryView.formatValue(layout))
+        #expect(decoded?.map(\.name) == ["QR", "Opcode", "Z", "spare", "addr"])
+        #expect(decoded?.map(\.width) == [1, 4, 3, 2, 8])
+        #expect(decoded?.map(\.flags) == [["QR"], nil, nil, nil, nil])
+        #expect(decoded?.map(\.values) == [nil, ["QUERY", "IQUERY", "STATUS"], nil, nil, nil])
+        #expect(decoded?.map(\.reserved) == [false, false, true, false, false])
+        #expect(decoded?.map(\.unused) == [false, false, false, true, false])
+        #expect(decoded?.map(\.base) == [nil, nil, nil, nil, 16])
+    }
+
+    /// Duplicate field names (EFLAGS repeats "reserved"/"flags") must survive
+    /// encode/decode in order — the parser keys off position, not name.
+    @Test func formatValuePreservesDuplicateFieldNamesInOrder() {
+        let layout: [BinaryView.FieldSpec] = [
+            .init(name: "reserved", width: 2, reserved: true),
+            .init(name: "flags", width: 2, flags: ["A", "B"]),
+            .init(name: "reserved", width: 1, reserved: true),
+            .init(name: "flags", width: 2, flags: ["C", "D"]),
+        ]
+        let decoded = BinaryView.layout(from: BinaryView.formatValue(layout))
+        #expect(decoded?.map(\.name) == ["reserved", "flags", "reserved", "flags"])
+        #expect(decoded?.map(\.width) == [2, 2, 1, 2])
+        #expect(decoded?.map(\.reserved) == [true, false, true, false])
+    }
+
     @Test func everyPresetDecodesAndIsWellFormed() {
         for (name, format) in BinaryEditorPresets.standard {
             let layout = BinaryView.layout(from: format)
@@ -81,6 +118,45 @@ struct BinaryFormatTests {
         #expect(bits("IPv4 address") == 32)
         #expect(bits("MAC address") == 48)
         #expect(bits("IPv6 address") == 128)
+        // Floating point.
+        #expect(bits("IEEE 754 float") == 32)
+        #expect(bits("IEEE 754 double") == 64)
+        #expect(bits("IEEE 754 half") == 16)
+        #expect(bits("bfloat16") == 16)
+        // Color.
+        #expect(bits("RGBA8888") == 32)
+        #expect(bits("ARGB1555") == 16)
+        #expect(bits("RGBA4444") == 16)
+        // Networking.
+        #expect(bits("DNS header flags") == 16)
+        #expect(bits("VLAN 802.1Q tag") == 16)
+        #expect(bits("IPv4 DSCP/ECN") == 8)
+        // Systems.
+        #expect(bits("x86 EFLAGS") == 32)
+        #expect(bits("Unix mode (st_mode)") == 16)
+        #expect(bits("FAT date") == 16)
+        #expect(bits("FAT time") == 16)
+    }
+
+    /// The richer presets carry enum / reserved fields — spot-check that the
+    /// decode preserves those kinds (not just total width).
+    @Test func richPresetsCarryEnumAndReservedFields() {
+        func layout(_ name: String) -> [BinaryView.FieldSpec]? {
+            guard let format = BinaryEditorPresets.standard.first(where: { $0.name == name })?.format
+            else { return nil }
+            return BinaryView.layout(from: format)
+        }
+        let dns = layout("DNS header flags")
+        #expect(dns?.contains { $0.name == "Opcode" && $0.values != nil } == true)
+        #expect(dns?.contains { $0.name == "Z" && $0.reserved } == true)
+
+        let eflags = layout("x86 EFLAGS")
+        #expect(eflags?.filter(\.reserved).count == 5)
+        #expect(eflags?.contains { $0.flags?.contains("CF") == true } == true)
+
+        let mode = layout("Unix mode (st_mode)")
+        #expect(mode?.contains { $0.name == "type" && $0.base == 16 } == true)
+        #expect(mode?.contains { $0.name == "owner" && $0.flags == ["r", "w", "x"] } == true)
     }
 
     /// The user-visible chain: save a format as a typed variable, close, reopen.

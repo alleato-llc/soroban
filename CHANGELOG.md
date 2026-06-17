@@ -11,6 +11,17 @@ point of truth for downloads.
 
 ## [Unreleased]
 
+### Added
+
+- **13 new built-in bit-formats** across four groups: floating point (IEEE 754
+  float/double/half, bfloat16), color (RGBA8888, ARGB1555, RGBA4444),
+  networking (DNS header flags, VLAN 802.1Q tag, IPv4 DSCP/ECN), and systems
+  (x86 EFLAGS, Unix `st_mode`, FAT date, FAT time). The richer ones mix
+  enum, flag, and reserved sub-fields in one layout — backed by a new
+  `BinaryView.formatValue([FieldSpec])` encoder that round-trips enum /
+  reserved / unused fields (and duplicate field names like EFLAGS's repeated
+  `reserved`/`flags`).
+
 ### Changed
 
 - A bit-field **format now fixes the register width** to its own size — IPv4 is
