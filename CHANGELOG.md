@@ -37,7 +37,7 @@ point of truth for downloads.
 
 ### Added
 
-- **13 new built-in bit-formats** across four groups: floating point (IEEE 754
+- **14 new built-in bit-formats** across four groups: floating point (IEEE 754
   float/double/half, bfloat16), color (RGBA8888, ARGB1555, RGBA4444),
   networking (DNS header flags, VLAN 802.1Q tag, IPv4 DSCP/ECN), and systems
   (x86 EFLAGS, Unix `st_mode`, FAT date, FAT time). The richer ones mix
