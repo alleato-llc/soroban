@@ -9,9 +9,10 @@
 //! the spec first, then in both implementations.
 
 mod calculator;
-pub mod number;
 pub mod error;
+pub mod lexer;
 pub mod mode;
+pub mod number;
 
 pub use calculator::{Calculator, EvalOutcome};
 pub use error::EngineError;

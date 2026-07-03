@@ -11,7 +11,7 @@ mod math;
 use crate::EngineError;
 use num_bigint::{BigInt, Sign};
 use num_integer::Integer;
-use num_traits::{Signed, Zero};
+use num_traits::Zero;
 use std::cell::Cell;
 use std::cmp::Ordering;
 use std::ops::{Add, Mul, Neg, Sub};
@@ -30,7 +30,10 @@ pub struct BigDecimal {
 
 impl BigDecimal {
     pub fn new(significand: BigInt, exponent: i64) -> Self {
-        let mut value = Self { significand, exponent };
+        let mut value = Self {
+            significand,
+            exponent,
+        };
         value.normalize();
         value
     }
@@ -263,10 +266,7 @@ impl BigDecimal {
         }
         let scale = BigInt::from(10).pow(excess as u32);
         let (q, r) = self.significand.div_rem(&scale);
-        Self::new(
-            Self::round_half_even(q, &r, &scale),
-            self.exponent + excess,
-        )
+        Self::new(Self::round_half_even(q, &r, &scale), self.exponent + excess)
     }
 
     /// Rounds to `places` decimal places (banker's rounding). Negative
@@ -295,7 +295,11 @@ impl BigDecimal {
         if !bump {
             return quotient;
         }
-        let step = if remainder.sign() == Sign::Minus { -1 } else { 1 };
+        let step = if remainder.sign() == Sign::Minus {
+            -1
+        } else {
+            1
+        };
         quotient + step
     }
 
@@ -318,7 +322,11 @@ impl BigDecimal {
         if remainder.magnitude() * 2u32 < *divisor.magnitude() {
             return quotient;
         }
-        let step = if remainder.sign() == Sign::Minus { -1 } else { 1 };
+        let step = if remainder.sign() == Sign::Minus {
+            -1
+        } else {
+            1
+        };
         quotient + step
     }
 

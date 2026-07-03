@@ -25,10 +25,7 @@ impl BigDecimal {
         if self.digit_count().saturating_mul(n) > 1_000_000 {
             return Err(EngineError::domain("result of ^ is too large"));
         }
-        Ok(Self::new(
-            self.significand.pow(n as u32),
-            self.exponent * n,
-        ))
+        Ok(Self::new(self.significand.pow(n as u32), self.exponent * n))
     }
 
     /// Square root via Newton iteration, to working precision.
@@ -89,6 +86,7 @@ impl BigDecimal {
     /// arbitrary-precision series implementations later — callers won't
     /// change. New inexact functions must route through here, never do f64
     /// math elsewhere in the engine.
+    #[allow(dead_code)] // wired in by the transcendental builtins (port in flight)
     pub(crate) fn via_double(
         name: &str,
         value: &BigDecimal,

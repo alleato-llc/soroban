@@ -27,7 +27,10 @@ fn parses_literals() {
 #[test]
 fn rejects_malformed() {
     for input in ["", "-", "1.2.3", "1e", "abc", "1e2.5"] {
-        assert!(BigDecimal::parse(input).is_none(), "'{input}' should not parse");
+        assert!(
+            BigDecimal::parse(input).is_none(),
+            "'{input}' should not parse"
+        );
     }
 }
 
@@ -101,8 +104,14 @@ fn rounds_to_places() {
 
 #[test]
 fn rounds_to_significant_digits() {
-    assert_eq!(num("123456").rounded_to_significant_digits(3), num("123000"));
-    assert_eq!(num("0.0012349").rounded_to_significant_digits(3), num("0.00123"));
+    assert_eq!(
+        num("123456").rounded_to_significant_digits(3),
+        num("123000")
+    );
+    assert_eq!(
+        num("0.0012349").rounded_to_significant_digits(3),
+        num("0.00123")
+    );
 }
 
 // MARK: BigDecimal powers and roots
@@ -131,7 +140,10 @@ fn exact_square_roots() {
     assert_eq!(num("9").square_root().unwrap(), num("3"));
     assert_eq!(num("2.25").square_root().unwrap(), num("1.5"));
     assert_eq!(num("0.0001").square_root().unwrap(), num("0.01"));
-    assert_eq!(BigDecimal::zero().square_root().unwrap(), BigDecimal::zero());
+    assert_eq!(
+        BigDecimal::zero().square_root().unwrap(),
+        BigDecimal::zero()
+    );
 }
 
 #[test]
