@@ -17,7 +17,7 @@ pub mod mode;
 pub mod number;
 pub mod parser;
 
-pub use calculator::{Calculator, EvalOutcome};
+pub use calculator::{Calculator, Completion, CompletionKind, EvalOutcome, FunctionDoc};
 pub use error::EngineError;
 pub use mode::LanguageMode;
 pub use number::{BigDecimal, PrecisionContext};

@@ -8,7 +8,7 @@
 //! it exists. Patterns are greedy `(.*)` regexes exactly like PickleKit's, so
 //! arguments may embed quotes (`the result is "Person(name: "Ada", …)"`).
 
-use anzan::{Calculator, EngineError, EvalOutcome, LanguageMode};
+use anzan::{BigDecimal, Calculator, EngineError, EvalOutcome, LanguageMode};
 use cucumber::{given, then, when, World};
 
 #[derive(Debug, Default, World)]
@@ -52,19 +52,20 @@ fn result_near_zero(world: &mut AnzanWorld, bound: String) {
 }
 
 fn near(world: &mut AnzanWorld, bound: &str, target: &str) {
-    // Tolerance comparison in BigDecimal once the number core lands; the
-    // f64 placeholder keeps the harness honest for now (tolerances in the
-    // features are all well inside f64 range).
     let value = match &world.outcome {
         Some(Ok(outcome)) => outcome
             .numeric_value()
             .unwrap_or_else(|| panic!("expected a numeric result, got {outcome}")),
         other => panic!("expected a numeric result, got {other:?}"),
     };
-    let bound: f64 = bound.parse().expect("a numeric bound");
-    let target: f64 = target.parse().expect("a numeric target");
+    let bound = BigDecimal::parse(bound).expect("a numeric bound");
+    let target = BigDecimal::parse(target).expect("a numeric target");
+    let diff = &value - &target;
+    let magnitude = if diff.is_negative() { -&diff } else { diff };
+    // Mirrors the Swift steps: ≤ against a target, < against zero — the
+    // caller passes target "0" only from the of-zero step.
     assert!(
-        (value - target).abs() <= bound,
+        magnitude <= bound,
         "{value} is not within {bound} of {target}"
     );
 }
@@ -86,9 +87,13 @@ fn calculation_fails(world: &mut AnzanWorld, fragment: String) {
 #[then(regex = r#"^documentation is shown mentioning "(.*)"$"#)]
 fn documentation_shown(world: &mut AnzanWorld, fragment: String) {
     match &world.outcome {
-        Some(Ok(outcome)) => {
-            // Grows a real `.documentation` arm with the FunctionDoc port.
-            let text = outcome.to_string();
+        Some(Ok(EvalOutcome::Documentation(doc))) => {
+            let text = format!(
+                "{} {} {}",
+                doc.signature,
+                doc.summary,
+                doc.examples.join(" ")
+            );
             assert!(
                 text.contains(&fragment),
                 "documentation doesn't mention '{fragment}': {text}"

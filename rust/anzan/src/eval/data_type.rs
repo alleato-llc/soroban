@@ -152,3 +152,84 @@ impl DataFieldType {
         }
     }
 }
+
+// MARK: - Value validation (the constructor's type checks)
+
+use super::value::{MapEntry, Value};
+use crate::EngineError;
+
+impl DataFieldType {
+    /// Validates a value against this type, recursing into list/map
+    /// elements. Booleans are the engine's 1/0, but a Boolean field is
+    /// strict (exactly 0/1, so `active: 7` is caught). Records are
+    /// already-validated immutable instances, so a type-name check suffices
+    /// (no re-validation, no cycles).
+    pub(crate) fn validate(
+        &self,
+        value: &Value,
+        field: &str,
+        type_name: &str,
+    ) -> Result<Value, EngineError> {
+        let mismatch = || {
+            EngineError::domain(format!(
+                "'{field}' of {type_name} is a {} — got {}",
+                self.label(),
+                value.kind_name()
+            ))
+        };
+        match self {
+            Self::Number => {
+                if !matches!(value, Value::Number(_)) {
+                    return Err(mismatch());
+                }
+            }
+            Self::String => {
+                if !matches!(value, Value::String(_)) {
+                    return Err(mismatch());
+                }
+            }
+            Self::Boolean => {
+                let ok = matches!(value, Value::Number(flag)
+                    if flag.is_zero() || *flag == crate::BigDecimal::one());
+                if !ok {
+                    return Err(EngineError::domain(format!(
+                        "'{field}' of {type_name} is a Boolean — use true or false"
+                    )));
+                }
+            }
+            Self::Record(expected) => {
+                let ok = matches!(value, Value::Record(record)
+                    if record.type_name.eq_ignore_ascii_case(expected));
+                if !ok {
+                    return Err(mismatch());
+                }
+            }
+            Self::List(element) => {
+                let Value::Array(items) = value else {
+                    return Err(mismatch());
+                };
+                let validated: Result<Vec<Value>, EngineError> = items
+                    .iter()
+                    .map(|item| element.validate(item, field, type_name))
+                    .collect();
+                return Ok(Value::Array(validated?));
+            }
+            Self::Map(value_type) => {
+                let Value::Map(entries) = value else {
+                    return Err(mismatch());
+                };
+                let validated: Result<Vec<MapEntry>, EngineError> = entries
+                    .iter()
+                    .map(|e| {
+                        Ok(MapEntry::new(
+                            e.key.clone(),
+                            value_type.validate(&e.value, field, type_name)?,
+                        ))
+                    })
+                    .collect();
+                return Ok(Value::Map(validated?));
+            }
+        }
+        Ok(value.clone())
+    }
+}
