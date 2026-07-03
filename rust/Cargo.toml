@@ -2,7 +2,7 @@
 # phase: anzan (the language) first, then engine, cli, gui, kit.
 [workspace]
 resolver = "2"
-members = ["anzan"]
+members = ["anzan", "cli"]
 
 # Shared pins so member crates never drift.
 [workspace.dependencies]

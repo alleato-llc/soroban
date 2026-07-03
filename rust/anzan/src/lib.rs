@@ -21,6 +21,8 @@ pub mod parser;
 pub use calculator::{Calculator, Completion, CompletionKind, EvalOutcome, FunctionDoc};
 pub use documentation::DocCategory;
 pub use error::EngineError;
+pub use eval::environment::{EvaluationEnvironment, UserFunction};
+pub use eval::value::{FunctionValue, HostObject, MapEntry, RecordValue, Value};
 pub use mode::LanguageMode;
 pub use number::{BigDecimal, PrecisionContext};
 pub use parser::Parser;

@@ -158,3 +158,35 @@ impl BigDecimal {
         format!("{sign}{mantissa}e{plus}{exp}")
     }
 }
+
+// MARK: - Programmer notation (host-facing hex/binary echoes)
+
+impl BigDecimal {
+    /// "0xFF" (uppercase digits); `None` for non-integers. The hosts' hex
+    /// echo — display only, never semantics.
+    pub fn hex_text(&self) -> Option<String> {
+        let bits = self.big_int_value()?;
+        let sign = if self.is_negative() { "-0x" } else { "0x" };
+        Some(format!(
+            "{sign}{}",
+            bits.magnitude().to_str_radix(16).to_uppercase()
+        ))
+    }
+
+    /// "0b1100_0011" — nibble-grouped from the right; `None` for
+    /// non-integers.
+    pub fn binary_text(&self) -> Option<String> {
+        let bits = self.big_int_value()?;
+        let raw: Vec<char> = bits.magnitude().to_str_radix(2).chars().collect();
+        let mut grouped: Vec<char> = Vec::with_capacity(raw.len() + raw.len() / 4);
+        for (offset, bit) in raw.iter().rev().enumerate() {
+            if offset > 0 && offset % 4 == 0 {
+                grouped.push('_');
+            }
+            grouped.push(*bit);
+        }
+        let body: String = grouped.iter().rev().collect();
+        let sign = if self.is_negative() { "-0b" } else { "0b" };
+        Some(format!("{sign}{body}"))
+    }
+}

@@ -1,0 +1,16 @@
+[package]
+name = "soroban-cli"
+version = "0.1.0"
+edition = "2021"
+description = "soroban — the Anzan language at the command line. One-shot args / pipe / REPL; thin plumbing over the anzan Calculator (keep logic in the engine, not here)."
+license = "MIT"
+
+# Depends on anzan ONLY — the CLI is the language without the app, and
+# deliberately has no sheet layer.
+[dependencies]
+anzan = { path = "../anzan" }
+rustyline = "15"
+
+[[bin]]
+name = "soroban"
+path = "src/main.rs"

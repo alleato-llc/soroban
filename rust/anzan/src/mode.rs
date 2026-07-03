@@ -11,6 +11,15 @@ pub enum LanguageMode {
 }
 
 impl LanguageMode {
+    /// The mode's spelled name — ":mode" echoes and persistence.
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::Normal => "normal",
+            Self::Programmer => "programmer",
+            Self::Finance => "finance",
+        }
+    }
+
     pub fn from_name(name: &str) -> Option<Self> {
         match name {
             "normal" => Some(Self::Normal),
