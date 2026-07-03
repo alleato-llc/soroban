@@ -1,0 +1,18 @@
+# The Rust ecosystem's cargo workspace (docs/MIGRATION.md). Members arrive by
+# phase: anzan (the language) first, then engine, cli, gui, kit.
+[workspace]
+resolver = "2"
+members = ["anzan"]
+
+# Shared pins so member crates never drift.
+[workspace.dependencies]
+num-bigint = "0.4"
+num-traits = "0.2"
+num-integer = "0.1"
+# Pure-Rust libm for the via_double transcendental seam — platform-independent
+# results matter now that two implementations must agree (docs/MIGRATION.md §3).
+libm = "0.2"
+# Grow the stack for deep non-tail recursion — the continueOnFreshStack analogue.
+stacker = "0.1"
+cucumber = "0.21"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
