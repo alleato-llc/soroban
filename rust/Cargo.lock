@@ -71,13 +71,11 @@ checksum = "2a4385e2e34eb35d6b3efe798b9eb88096925d87726c0798709bf56d9ed84af3"
 name = "anzan"
 version = "0.1.0"
 dependencies = [
- "cucumber",
  "libm",
  "num-bigint",
  "num-integer",
  "num-traits",
  "stacker",
- "tokio",
 ]
 
 [[package]]
@@ -996,6 +994,19 @@ version = "0.1.0"
 dependencies = [
  "anzan",
  "rustyline",
+]
+
+[[package]]
+name = "soroban-engine"
+version = "0.1.0"
+dependencies = [
+ "anzan",
+ "cucumber",
+ "num-bigint",
+ "num-traits",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]

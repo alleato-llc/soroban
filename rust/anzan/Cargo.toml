@@ -11,11 +11,3 @@ num-traits = { workspace = true }
 num-integer = { workspace = true }
 libm = { workspace = true }
 stacker = { workspace = true }
-
-[dev-dependencies]
-cucumber = { workspace = true }
-tokio = { workspace = true }
-
-[[test]]
-name = "gherkin"
-harness = false # cucumber owns the runner

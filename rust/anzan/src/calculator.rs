@@ -176,31 +176,59 @@ impl Calculator {
         &mut self,
         expression: &Expression,
     ) -> Result<Value, EngineError> {
+        if let Some(rejection) = Self::formula_rejection(expression) {
+            return Err(rejection);
+        }
+        self.run(expression, false)
+    }
+
+    /// Why a cell can't hold this expression, or `None` when it can —
+    /// definitions and session mutations belong to the log. Shared with the
+    /// hosting layer's recalc path, which evaluates stored ASTs without
+    /// re-entering the facade.
+    pub fn formula_rejection(expression: &Expression) -> Option<EngineError> {
         match expression {
             Expression::FunctionDefinition { .. } => {
-                Err(EngineError::domain("define functions in the calculation log"))
+                Some(EngineError::domain("define functions in the calculation log"))
             }
             // Only reachable via `=data …` — the PLAIN form classifies as a
             // sheet definition (a 𝑫 cell) before evaluation ever sees it.
-            Expression::DataDefinition { name, .. } => Err(EngineError::domain(format!(
+            Expression::DataDefinition { name, .. } => Some(EngineError::domain(format!(
                 "drop the leading '=' — a plain 'data {name} {{ … }}' cell declares a sheet data type"
             ))),
-            Expression::NamespaceDefinition { name, .. } => Err(EngineError::domain(format!(
+            Expression::NamespaceDefinition { name, .. } => Some(EngineError::domain(format!(
                 "define namespace {name} in the calculation log, not a cell"
             ))),
             Expression::ImportDirective { .. } => {
-                Err(EngineError::domain("import in the calculation log, not a cell"))
+                Some(EngineError::domain("import in the calculation log, not a cell"))
             }
             // Only reachable via `=name = value` — the PLAIN form classifies
             // as a sheet definition before evaluation ever sees it.
-            Expression::Assignment { name, .. } => Err(EngineError::domain(format!(
+            Expression::Assignment { name, .. } => Some(EngineError::domain(format!(
                 "drop the leading '=' — a plain '{name} = …' cell defines a sheet variable"
             ))),
             Expression::HelpRequest { .. } => {
-                Err(EngineError::domain("man works in the calculation log, not a cell"))
+                Some(EngineError::domain("man works in the calculation log, not a cell"))
             }
-            _ => self.run(expression, false),
+            _ => None,
         }
+    }
+
+    /// Runs `body` with a formula-context evaluator (mutation disabled) and
+    /// the live environment — the seam hosts use to drive evaluation from
+    /// OUTSIDE a log line (grid recalc, display, inspector reads). Splits the
+    /// borrow: the evaluator borrows the resolvers, the body gets the
+    /// environment mutably.
+    pub fn host_eval<R>(
+        &mut self,
+        body: impl FnOnce(&Evaluator<'_>, &mut EvaluationEnvironment) -> R,
+    ) -> R {
+        let evaluator = Evaluator {
+            registry: FunctionRegistry::standard(),
+            resolvers: &self.resolvers,
+            allow_mutation: false,
+        };
+        body(&evaluator, &mut self.environment)
     }
 
     /// `allow_mutation` is true only on the log path — workbook mutations

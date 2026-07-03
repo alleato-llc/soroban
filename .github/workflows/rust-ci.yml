@@ -48,4 +48,4 @@ jobs:
         run: cargo test --workspace --lib
 
       - name: Gherkin parity suite (spec/anzan)
-        run: cargo test --test gherkin -p anzan
+        run: cargo test --test gherkin -p soroban-engine

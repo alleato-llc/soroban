@@ -335,12 +335,7 @@ pub struct UserFunction {
 }
 
 impl UserFunction {
-    pub(crate) fn new(
-        name: String,
-        parameters: Vec<Parameter>,
-        body: Expression,
-        source: String,
-    ) -> Self {
+    pub fn new(name: String, parameters: Vec<Parameter>, body: Expression, source: String) -> Self {
         Self {
             name,
             parameters,
