@@ -1,4 +1,10 @@
-//! The evaluation layer: values, the environment, the evaluator, and the
-//! declared-type machinery. Arrives module by module as the port lands.
+//! The evaluation layer: values, the environment, the evaluator, the
+//! function registry, and the declared-type machinery.
 
 pub mod data_type;
+pub mod fixed_decimal;
+pub mod fixed_int;
+pub mod functions;
+pub(crate) mod numeric;
+pub mod registry;
+pub mod value;

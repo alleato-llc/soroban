@@ -369,3 +369,27 @@ impl BigDecimal {
 
 #[cfg(test)]
 mod tests;
+
+// MARK: - Integer extraction (the Swift intValue / bigIntValue helpers)
+
+impl BigDecimal {
+    /// The exact `i64` value of an integer within i64 range; `None` otherwise.
+    pub fn int_value(&self) -> Option<i64> {
+        if !self.is_integer() || self.exponent > 18 {
+            return None;
+        }
+        self.formatted(i64::MAX).parse().ok()
+    }
+
+    /// The exact BigInt value of an integer — unlike `int_value`, no 2^63
+    /// ceiling (a normalized 1e40 has significand 1, exponent 40).
+    pub fn big_int_value(&self) -> Option<BigInt> {
+        if !self.is_integer() || self.exponent < 0 {
+            return None;
+        }
+        if self.exponent > 10_000 {
+            return None; // refuse absurd widths
+        }
+        Some(&self.significand * BigInt::from(10).pow(self.exponent as u32))
+    }
+}
