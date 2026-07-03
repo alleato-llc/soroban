@@ -8,13 +8,17 @@
 //! `swift/Engine/Sources/Anzan` is its reference. Behavior changes land in
 //! the spec first, then in both implementations.
 
+pub mod ast;
 mod calculator;
 pub mod error;
+pub mod eval;
 pub mod lexer;
 pub mod mode;
 pub mod number;
+pub mod parser;
 
 pub use calculator::{Calculator, EvalOutcome};
 pub use error::EngineError;
 pub use mode::LanguageMode;
 pub use number::{BigDecimal, PrecisionContext};
+pub use parser::Parser;
