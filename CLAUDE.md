@@ -37,6 +37,12 @@ cd swift && open "$(xcodebuild -project Soroban.xcodeproj -scheme Soroban -confi
 cd swift/Engine && swift build -c release --product soroban
 install -m 755 .build/release/soroban ~/.local/bin/
 
+# Rust ecosystem (rust/ cargo workspace — the anzan language crate so far;
+# see docs/MIGRATION.md). The gherkin test runs the SAME spec/anzan features
+# as the Swift engine — the cross-ecosystem parity suite.
+cd rust && cargo test -p anzan --lib
+cd rust && cargo test --test gherkin
+
 # Engine coverage (kept ≥ ~92% regions; add tests for new error branches —
 # the residue is fault-injection-only: SQLite error plumbing, solver internals)
 cd swift/Engine && swift test --enable-code-coverage && xcrun llvm-cov report \

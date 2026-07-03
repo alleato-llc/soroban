@@ -56,6 +56,7 @@ Feature: Inspecting the workbook
     When I calculate "len(sheetNames())"
     Then the result is "2"
 
+  @rust-pending
   Scenario: rowCount() reports the grid size
     When I calculate "rowCount()"
     Then the result is "1000"
@@ -70,6 +71,7 @@ Feature: Inspecting the workbook
     And I calculate "cell(5)"
     Then the result is "50"
 
+  @rust-pending
   Scenario: An unknown sheet is reported clearly
     When I calculate "cell("Nope", "A", 1).value"
     Then the calculation fails mentioning "unknown sheet"

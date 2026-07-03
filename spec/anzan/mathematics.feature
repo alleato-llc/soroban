@@ -84,11 +84,18 @@ Feature: The mathematics a user can reach
       | expression    | result            |
       | exp(0)        | 1                 |
       | ln(e)         | 1                 |
-      | exp(ln(7))    | 6.999999999999999 |
       | log10(1000)   | 3                 |
       | log(2, 8)     | 3                 |
       | sin(0)        | 0                 |
       | cos(0)        | 1                 |
+
+  # Stated to the Double seam's precision, not bit-exactness: platform libm
+  # implementations legitimately differ by an ulp here (Darwin's exp gives
+  # 6.999999999999999, pure-Rust libm exactly 7) — the cross-implementation
+  # tolerance rule from docs/MIGRATION.md §3.
+  Scenario: exp inverts ln to within the Double seam
+    When I calculate "exp(ln(7))"
+    Then the result is within "0.000000000000002" of "7"
 
   Scenario Outline: Statistics over lists, arrays, and ranges
     When I calculate "<expression>"

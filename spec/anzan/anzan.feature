@@ -190,6 +190,7 @@ Feature: The Anzan language itself
   # docs/ANZAN.md §8 — the single-letter compact lexing wrinkle: f(a:1) is
   # the cell reference a:1 (write f(a: 1)), while multi-letter compacts
   # decompose into named arguments.
+  @rust-pending
   Scenario: Compact named arguments versus cell references
     Given I calculate "data Q { a: Number, age: Number }"
     When I calculate "Q(a: 1, age:36).age"
