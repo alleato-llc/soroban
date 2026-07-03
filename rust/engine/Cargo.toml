@@ -1,0 +1,21 @@
+[package]
+name = "soroban-engine"
+version = "0.1.0"
+edition = "2021"
+description = "The HOSTING layer over the Anzan language — the spreadsheet model (sheets, cells, dependency graph, controls, named cells) and workbook persistence. Re-exports anzan, so depending on soroban-engine gives the whole engine."
+license = "MIT"
+
+[dependencies]
+anzan = { path = "../anzan" }
+num-bigint = { workspace = true }
+num-traits = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+cucumber = { workspace = true }
+tokio = { workspace = true }
+
+[[test]]
+name = "gherkin"
+harness = false # cucumber owns the runner

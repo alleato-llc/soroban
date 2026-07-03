@@ -18,8 +18,12 @@ point of truth for downloads.
   number core, lexer, parser, evaluator with tail calls + stack segmentation,
   the complete builtin function library, JSON, documentation) plus a
   cucumber-rs harness running the shared `spec/anzan` Gherkin suite:
-  460 scenarios passing, 59 skipped (engine-layer steps for Phase 2),
-  3 tagged `@rust-pending`. New `rust-ci.yml` workflow (fmt/clippy/tests on
+  the `soroban-engine` crate (Phase 2b: spreadsheet grid with dependency-
+  graph recalc and cycle detection, sheet-scoped definitions, named cells,
+  controls, cell formats, Workbook reflection, and the workbook JSON codec —
+  `examples/mortgage.soroban`, written by the Swift app, decodes and restores
+  in Rust), and the `soroban` CLI. The shared Gherkin suite passes 522/522
+  in both ecosystems. New `rust-ci.yml` workflow (fmt/clippy/tests on
   Linux + macOS). No app behavior change.
 
 ### Changed

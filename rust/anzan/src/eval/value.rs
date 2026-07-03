@@ -227,13 +227,20 @@ pub trait HostObject {
     fn type_name(&self) -> String;
     /// Canonical display (need not re-parse — host handles aren't literals).
     fn description(&self) -> String;
-    fn member(&self, _name: &str) -> Option<Value> {
+    /// Navigation receives the re-entry pair — a host member read (a cell's
+    /// `.value`) evaluates formulas against the same environment.
+    fn member(&self, _host: crate::eval::evaluator::Reentry<'_, '_>, _name: &str) -> Option<Value> {
         None
     }
-    fn index(&self, _key: &Value) -> Option<Value> {
+    fn index(&self, _host: crate::eval::evaluator::Reentry<'_, '_>, _key: &Value) -> Option<Value> {
         None
     }
-    fn call(&self, method: &str, _arguments: &[Value]) -> Result<Value, EngineError> {
+    fn call(
+        &self,
+        _host: crate::eval::evaluator::Reentry<'_, '_>,
+        method: &str,
+        _arguments: &[Value],
+    ) -> Result<Value, EngineError> {
         Err(EngineError::domain(format!(
             "{} has no method '{method}'",
             self.type_name()

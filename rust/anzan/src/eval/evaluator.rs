@@ -22,23 +22,42 @@ use crate::ast::{
 use crate::{BigDecimal, EngineError};
 use num_bigint::BigInt;
 use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
 pub type Locals = HashMap<String, Value>;
 
+/// The re-entry context evaluation-capable resolvers receive: cell reads
+/// evaluate other formulas against the SAME environment, so the evaluator
+/// and environment thread through the resolver as plain recursion (the Rust
+/// answer to Swift's shared-class re-entrancy).
+pub type Reentry<'a, 'b> = (&'a Evaluator<'a>, &'b mut EvaluationEnvironment);
+
 /// Resolves `A:1`-style references (optionally sheet-qualified). Cells are
 /// scalar: resolvers speak BigDecimal, the evaluator wraps.
-pub type CellResolver = Box<dyn Fn(Option<&str>, &str, i64) -> Result<BigDecimal, EngineError>>;
+pub type CellResolver =
+    Box<dyn Fn(Reentry<'_, '_>, Option<&str>, &str, i64) -> Result<BigDecimal, EngineError>>;
 /// Expands `A:1..B:9` rectangles to their numeric values (empty/text cells
 /// skipped, Excel-style).
-pub type RangeResolver =
-    Box<dyn Fn(Option<&str>, &str, i64, &str, i64) -> Result<Vec<BigDecimal>, EngineError>>;
+pub type RangeResolver = Box<
+    dyn Fn(
+        Reentry<'_, '_>,
+        Option<&str>,
+        &str,
+        i64,
+        &str,
+        i64,
+    ) -> Result<Vec<BigDecimal>, EngineError>,
+>;
 /// Sheet-scoped λ definitions (cells like `tax(x) = …`), resolved against
 /// the owning sheet. Scoped names shadow log globals; locals shadow all.
 pub type ScopedFunctionResolver = Box<dyn Fn(&str) -> Option<UserFunction>>;
-/// Sheet-scoped 𝑖 definitions (`rate = 0.08` cells).
-pub type ScopedVariableResolver = Box<dyn Fn(&str) -> Result<Option<Value>, EngineError>>;
+/// Sheet-scoped 𝑖 definitions (`rate = 0.08` cells) — evaluated lazily, so
+/// resolution re-enters evaluation.
+pub type ScopedVariableResolver =
+    Box<dyn Fn(Reentry<'_, '_>, &str) -> Result<Option<Value>, EngineError>>;
 /// `'Projected Rate'` named-cell references (optionally sheet-qualified).
-pub type NameResolver = Box<dyn Fn(Option<&str>, &str) -> Result<BigDecimal, EngineError>>;
+pub type NameResolver =
+    Box<dyn Fn(Reentry<'_, '_>, Option<&str>, &str) -> Result<BigDecimal, EngineError>>;
 /// Sheet-scoped `data` declarations (𝑫 cells).
 pub type ScopedDataTypeResolver = Box<dyn Fn(&str) -> Option<DataType>>;
 /// A bare name → a HOST value (`Workbook`, `History`). The bool is
@@ -46,11 +65,12 @@ pub type ScopedDataTypeResolver = Box<dyn Fn(&str) -> Option<DataType>>;
 pub type HostValueResolver = Box<dyn Fn(&str, bool) -> Option<Value>>;
 /// A free call → a HOST function (`cell(col, row)`), `None` when the name
 /// isn't a reflection function.
-pub type HostFunctionResolver = Box<dyn Fn(&str, &[Value]) -> Result<Option<Value>, EngineError>>;
+pub type HostFunctionResolver =
+    Box<dyn Fn(Reentry<'_, '_>, &str, &[Value]) -> Result<Option<Value>, EngineError>>;
 /// A free call → a HOST mutation (`updateCell`, …); the bool is
 /// `allow_mutation` — the host rejects mutations during cell recalc.
 pub type HostMutationResolver =
-    Box<dyn Fn(&str, &[Value], bool) -> Result<Option<Value>, EngineError>>;
+    Box<dyn Fn(Reentry<'_, '_>, &str, &[Value], bool) -> Result<Option<Value>, EngineError>>;
 
 #[derive(Default)]
 pub struct Resolvers {
@@ -110,7 +130,7 @@ impl Evaluator<'_> {
             Expression::Index { base, index } => {
                 let base = self.evaluate(base, environment, locals, depth)?;
                 let index = self.evaluate(index, environment, locals, depth)?;
-                Self::subscript_value(&base, &index)
+                self.subscript_value(environment, &base, &index)
             }
 
             Expression::Member { base, name } => {
@@ -133,12 +153,15 @@ impl Evaluator<'_> {
                         ))
                     }),
                     // Host handles expose their own members (.name, .worksheets).
-                    Value::Host(object) => object.member(name).ok_or_else(|| {
-                        EngineError::domain(format!(
-                            "{} has no member '.{name}'",
-                            object.type_name()
-                        ))
-                    }),
+                    Value::Host(object) => {
+                        let object = Rc::clone(object);
+                        object.member((self, environment), name).ok_or_else(|| {
+                            EngineError::domain(format!(
+                                "{} has no member '.{name}'",
+                                object.type_name()
+                            ))
+                        })
+                    }
                     _ => Err(EngineError::domain(format!(
                         ".{name} needs a map or data value, got {}",
                         base.kind_name()
@@ -160,7 +183,7 @@ impl Evaluator<'_> {
                 };
                 let object = object.clone();
                 let arguments = self.arguments(arguments, environment, locals, depth)?;
-                object.call(name, &arguments)
+                object.call((self, environment), name, &arguments)
             }
 
             Expression::Variable(name) => self.variable(name, environment, locals),
@@ -180,7 +203,12 @@ impl Evaluator<'_> {
                         "no sheet available for {column}:{row}"
                     )));
                 };
-                Ok(Value::Number(resolve_cell(sheet.as_deref(), column, *row)?))
+                Ok(Value::Number(resolve_cell(
+                    (self, environment),
+                    sheet.as_deref(),
+                    column,
+                    *row,
+                )?))
             }
 
             Expression::NameReference { sheet, name } => {
@@ -189,7 +217,11 @@ impl Evaluator<'_> {
                         "no sheet available for '{name}'"
                     )));
                 };
-                Ok(Value::Number(resolve_name(sheet.as_deref(), name)?))
+                Ok(Value::Number(resolve_name(
+                    (self, environment),
+                    sheet.as_deref(),
+                    name,
+                )?))
             }
 
             Expression::CellRange {
@@ -438,7 +470,7 @@ impl Evaluator<'_> {
             }
         }
         if let Some(resolve) = &self.resolvers.scoped_variable {
-            if let Some(scoped) = resolve(name)? {
+            if let Some(scoped) = resolve((self, environment), name)? {
                 return Ok(scoped);
             }
         }
@@ -662,9 +694,16 @@ impl Evaluator<'_> {
                     return Err(EngineError::domain("no sheet available for ranges"));
                 };
                 arguments.extend(
-                    resolve_range(sheet.as_deref(), from_column, *from_row, to_column, *to_row)?
-                        .into_iter()
-                        .map(Value::Number),
+                    resolve_range(
+                        (self, environment),
+                        sheet.as_deref(),
+                        from_column,
+                        *from_row,
+                        to_column,
+                        *to_row,
+                    )?
+                    .into_iter()
+                    .map(Value::Number),
                 );
             } else {
                 arguments.push(self.evaluate(expr, environment, locals, depth)?);
@@ -783,14 +822,16 @@ impl Evaluator<'_> {
         // Host reflection functions (`cell`, `sheetNames`, …) resolve LAST —
         // a user's own `cell(x) = …` shadows them, like any builtin would.
         if let Some(resolve) = &self.resolvers.host_function {
-            if let Some(value) = resolve(name, &arguments)? {
+            if let Some(value) = resolve((self, environment), name, &arguments)? {
                 return Ok(value);
             }
         }
         // Host mutations (`updateCell`, `addWorksheet`, …) resolve last of
         // all, and the resolver rejects them outside the log.
         if let Some(resolve) = &self.resolvers.host_mutation {
-            if let Some(value) = resolve(name, &arguments, self.allow_mutation)? {
+            if let Some(value) =
+                resolve((self, environment), name, &arguments, self.allow_mutation)?
+            {
                 return Ok(value);
             }
         }
@@ -1070,7 +1111,12 @@ impl Evaluator<'_> {
     }
 
     /// `arr[0]` (0-based), `"abc"[0]`, `m["key"]`.
-    fn subscript_value(base: &Value, index: &Value) -> Result<Value, EngineError> {
+    fn subscript_value(
+        &self,
+        environment: &mut EvaluationEnvironment,
+        base: &Value,
+        index: &Value,
+    ) -> Result<Value, EngineError> {
         match base {
             Value::Array(items) => {
                 let position = require_int(&index.as_number("an array index")?, "array index")?;
@@ -1124,13 +1170,16 @@ impl Evaluator<'_> {
 
             // Host handles define their own indexing (Worksheets[0] /
             // ["Budget"]).
-            Value::Host(object) => object.index(index).ok_or_else(|| {
-                EngineError::domain(format!(
-                    "{} can't be indexed by {}",
-                    object.type_name(),
-                    index.kind_name()
-                ))
-            }),
+            Value::Host(object) => {
+                let object = Rc::clone(object);
+                object.index((self, environment), index).ok_or_else(|| {
+                    EngineError::domain(format!(
+                        "{} can't be indexed by {}",
+                        object.type_name(),
+                        index.kind_name()
+                    ))
+                })
+            }
 
             Value::Number(_) | Value::FixedInt(_) | Value::FixedDecimal(_) | Value::Function(_) => {
                 Err(EngineError::domain(format!(
