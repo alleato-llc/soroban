@@ -497,7 +497,7 @@ impl Calculator {
             }
         }
 
-        matches.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        matches.sort_by_key(|c| c.name.to_lowercase());
         if matches.len() == 1 && matches[0].name.to_lowercase() == needle {
             return Vec::new();
         }
