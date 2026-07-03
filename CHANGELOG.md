@@ -11,6 +11,17 @@ point of truth for downloads.
 
 ## [Unreleased]
 
+### Added
+
+- Rust ecosystem, Phase 1 (docs/MIGRATION.md): the `rust/` cargo workspace
+  with the `anzan` crate — the full language ported from Swift (BigDecimal
+  number core, lexer, parser, evaluator with tail calls + stack segmentation,
+  the complete builtin function library, JSON, documentation) plus a
+  cucumber-rs harness running the shared `spec/anzan` Gherkin suite:
+  460 scenarios passing, 59 skipped (engine-layer steps for Phase 2),
+  3 tagged `@rust-pending`. New `rust-ci.yml` workflow (fmt/clippy/tests on
+  Linux + macOS). No app behavior change.
+
 ### Changed
 
 - Restructured into an ecosystem-first monorepo (Phase 0 of
