@@ -259,6 +259,21 @@ impl Calculator {
                 examples: builtin.examples.iter().map(|e| e.to_string()).collect(),
             });
         }
+        // Curated entries, in the Swift lookup order: special forms, then
+        // constants (man pi, man Json, …), then operator/syntax pages
+        // (man modes, man arithmetic, …).
+        for curated in [
+            crate::documentation::special_forms(),
+            crate::documentation::constants(),
+            crate::documentation::operators(),
+        ] {
+            if let Some(entry) = curated
+                .into_iter()
+                .find(|d| d.name.eq_ignore_ascii_case(name))
+            {
+                return Some(entry);
+            }
+        }
         if let Some(resolve) = &self.resolvers.scoped_function {
             if let Some(scoped) = resolve(name) {
                 return Some(Self::doc_for_user(&scoped));

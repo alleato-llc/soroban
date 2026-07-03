@@ -10,6 +10,7 @@
 
 pub mod ast;
 mod calculator;
+pub mod documentation;
 pub mod error;
 pub mod eval;
 pub mod lexer;
@@ -18,6 +19,7 @@ pub mod number;
 pub mod parser;
 
 pub use calculator::{Calculator, Completion, CompletionKind, EvalOutcome, FunctionDoc};
+pub use documentation::DocCategory;
 pub use error::EngineError;
 pub use mode::LanguageMode;
 pub use number::{BigDecimal, PrecisionContext};

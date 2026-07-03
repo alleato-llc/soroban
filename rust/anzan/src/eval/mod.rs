@@ -7,6 +7,7 @@ pub mod evaluator;
 pub mod fixed_decimal;
 pub mod fixed_int;
 pub mod functions;
+pub(crate) mod json;
 pub(crate) mod numeric;
 pub mod registry;
 pub mod value;

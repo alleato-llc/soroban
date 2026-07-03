@@ -5,7 +5,9 @@
 //!
 //! Only the LOG steps live here — grid / worksheet / formatting / persistence
 //! steps belong to the engine crate (Phase 2) and their scenarios skip until
-//! it exists. Patterns are greedy `(.*)` regexes exactly like PickleKit's, so
+//! it exists, as do scenarios tagged @rust-pending (the docs/MIGRATION.md
+//! skip-with-visibility mechanism for behavior one ecosystem hasn't caught
+//! up to). Patterns are greedy `(.*)` regexes exactly like PickleKit's, so
 //! arguments may embed quotes (`the result is "Person(name: "Ada", …)"`).
 
 use anzan::{BigDecimal, Calculator, EngineError, EvalOutcome, LanguageMode};
@@ -107,6 +109,8 @@ fn documentation_shown(world: &mut AnzanWorld, fragment: String) {
 async fn main() {
     AnzanWorld::cucumber()
         .max_concurrent_scenarios(1) // serialized, like the Swift suite
-        .run_and_exit("../../spec/anzan")
+        .filter_run_and_exit("../../spec/anzan", |_, _, scenario| {
+            !scenario.tags.iter().any(|tag| tag == "rust-pending")
+        })
         .await;
 }
