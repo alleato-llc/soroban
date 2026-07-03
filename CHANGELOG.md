@@ -13,6 +13,13 @@ point of truth for downloads.
 
 ### Changed
 
+- Restructured into an ecosystem-first monorepo (Phase 0 of
+  [docs/MIGRATION.md](docs/MIGRATION.md)): everything Apple moved under
+  `swift/` (`Engine/`, `App/`, `Kit/`, `project.yml`, the app's `salpa.yaml`);
+  the Gherkin feature files moved to a shared top-level `spec/`
+  (`spec/anzan/`, `spec/session/`), symlinked into the test targets, to serve
+  as the cross-ecosystem parity oracle for the planned Rust port. The repo-root
+  `salpa.yaml` now holds only the site deploy. No app behavior change.
 - Docs: documented the `[skip ci]` convention for docs / CHANGELOG / test-only
   commits (salpa tags every push to `main` but never edits this file, so
   `[Unreleased]` entries are promoted to a dated `[vX.Y.Z]` by hand).

@@ -17,7 +17,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PUBLIC="$ROOT/site/public"
 mkdir -p "$PUBLIC"
 
-cd "$ROOT/Engine"
+cd "$ROOT/swift/Engine"
 PICKLE_REPORT=1 \
   PICKLE_REPORT_PATH="$PUBLIC/report.html" \
   PICKLE_SPEC_PATH="$PUBLIC/spec.html" \

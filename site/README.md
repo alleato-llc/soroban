@@ -65,7 +65,7 @@ the snapshot is the source of truth until it is.)
 ## Theming (the contract)
 
 The palette custom properties in `global.css` are **lifted verbatim from
-the app's own theme JSONs** (`App/Resources/Themes/*.json` — currently
+the app's own theme JSONs** (`swift/App/Resources/Themes/*.json` — currently
 Solarized Light / Dracula) so the site renders in the app's design
 language. If you swap palettes, copy hex values from a theme JSON and note
 which one in the comment.

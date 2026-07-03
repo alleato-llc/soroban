@@ -16,7 +16,7 @@ reduce`, arrays/maps/strings, typed `data` records with `toJson`/`fromJson`, laz
 `if()`, LaTeX-style `∑`/`∏` — every value exact. The app hosts Anzan in the log and the grid; the `soroban` CLI is
 Anzan without the app. The full specification lives in
 [docs/ANZAN.md](docs/ANZAN.md) — and its promises are executable
-(`Engine/Tests/…/Features/anzan.feature` pins the grammar in CI).
+(`spec/anzan/anzan.feature` pins the grammar in CI).
 
 ## Installing
 
@@ -33,11 +33,12 @@ Requirements: Xcode 16+, [XcodeGen](https://github.com/yonaskolb/XcodeGen)
 (`brew install xcodegen`).
 
 ```sh
+cd swift
 xcodegen generate                          # produces Soroban.xcodeproj (gitignored)
 xcodebuild -project Soroban.xcodeproj -scheme Soroban build
 ```
 
-Or open `Soroban.xcodeproj` in Xcode and run.
+Or open `swift/Soroban.xcodeproj` in Xcode and run.
 
 ## Command line (`soroban`)
 
@@ -45,7 +46,7 @@ The full Anzan language ships as a CLI — no app, no GUI, the identical
 50-digit arithmetic:
 
 ```sh
-cd Engine && swift build -c release --product soroban
+cd swift/Engine && swift build -c release --product soroban
 install -m 755 .build/release/soroban ~/.local/bin/    # or anywhere on PATH
 ```
 
@@ -69,13 +70,13 @@ dialect — `^` reads as XOR, `&`/`|`/`<<`/`>>`/`~` as bitwise, `%` as modulo (s
 
 The engine is a standalone SwiftPM package tested two ways: Swift Testing
 unit suites, and hundreds of Gherkin scenarios (PickleKit) that read as
-user-perspective specs — `Engine/Tests/SorobanEngineTests/Features/*.feature`,
+user-perspective specs — `spec/anzan/*.feature`,
 including `anzan.feature`, the executable companion to the
 [language spec](docs/ANZAN.md). Every documented example is itself evaluated
 by the suite, and region coverage stays above ~90%:
 
 ```sh
-cd Engine && swift test
+cd swift/Engine && swift test
 
 # Coverage report (SorobanCLI is argument plumbing, excluded by design)
 swift test --enable-code-coverage
@@ -86,7 +87,7 @@ xcrun llvm-cov report .build/arm64-apple-macosx/debug/SorobanEnginePackageTests.
 
 The app's session layer (undo, named-cell rewriting, control commits, CSV
 export) has its own Gherkin bundle, run with
-`xcodegen generate && xcodebuild test -scheme Soroban`.
+`cd swift && xcodegen generate && xcodebuild test -scheme Soroban`.
 
 Either Gherkin run can emit a Cucumber-style **HTML report** (collapsible
 scenarios, per-step timing, status filters) — CI uploads both as build
@@ -94,11 +95,11 @@ artifacts on every run:
 
 ```sh
 # Engine scenarios
-cd Engine && PICKLE_REPORT=1 PICKLE_REPORT_PATH=$PWD/pickle-report.html \
+cd swift/Engine && PICKLE_REPORT=1 PICKLE_REPORT_PATH=$PWD/pickle-report.html \
   swift test --filter GherkinTests
 
 # Session scenarios (xcodebuild forwards env only with the TEST_RUNNER_ prefix)
-TEST_RUNNER_PICKLE_REPORT=1 TEST_RUNNER_PICKLE_REPORT_PATH=$PWD/session-report.html \
+cd swift && TEST_RUNNER_PICKLE_REPORT=1 TEST_RUNNER_PICKLE_REPORT_PATH=$PWD/session-report.html \
   xcodebuild test -project Soroban.xcodeproj -scheme Soroban -destination 'platform=macOS'
 ```
 
@@ -641,21 +642,21 @@ own font.
 
 ## Layout
 
-- `Engine/` — one SwiftPM package, two library modules plus the CLI, no UI
+- `swift/Engine/` — one SwiftPM package, two library modules plus the CLI, no UI
   dependencies. `Sources/Anzan/` is the **language**: `BigDecimal` (BigInt
   significand × 10^exponent), lexer, Pratt parser, evaluator, function
   registry, autocomplete, docs. `Sources/SorobanEngine/` is the **hosting
   layer** — the `Spreadsheet`/`Cell` calculation model and the `Workbook`
   file codec — and re-exports Anzan. `Sources/SorobanCLI/` (the `soroban`
   binary) depends on Anzan alone. Everything testable with `swift test`.
-- `App/` — SwiftUI app: calculation log, input bar with autocomplete, the
+- `swift/App/` — SwiftUI app: calculation log, input bar with autocomplete, the
   grid, workbook open/save, theming + font settings.
 - `site/` — the landing page (Astro + Preact + TypeScript, static): palettes
   mirror the app's themes, the hero carousels real app screenshots, and it
   deploys to a static host via `deploy-site.yml`. Its own docs live in
   [site/README.md](site/README.md); site-only commits use `[skip ci]` so they
   don't spend a release version.
-- `project.yml` — XcodeGen definition; the `.xcodeproj` is generated
+- `swift/project.yml` — XcodeGen definition; the `.xcodeproj` is generated
   (rerun `xcodegen generate` after adding files).
 
 ## Roadmap

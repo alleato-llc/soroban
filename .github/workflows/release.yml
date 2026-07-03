@@ -48,6 +48,7 @@ jobs:
           sudo mv salpa-darwin-arm64 /usr/local/bin/salpa
       - name: Run the engine suite
         run: salpa test engine # cd Engine && swift test
+        working-directory: swift
 
   session-tests:
     name: Session Gherkin tests
@@ -73,6 +74,7 @@ jobs:
           sudo mv salpa-darwin-arm64 /usr/local/bin/salpa
       - name: Run the session suite
         run: salpa test session # xcodegen generate && xcodebuild test … CODE_SIGNING_ALLOWED=NO
+        working-directory: swift
 
   release:
     name: Sign, notarize, publish (salpa)
@@ -108,6 +110,7 @@ jobs:
 
       - name: Release
         id: rel
+        working-directory: swift # salpa.yaml + project.yml live here (dmg lands here too)
         env:
           # salpa imports the Developer ID cert into an ephemeral keychain
           # itself (build.sign in salpa.yaml); the workflow only passes secrets.
@@ -128,4 +131,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Soroban-${{ steps.rel.outputs.version }}.dmg
-          path: Soroban-${{ steps.rel.outputs.version }}.dmg
+          path: swift/Soroban-${{ steps.rel.outputs.version }}.dmg

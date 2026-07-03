@@ -20,7 +20,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 REPO = Path(__file__).resolve().parent.parent
-ICONSET = REPO / "App/Resources/Assets.xcassets/AppIcon.appiconset"
+ICONSET = REPO / "swift/App/Resources/Assets.xcassets/AppIcon.appiconset"
 
 # Apple's macOS icon grid: 1024 canvas, 824x824 tile centered (100px margin).
 CANVAS = 1024

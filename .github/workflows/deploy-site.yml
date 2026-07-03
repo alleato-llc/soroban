@@ -15,7 +15,8 @@ on:
     paths:
       - "site/**"
       - "docs/ANZAN.md"
-      - "Engine/**" # spec/report are generated from the engine — keep them live
+      - "swift/Engine/**" # spec/report are generated from the engine — keep them live
+      - "spec/**" # …and from the shared Gherkin feature files
       - "scripts/generate-living-spec.sh"
       - "salpa.yaml"
       - ".github/workflows/deploy-site.yml"

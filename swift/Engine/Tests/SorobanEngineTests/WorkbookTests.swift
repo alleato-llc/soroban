@@ -170,6 +170,7 @@ struct WorkbookTests {
             .deletingLastPathComponent()  // (file) → SorobanEngineTests
             .deletingLastPathComponent()  // → Tests
             .deletingLastPathComponent()  // → Engine
+            .deletingLastPathComponent()  // → swift
             .deletingLastPathComponent()  // → repo root
         let url = repoRoot.appendingPathComponent("examples/mortgage.soroban")
         let workbook = try Workbook.decode(try Data(contentsOf: url))

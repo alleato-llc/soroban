@@ -48,7 +48,7 @@ targets:
           # clean checkout, so there the script must succeed).
           for PY in python3 /opt/homebrew/bin/python3 /usr/local/bin/python3; do
             if command -v "$PY" &>/dev/null && "$PY" -c 'import PIL' &>/dev/null; then
-              exec "$PY" "${PROJECT_DIR}/scripts/generate_icon.py"
+              exec "$PY" "${PROJECT_DIR}/../scripts/generate_icon.py"
             fi
           done
           if ls "${PROJECT_DIR}/App/Resources/Assets.xcassets/AppIcon.appiconset/"*.png &>/dev/null; then

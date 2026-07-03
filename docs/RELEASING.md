@@ -23,7 +23,7 @@ which
 The **GitHub Release is the point of truth** for downloads; the release
 workflow touches no cloud. A separate workflow, `deploy-site.yml`, publishes the
 landing page + living spec/report to the site host (`soroban.alleato.dev`) on
-`site/**`, `docs/ANZAN.md`, or `Engine/**` changes — `salpa deploy`. Its
+`site/**`, `docs/ANZAN.md`, `spec/**`, or `swift/Engine/**` changes — `salpa deploy`. Its
 deploy credentials are repository variables/secrets (see the workflow); the
 hosting infra is provisioned out of band, separate from this repo.
 

@@ -39,6 +39,7 @@ jobs:
       # in a shell that inherits this env, so the report vars reach swift test.
       - name: Run the engine suite
         run: salpa test engine
+        working-directory: swift # salpa.yaml + the SwiftPM package live here
         env:
           PICKLE_REPORT: "1"
           PICKLE_REPORT_PATH: ${{ github.workspace }}/gherkin-report-engine.html
@@ -79,6 +80,7 @@ jobs:
       # PICKLE_REPORT reaches PickleKit; salpa inherits this step's env.
       - name: Build and run session Gherkin tests (unsigned)
         run: salpa test session
+        working-directory: swift # salpa.yaml + project.yml live here
         env:
           TEST_RUNNER_PICKLE_REPORT: "1"
           TEST_RUNNER_PICKLE_REPORT_PATH: ${{ github.workspace }}/gherkin-report-session.html
