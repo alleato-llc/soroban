@@ -41,6 +41,18 @@ point of truth for downloads.
   Ported with parity unit/integration suites (typed-error equality, recursion,
   cross-sheet invalidation, the mortgage workbook end-to-end); Gherkin stays
   522/522. No app behavior change.
+- Rust ecosystem, Phase 3b slice ① (docs/MIGRATION.md): `rust/gui` — the first
+  cut of the Rust/iced Soroban app, a working **log-view calculator** over the
+  Anzan engine. Type an expression, press Enter, and the engine evaluates it
+  into a newest-first log (values at full 50-digit precision, `λ`/`𝑫`
+  definitions, comments, and errors with an aligned caret); ↑/↓ recall the
+  input history; a rime-styled card + theme toggle. The engine/history logic
+  lives in a UI-free `Session` (the Rust counterpart to the Swift
+  `CalculatorSession`). The crate is **excluded** from the cargo workspace for
+  now — it depends on the sibling `rime` kit by path and pulls in iced, so a
+  workspace/CI build must not touch it; build it standalone with
+  `cd rust/gui && cargo build`. Phase 4 moves it into a dedicated CI job. No
+  change to the existing crates or the shared Gherkin suite.
 
 ### Changed
 

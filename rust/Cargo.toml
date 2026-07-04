@@ -3,6 +3,12 @@
 [workspace]
 resolver = "2"
 members = ["anzan", "cli", "engine"]
+# `gui` (Phase 3b) is deliberately EXCLUDED, not a member: it depends on the
+# sibling `rime` repo via a local path and pulls in iced (heavy, needs system
+# libraries on Linux), so a workspace-wide `cargo build`/CI must not touch it.
+# Build it standalone: `cd gui && cargo build`. Phase 4 moves it into a proper
+# CI job (rime vendored/submoduled + platform deps) and back into `members`.
+exclude = ["gui"]
 
 # Shared pins so member crates never drift.
 [workspace.dependencies]

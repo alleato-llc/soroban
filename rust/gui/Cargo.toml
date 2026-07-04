@@ -1,0 +1,21 @@
+# The Rust/iced Soroban app (docs/MIGRATION.md Phase 3b). Built in vertical
+# slices; slice ① is a working log-view calculator over the engine.
+[package]
+name = "soroban-gui"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "The Soroban desktop app (Rust/iced) — the log-view calculator over the Anzan engine."
+
+[[bin]]
+name = "soroban-gui"
+path = "src/main.rs"
+
+[dependencies]
+# The whole engine (soroban-engine re-exports the anzan language).
+soroban-engine = { path = "../engine" }
+# The house component kit + theming. A sibling repo; path dep for local dev.
+# iced is re-exported as rime::iced, but we also depend on it directly for the
+# application entry point — cargo unifies to one 0.14.x across the graph.
+rime = { path = "../../../rime/rime" }
+iced = { version = "0.14", features = ["canvas", "advanced"] }
