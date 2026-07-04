@@ -1,13 +1,15 @@
 //! Soroban — the Rust/iced desktop app (docs/MIGRATION.md Phase 3b).
 //!
-//! Slice ①–③: a log-view calculator plus an editable spreadsheet grid, with
+//! Slice ①–④: a log-view calculator plus an editable spreadsheet grid, with
 //! ⌘\ toggling between them. The log and grid share one engine session
 //! ([`session::Session`]) — variables defined in the log are visible in cells,
 //! and `updateCell(…)` from the log populates the grid. A formula/edit bar
-//! commits cell edits (undoable, ⌘Z / ⇧⌘Z), and point mode inserts a cell's
-//! reference when you click it mid-formula. This file is the iced shell (state
-//! → message → update → view) and the rime-styled rendering; later slices add
-//! controls, the binary editor, and workbook save/open.
+//! commits cell edits (undoable, ⌘Z / ⇧⌘Z), point mode inserts a cell's
+//! reference when you click it mid-formula, and a control strip drives the
+//! selected cell's slider / stepper / checkbox / dropdown. This file is the
+//! iced shell (state → message → update → view) and the rime-styled rendering;
+//! later slices add cell formats, named cells, the binary editor, and workbook
+//! save/open.
 
 mod session;
 
@@ -15,10 +17,11 @@ use iced::widget::{column, container, operation, row, scrollable, text, Id};
 use iced::{event, keyboard, Element, Event, Font, Length, Subscription, Task, Theme, Vector};
 use rime::theme::{self, ThemeChoice};
 use rime::widgets::{
-    button, card, grid, header_row, section, text_field, CellAlign, GridCell, GridSelection,
+    button, card, grid, header_row, section, select, slider, stepper, text_field, toggle,
+    CellAlign, GridCell, GridSelection,
 };
 use session::{Outcome, Session, GRID_COLS, GRID_ROWS};
-use soroban_engine::{CellAddress, CellDisplay};
+use soroban_engine::{CellAddress, CellDisplay, Value};
 
 const MONO: Font = Font::MONOSPACE;
 
@@ -65,6 +68,10 @@ enum Message {
     EditCanceled,
     Undo,
     Redo,
+    SliderChanged(f32),
+    StepperStepped(bool),
+    CheckboxToggled,
+    DropdownPicked(usize),
 }
 
 impl App {
@@ -107,6 +114,32 @@ impl App {
                 self.session.redo();
                 self.editing = false;
                 self.load_draft();
+            }
+            // Control interactions rewrite the cell's storage literal; reload
+            // the edit bar so it shows the new value.
+            Message::SliderChanged(value) => {
+                if let Some(address) = self.active_cell() {
+                    self.session.set_slider(address, value as f64);
+                    self.load_draft();
+                }
+            }
+            Message::StepperStepped(up) => {
+                if let Some(address) = self.active_cell() {
+                    self.session.step_control(address, up);
+                    self.load_draft();
+                }
+            }
+            Message::CheckboxToggled => {
+                if let Some(address) = self.active_cell() {
+                    self.session.toggle_checkbox(address);
+                    self.load_draft();
+                }
+            }
+            Message::DropdownPicked(index) => {
+                if let Some(address) = self.active_cell() {
+                    self.session.set_dropdown_index(address, index);
+                    self.load_draft();
+                }
             }
         }
         Task::none()
@@ -295,6 +328,12 @@ impl App {
         .spacing(8)
         .align_y(iced::Alignment::Center);
 
+        // When the active cell is a control, an interactive strip drives it.
+        let mut header = column![edit_bar].spacing(12);
+        if let Some(strip) = self.control_strip() {
+            header = header.push(strip);
+        }
+
         let palette = *palette;
         let session = &self.session;
         let sheet = grid(GRID_ROWS, GRID_COLS, move |row, col| {
@@ -306,12 +345,67 @@ impl App {
         .on_select(Message::GridSelected);
 
         column![
-            edit_bar,
+            header,
             section(&format!("Grid — {}", self.session.active_sheet_name())),
             container(sheet).height(Length::Fill),
         ]
         .spacing(16)
         .into()
+    }
+
+    /// If the active cell is a control (slider / stepper / checkbox / dropdown),
+    /// render the interactive widget that drives its stored literal.
+    fn control_strip(&self) -> Option<Element<'_, Message>> {
+        let address = self.active_cell()?;
+        // A control's own 𝑖 name reads better than the raw address when set.
+        let label = |name: &Option<String>| name.clone().unwrap_or_else(|| address.to_string());
+        match self.session.display_at(address) {
+            CellDisplay::Slider(info) => {
+                let range = (info.minimum.to_f64() as f32)..=(info.maximum.to_f64() as f32);
+                let value = info.value.to_f64() as f32;
+                Some(slider(
+                    label(&info.name),
+                    range,
+                    value,
+                    info.value.to_string(),
+                    Message::SliderChanged,
+                ))
+            }
+            CellDisplay::Stepper(info) => Some(stepper(
+                &label(&info.name),
+                info.value.to_string(),
+                Message::StepperStepped(false),
+                Message::StepperStepped(true),
+            )),
+            CellDisplay::Checkbox(info) => Some(toggle(
+                &label(&info.name),
+                info.is_on,
+                Message::CheckboxToggled,
+            )),
+            CellDisplay::Dropdown(info) => {
+                let options: Vec<String> = info
+                    .options
+                    .iter()
+                    .map(|value| value.display_description())
+                    .collect();
+                let selected = info.value.display_description();
+                let lookup = options.clone();
+                let picker = select(options, Some(selected), move |chosen: String| {
+                    let index = lookup
+                        .iter()
+                        .position(|option| *option == chosen)
+                        .unwrap_or(0);
+                    Message::DropdownPicked(index)
+                });
+                Some(
+                    row![text(label(&info.name)).size(13), picker]
+                        .spacing(10)
+                        .align_y(iced::Alignment::Center)
+                        .into(),
+                )
+            }
+            _ => None,
+        }
     }
 }
 
@@ -334,7 +428,12 @@ fn map_cell(display: CellDisplay, palette: &theme::Palette) -> GridCell {
         CellDisplay::Checkbox(info) => {
             GridCell::new(if info.is_on { "true" } else { "false" }).align(CellAlign::Center)
         }
-        CellDisplay::Dropdown(info) => GridCell::new(info.value.display_description()),
+        // The dropdown's value IS the cell's value: a string shows as a label,
+        // a number right-aligns like any figure.
+        CellDisplay::Dropdown(info) => match info.value {
+            Value::String(text) => GridCell::new(text),
+            other => GridCell::right(other.to_string()),
+        },
     }
 }
 

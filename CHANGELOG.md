@@ -72,6 +72,17 @@ point of truth for downloads.
   reference and refocuses the bar (gated on the engine's
   `Calculator.expectsOperand`) instead of moving the selection. No change to
   the existing crates or the shared Gherkin suite.
+- Rust ecosystem, Phase 3b slice ④ (docs/MIGRATION.md): **interactive controls**
+  in `rust/gui`. Selecting a control cell (slider / stepper / checkbox /
+  dropdown) shows a control strip above the grid that drives it — dragging the
+  slider, stepping ±, toggling, or picking an option rewrites the cell's stored
+  literal in place via `Control::rewriting` and commits it as one undoable edit
+  (so control changes join the ⌘Z history). Slider values snap to the step
+  lattice exactly in `BigDecimal`. The grid renders each control's live value
+  (a dropdown's string value shows as a label), and control cells feed the
+  dependency graph like any other — a `= rate * 1000` formula recomputes as the
+  slider moves. Uses rime's `slider`/`stepper`/`toggle`/`select`. No change to
+  the existing crates or the shared Gherkin suite.
 
 ### Changed
 
