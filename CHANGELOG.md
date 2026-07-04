@@ -93,6 +93,15 @@ point of truth for downloads.
   format steps (the Swift `SheetEdit.Kind.cells` / `.formats` split). Text
   styles (bold / italic / underline) are deferred pending a rime `GridCell`
   draw change. No change to the existing crates or the shared Gherkin suite.
+- Rust ecosystem, Phase 3b slice ④, part 3 (docs/MIGRATION.md): **named cells**
+  in `rust/gui`. An Excel-style name box (left of the formula bar) names the
+  selected cell's location; a `'Rate'` reference in any formula then resolves
+  through the name (dependency edges and cycle detection ride the ordinary
+  cell-read path). Renaming rewrites every `'Old'` reference to `'New'` across
+  the sheet token-precisely (`NamedCells::rewriting`) and clearing removes the
+  name — both as one undoable step (the undo model gains a name edit alongside
+  cells and formats). A duplicate/illegal name is rejected by the engine and
+  the box reverts. No change to the existing crates or the shared Gherkin suite.
 
 ### Changed
 

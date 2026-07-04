@@ -5,6 +5,7 @@
 //! history. The Rust counterpart to the Swift app's `CalculatorSession`; the
 //! iced `State` in `main.rs` is a thin shell over it.
 
+use soroban_engine::named_cells::NamedCells;
 use soroban_engine::{
     BigDecimal, Calculator, CellAddress, CellDisplay, CellFormat, Control, EvalOutcome, Sheet,
     SheetStore, Spreadsheet, Value,
@@ -62,6 +63,14 @@ enum Edit {
         address: CellAddress,
         old: CellFormat,
         new: CellFormat,
+    },
+    /// A cell's name changed, plus any reference rewrites a rename triggered
+    /// (empty for a plain set/clear). Undo restores the old name and raws.
+    Name {
+        address: CellAddress,
+        old_name: Option<String>,
+        new_name: Option<String>,
+        cell_changes: Vec<CellChange>,
     },
 }
 
@@ -272,6 +281,23 @@ impl Session {
             Edit::Format { address, old, new } => {
                 self.write_format(*address, if forward { new } else { old });
             }
+            Edit::Name {
+                address,
+                old_name,
+                new_name,
+                cell_changes,
+            } => {
+                let grid = self.store.active_sheet().grid.clone();
+                let name = if forward { new_name } else { old_name };
+                // A later edit may have claimed the name; skip on failure
+                // rather than crash (the Swift `try? setCellName` rule).
+                let _ = grid.set_cell_name(name.as_deref(), *address);
+                for change in cell_changes {
+                    let raw = if forward { &change.new } else { &change.old };
+                    self.write_raw(change.address, raw);
+                }
+                self.store.recalculate();
+            }
         }
     }
 
@@ -330,6 +356,76 @@ impl Session {
         } else {
             formats.insert(address, format.clone());
         }
+    }
+
+    // MARK: Named cells (slice ④)
+
+    /// The name given to a cell location, if any (`'Projected Rate'`).
+    pub fn cell_name(&self, address: CellAddress) -> Option<String> {
+        self.store
+            .active_sheet()
+            .grid
+            .cell_names()
+            .into_iter()
+            .find(|(a, _)| *a == address)
+            .map(|(_, name)| name)
+    }
+
+    /// Name a cell (empty clears the name). A rename — replacing an existing
+    /// name with a new one — rewrites every `'Old'` reference to `'New'` across
+    /// the sheet, all as one undoable step. Returns the engine's validation
+    /// error (duplicate/too long/illegal character) so the caller can revert.
+    pub fn set_cell_name(&mut self, address: CellAddress, name: &str) -> Result<(), String> {
+        let trimmed = name.trim();
+        let old_name = self.cell_name(address);
+        let new_name = (!trimmed.is_empty()).then(|| trimmed.to_string());
+        if old_name == new_name {
+            return Ok(());
+        }
+
+        let grid = self.store.active_sheet().grid.clone();
+        // Validate + apply the name change first; a duplicate name errors here
+        // before any references are touched.
+        grid.set_cell_name(new_name.as_deref(), address)
+            .map_err(|error| error.to_string())?;
+
+        // On a rename, rewrite references `'Old'` → `'New'` in every cell.
+        let cell_changes = match (&old_name, &new_name) {
+            (Some(old), Some(new)) => self.rename_references(old, new),
+            _ => Vec::new(),
+        };
+        for change in &cell_changes {
+            self.write_raw(change.address, &change.new);
+        }
+        self.store.recalculate();
+        self.push_edit(Edit::Name {
+            address,
+            old_name,
+            new_name,
+            cell_changes,
+        });
+        Ok(())
+    }
+
+    /// The reference rewrites a rename triggers: every cell whose raw mentions
+    /// `'old'` gets it respelled to `'new'` (token-precise, spacing preserved).
+    fn rename_references(&self, old: &str, new: &str) -> Vec<CellChange> {
+        let sheet = self.store.active_sheet();
+        let sheet_name = sheet.name();
+        let replacement = format!("'{new}'");
+        let mut changes = Vec::new();
+        for (address, raw) in sheet.grid.raws() {
+            if let Some(new_raw) =
+                NamedCells::rewriting(&raw, old, Some(&sheet_name), true, &replacement)
+            {
+                changes.push(CellChange {
+                    address,
+                    old: raw,
+                    new: new_raw,
+                });
+            }
+        }
+        changes
     }
 
     // MARK: Controls (slice ④)

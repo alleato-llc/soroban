@@ -6,10 +6,11 @@
 //! and `updateCell(…)` from the log populates the grid. A formula/edit bar
 //! commits cell edits (undoable, ⌘Z / ⇧⌘Z), point mode inserts a cell's
 //! reference when you click it mid-formula, a control strip drives the
-//! selected cell's slider / stepper / checkbox / dropdown, and a format bar
-//! sets its number format, alignment, and colors. This file is the iced shell
-//! (state → message → update → view) and the rime-styled rendering; later
-//! slices add named cells, the binary editor, and workbook save/open.
+//! selected cell's slider / stepper / checkbox / dropdown, a format bar sets
+//! its number format, alignment, and colors, and a name box names its location
+//! (`'Rate'`). This file is the iced shell (state → message → update → view)
+//! and the rime-styled rendering; later slices add the binary editor and
+//! workbook save/open.
 
 mod session;
 
@@ -51,6 +52,8 @@ struct App {
     grid_selection: Option<GridSelection>,
     /// The edit bar's contents for the selected cell.
     edit_draft: String,
+    /// The name box's contents — the selected cell's name, if any.
+    name_draft: String,
     /// True while the edit bar holds uncommitted typing — the point-mode gate:
     /// a grid click on an operand-expecting draft inserts a reference instead
     /// of moving the selection.
@@ -80,6 +83,8 @@ enum Message {
     SetAlignment(usize),
     SetTextColor(usize),
     SetFillColor(usize),
+    NameChanged(String),
+    NameCommitted,
 }
 
 impl App {
@@ -163,6 +168,15 @@ impl App {
             Message::SetFillColor(index) => {
                 self.apply_format(|format| format.fill_color = color_choice(index));
             }
+            Message::NameChanged(text) => self.name_draft = text,
+            Message::NameCommitted => {
+                if let Some(address) = self.active_cell() {
+                    // On a validation error (duplicate/illegal), reload reverts
+                    // the box to the stored name.
+                    let _ = self.session.set_cell_name(address, &self.name_draft);
+                    self.load_draft();
+                }
+            }
         }
         Task::none()
     }
@@ -184,12 +198,18 @@ impl App {
         })
     }
 
-    /// Reload the edit bar from the active cell's raw content.
+    /// Reload the edit bar and name box from the active cell.
     fn load_draft(&mut self) {
-        self.edit_draft = self
-            .active_cell()
-            .map(|address| self.session.cell_raw(address))
-            .unwrap_or_default();
+        match self.active_cell() {
+            Some(address) => {
+                self.edit_draft = self.session.cell_raw(address);
+                self.name_draft = self.session.cell_name(address).unwrap_or_default();
+            }
+            None => {
+                self.edit_draft.clear();
+                self.name_draft.clear();
+            }
+        }
     }
 
     /// Write the edit bar back to the active cell as an undoable edit.
@@ -345,8 +365,14 @@ impl App {
             .unwrap_or_else(|| "—".to_string());
         let edit_bar = row![
             container(text(address_label).font(MONO).size(13).color(palette.muted))
-                .width(Length::Fixed(56.0))
+                .width(Length::Fixed(48.0))
                 .center_y(Length::Shrink),
+            // The name box (Excel-style): name the selected cell's location.
+            container(
+                text_field("name", &self.name_draft, Message::NameChanged)
+                    .on_submit(Message::NameCommitted)
+            )
+            .width(Length::Fixed(150.0)),
             text_field(
                 "Type a value or formula — click a cell to insert its reference",
                 &self.edit_draft,
