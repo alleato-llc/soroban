@@ -43,6 +43,19 @@ pub enum Outcome {
     },
 }
 
+/// One cell's raw content before and after an edit — the unit of undo. An
+/// empty string means the cell was (or becomes) blank.
+#[derive(Clone)]
+pub struct CellChange {
+    pub address: CellAddress,
+    pub old: String,
+    pub new: String,
+}
+
+/// The undo/redo stacks are capped like the Swift `SheetModel` (grid content
+/// only — the log is history, not document state).
+const MAX_UNDO: usize = 100;
+
 pub struct Session {
     calculator: Rc<RefCell<Calculator>>,
     store: SheetStore,
@@ -53,6 +66,9 @@ pub struct Session {
     /// Where ↑/↓ recall currently sits, or `None` when the field holds live
     /// typing rather than a recalled line.
     history_cursor: Option<usize>,
+    /// Grouped cell edits, most recent last; each entry is one undoable step.
+    undo_stack: Vec<Vec<CellChange>>,
+    redo_stack: Vec<Vec<CellChange>>,
 }
 
 impl Session {
@@ -68,6 +84,8 @@ impl Session {
             input: String::new(),
             history: Vec::new(),
             history_cursor: None,
+            undo_stack: Vec::new(),
+            redo_stack: Vec::new(),
         }
     }
 
@@ -171,12 +189,81 @@ impl Session {
 
     /// How one cell computes right now. Reads route through the ordinary
     /// dependency-tracked path, so this reflects the live values. Uses
-    /// interior mutability, hence `&self`. (The grid is read-only in this
-    /// slice; cells are populated from the log via `updateCell(…)`.)
+    /// interior mutability, hence `&self`.
     pub fn cell_display(&self, row: usize, col: usize) -> CellDisplay {
         let sheet: Rc<Sheet> = self.store.active_sheet();
         self.store
             .display_value_on(&sheet, CellAddress::new(col, row))
+    }
+
+    // MARK: Editing (slice ③)
+
+    /// The raw (unevaluated) text stored in a cell — what the edit bar shows.
+    pub fn cell_raw(&self, address: CellAddress) -> String {
+        self.store.active_sheet().grid.raw(address)
+    }
+
+    /// Would a leading operator complete this draft? True means the draft
+    /// "expects an operand", so a cell click inserts a reference (point mode)
+    /// rather than committing. Mirrors the Swift `Calculator.expectsOperand`.
+    pub fn expects_operand(&self, draft: &str) -> bool {
+        Calculator::expects_operand(draft)
+    }
+
+    /// Commit one cell's raw content as an undoable edit, then recalculate.
+    /// A no-op when the content is unchanged.
+    pub fn set_cell_raw(&mut self, address: CellAddress, raw: &str) {
+        let old = self.cell_raw(address);
+        if old == raw {
+            return;
+        }
+        self.apply_edit(vec![CellChange {
+            address,
+            old,
+            new: raw.to_string(),
+        }]);
+    }
+
+    /// Apply a group of cell changes as one undo step (route every mutation
+    /// through here so it stays undoable — the Swift `applyEdit` rule).
+    fn apply_edit(&mut self, changes: Vec<CellChange>) {
+        for change in &changes {
+            self.write_raw(change.address, &change.new);
+        }
+        self.store.recalculate();
+        self.undo_stack.push(changes);
+        if self.undo_stack.len() > MAX_UNDO {
+            self.undo_stack.remove(0);
+        }
+        self.redo_stack.clear();
+    }
+
+    /// Low-level cell write (empty string clears the cell); no undo bookkeeping.
+    fn write_raw(&self, address: CellAddress, raw: &str) {
+        let grid = self.store.active_sheet().grid.clone();
+        grid.set_cell(if raw.is_empty() { None } else { Some(raw) }, address);
+    }
+
+    /// Undo the most recent edit group, restoring each cell's prior raw.
+    pub fn undo(&mut self) {
+        if let Some(changes) = self.undo_stack.pop() {
+            for change in &changes {
+                self.write_raw(change.address, &change.old);
+            }
+            self.store.recalculate();
+            self.redo_stack.push(changes);
+        }
+    }
+
+    /// Redo the most recently undone edit group.
+    pub fn redo(&mut self) {
+        if let Some(changes) = self.redo_stack.pop() {
+            for change in &changes {
+                self.write_raw(change.address, &change.new);
+            }
+            self.store.recalculate();
+            self.undo_stack.push(changes);
+        }
     }
 }
 

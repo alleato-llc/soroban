@@ -1,25 +1,32 @@
 //! Soroban — the Rust/iced desktop app (docs/MIGRATION.md Phase 3b).
 //!
-//! Slice ①–②: a log-view calculator plus a read-only spreadsheet grid, with
+//! Slice ①–③: a log-view calculator plus an editable spreadsheet grid, with
 //! ⌘\ toggling between them. The log and grid share one engine session
 //! ([`session::Session`]) — variables defined in the log are visible in cells,
-//! and `updateCell(…)` from the log populates the grid. This file is the iced
-//! shell (state → message → update → view) and the rime-styled rendering;
-//! later slices add cell editing, controls, the binary editor, and workbook
-//! save/open.
+//! and `updateCell(…)` from the log populates the grid. A formula/edit bar
+//! commits cell edits (undoable, ⌘Z / ⇧⌘Z), and point mode inserts a cell's
+//! reference when you click it mid-formula. This file is the iced shell (state
+//! → message → update → view) and the rime-styled rendering; later slices add
+//! controls, the binary editor, and workbook save/open.
 
 mod session;
 
-use iced::widget::{column, container, row, scrollable, text};
-use iced::{event, keyboard, Element, Event, Font, Length, Subscription, Theme, Vector};
+use iced::widget::{column, container, operation, row, scrollable, text, Id};
+use iced::{event, keyboard, Element, Event, Font, Length, Subscription, Task, Theme, Vector};
 use rime::theme::{self, ThemeChoice};
 use rime::widgets::{
     button, card, grid, header_row, section, text_field, CellAlign, GridCell, GridSelection,
 };
 use session::{Outcome, Session, GRID_COLS, GRID_ROWS};
-use soroban_engine::CellDisplay;
+use soroban_engine::{CellAddress, CellDisplay};
 
 const MONO: Font = Font::MONOSPACE;
+
+/// The edit bar's widget id, used to refocus it after a point-mode reference
+/// insertion (a grid click steals focus, so we grab it back).
+fn edit_bar_id() -> Id {
+    Id::new("soroban-edit-bar")
+}
 
 #[derive(Default, PartialEq, Eq, Clone, Copy)]
 enum ViewMode {
@@ -35,6 +42,12 @@ struct App {
     mode: ViewMode,
     grid_offset: Vector,
     grid_selection: Option<GridSelection>,
+    /// The edit bar's contents for the selected cell.
+    edit_draft: String,
+    /// True while the edit bar holds uncommitted typing — the point-mode gate:
+    /// a grid click on an operand-expecting draft inserts a reference instead
+    /// of moving the selection.
+    editing: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -47,10 +60,15 @@ enum Message {
     ToggleView,
     GridScrolled(Vector),
     GridSelected(usize, usize, bool),
+    EditChanged(String),
+    EditCommitted,
+    EditCanceled,
+    Undo,
+    Redo,
 }
 
 impl App {
-    fn update(&mut self, message: Message) {
+    fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::InputChanged(text) => self.session.set_input(text),
             Message::Submit => self.session.submit(),
@@ -69,24 +87,92 @@ impl App {
             }
             Message::GridScrolled(offset) => self.grid_offset = offset,
             Message::GridSelected(row, col, extend) => {
-                self.grid_selection = Some(match (extend, self.grid_selection) {
-                    (true, Some(current)) => GridSelection {
-                        anchor: current.anchor,
-                        extent: (row, col),
-                    },
-                    _ => GridSelection::cell(row, col),
-                });
+                return self.select_or_point(row, col, extend)
+            }
+            Message::EditChanged(text) => {
+                self.edit_draft = text;
+                self.editing = true;
+            }
+            Message::EditCommitted => self.commit_edit(),
+            Message::EditCanceled => {
+                self.editing = false;
+                self.load_draft();
+            }
+            Message::Undo => {
+                self.session.undo();
+                self.editing = false;
+                self.load_draft();
+            }
+            Message::Redo => {
+                self.session.redo();
+                self.editing = false;
+                self.load_draft();
             }
         }
+        Task::none()
+    }
+
+    /// The active (anchor) cell — where the edit bar reads and writes.
+    fn active_cell(&self) -> Option<CellAddress> {
+        self.grid_selection.map(|selection| {
+            let (row, col) = selection.anchor;
+            CellAddress::new(col, row)
+        })
+    }
+
+    /// Reload the edit bar from the active cell's raw content.
+    fn load_draft(&mut self) {
+        self.edit_draft = self
+            .active_cell()
+            .map(|address| self.session.cell_raw(address))
+            .unwrap_or_default();
+    }
+
+    /// Write the edit bar back to the active cell as an undoable edit.
+    fn commit_edit(&mut self) {
+        if let Some(address) = self.active_cell() {
+            self.session.set_cell_raw(address, &self.edit_draft);
+        }
+        self.editing = false;
+        self.load_draft();
+    }
+
+    /// A grid click: in point mode (editing an operand-expecting draft) insert
+    /// the clicked cell's reference and refocus the bar; otherwise commit any
+    /// pending edit, then move the selection and load its content.
+    fn select_or_point(&mut self, row: usize, col: usize, extend: bool) -> Task<Message> {
+        let point_mode = self.mode == ViewMode::Grid
+            && self.editing
+            && self.session.expects_operand(&self.edit_draft);
+        if point_mode {
+            self.edit_draft
+                .push_str(&CellAddress::new(col, row).to_string());
+            return operation::focus(edit_bar_id());
+        }
+        if self.editing {
+            // Navigating away commits the in-progress edit (Excel behavior).
+            self.commit_edit();
+        }
+        self.grid_selection = Some(match (extend, self.grid_selection) {
+            (true, Some(current)) => GridSelection {
+                anchor: current.anchor,
+                extent: (row, col),
+            },
+            _ => GridSelection::cell(row, col),
+        });
+        self.editing = false;
+        self.load_draft();
+        Task::none()
     }
 
     fn theme(&self) -> Theme {
         self.choice.theme()
     }
 
-    /// ↑/↓ recall input history; ⌘\ toggles the log/grid view.
+    /// ↑/↓ recall input history; ⌘\ toggles the view; ⌘Z / ⇧⌘Z undo & redo;
+    /// Escape cancels an in-progress cell edit.
     fn subscription(&self) -> Subscription<Message> {
-        event::listen_with(|event, _status, _window| match event {
+        let keys = event::listen_with(|event, _status, _window| match event {
             Event::Keyboard(keyboard::Event::KeyPressed {
                 key: keyboard::Key::Named(keyboard::key::Named::ArrowUp),
                 ..
@@ -96,12 +182,22 @@ impl App {
                 ..
             }) => Some(Message::HistoryNext),
             Event::Keyboard(keyboard::Event::KeyPressed {
+                key: keyboard::Key::Named(keyboard::key::Named::Escape),
+                ..
+            }) => Some(Message::EditCanceled),
+            Event::Keyboard(keyboard::Event::KeyPressed {
                 key: keyboard::Key::Character(character),
                 modifiers,
                 ..
-            }) if modifiers.command() && character.as_str() == "\\" => Some(Message::ToggleView),
+            }) if modifiers.command() => match character.as_str() {
+                "\\" => Some(Message::ToggleView),
+                "z" | "Z" if modifiers.shift() => Some(Message::Redo),
+                "z" | "Z" => Some(Message::Undo),
+                _ => None,
+            },
             _ => None,
-        })
+        });
+        keys
     }
 
     fn view(&self) -> Element<'_, Message> {
@@ -177,6 +273,28 @@ impl App {
     }
 
     fn grid_view(&self, palette: &theme::Palette) -> Element<'_, Message> {
+        // The formula/edit bar: the active cell's address, then its raw content.
+        // Click it (or just start typing) to edit; Enter commits, Esc cancels.
+        let address_label = self
+            .active_cell()
+            .map(|address| address.to_string())
+            .unwrap_or_else(|| "—".to_string());
+        let edit_bar = row![
+            container(text(address_label).font(MONO).size(13).color(palette.muted))
+                .width(Length::Fixed(56.0))
+                .center_y(Length::Shrink),
+            text_field(
+                "Type a value or formula — click a cell to insert its reference",
+                &self.edit_draft,
+                Message::EditChanged
+            )
+            .id(edit_bar_id())
+            .on_submit(Message::EditCommitted)
+            .font(MONO),
+        ]
+        .spacing(8)
+        .align_y(iced::Alignment::Center);
+
         let palette = *palette;
         let session = &self.session;
         let sheet = grid(GRID_ROWS, GRID_COLS, move |row, col| {
@@ -188,10 +306,8 @@ impl App {
         .on_select(Message::GridSelected);
 
         column![
-            section(&format!(
-                "Grid — {} (read-only)",
-                self.session.active_sheet_name()
-            )),
+            edit_bar,
+            section(&format!("Grid — {}", self.session.active_sheet_name())),
             container(sheet).height(Length::Fill),
         ]
         .spacing(16)
@@ -286,6 +402,6 @@ fn main() -> iced::Result {
         .title("Soroban")
         .theme(App::theme)
         .subscription(App::subscription)
-        .window_size(iced::Size::new(760.0, 600.0))
+        .window_size(iced::Size::new(760.0, 620.0))
         .run()
 }

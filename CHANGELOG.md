@@ -63,6 +63,15 @@ point of truth for downloads.
   into the log populates the grid and cell formulas recompute through the
   dependency graph. Editing lands in a later slice. No change to the existing
   crates or the shared Gherkin suite.
+- Rust ecosystem, Phase 3b slice ③ (docs/MIGRATION.md): **cell editing** in
+  `rust/gui`. A formula/edit bar over the grid shows the selected cell's
+  address and raw content; Enter commits, Escape cancels. Edits are
+  **undoable** (⌘Z / ⇧⌘Z, grouped and capped like the Swift `SheetModel`), and
+  navigating away commits an in-progress edit (Excel behavior). **Point mode**:
+  clicking a cell while editing an operand-expecting draft inserts its `A:1`
+  reference and refocuses the bar (gated on the engine's
+  `Calculator.expectsOperand`) instead of moving the selection. No change to
+  the existing crates or the shared Gherkin suite.
 
 ### Changed
 
