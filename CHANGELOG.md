@@ -83,6 +83,16 @@ point of truth for downloads.
   dependency graph like any other — a `= rate * 1000` formula recomputes as the
   slider moves. Uses rime's `slider`/`stepper`/`toggle`/`select`. No change to
   the existing crates or the shared Gherkin suite.
+- Rust ecosystem, Phase 3b slice ④, part 2 (docs/MIGRATION.md): **cell formats**
+  in `rust/gui`. A format bar over the grid sets the active cell's **number
+  format** (general / number / currency / percent / date / hex / binary,
+  rendered through `NumberFormat::rendered` — exact string/BigInt math, no
+  float, so `1200` shows `$1,200.00` and `0.0825` shows `8.25%`), **alignment**,
+  and **text / fill color** (semantic palette colors). Format edits are
+  display-only and **undoable** — the undo model now carries cell-content *and*
+  format steps (the Swift `SheetEdit.Kind.cells` / `.formats` split). Text
+  styles (bold / italic / underline) are deferred pending a rime `GridCell`
+  draw change. No change to the existing crates or the shared Gherkin suite.
 
 ### Changed
 

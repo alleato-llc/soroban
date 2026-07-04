@@ -6,8 +6,8 @@
 //! iced `State` in `main.rs` is a thin shell over it.
 
 use soroban_engine::{
-    BigDecimal, Calculator, CellAddress, CellDisplay, Control, EvalOutcome, Sheet, SheetStore,
-    Spreadsheet, Value,
+    BigDecimal, Calculator, CellAddress, CellDisplay, CellFormat, Control, EvalOutcome, Sheet,
+    SheetStore, Spreadsheet, Value,
 };
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -53,6 +53,18 @@ pub struct CellChange {
     pub new: String,
 }
 
+/// One undoable step: a group of cell-content changes, or a single cell's
+/// format change (display-only — no recalc). The Swift `SheetEdit.Kind`
+/// analogue (`.cells` / `.formats`).
+enum Edit {
+    Cells(Vec<CellChange>),
+    Format {
+        address: CellAddress,
+        old: CellFormat,
+        new: CellFormat,
+    },
+}
+
 /// The undo/redo stacks are capped like the Swift `SheetModel` (grid content
 /// only — the log is history, not document state).
 const MAX_UNDO: usize = 100;
@@ -67,9 +79,9 @@ pub struct Session {
     /// Where ↑/↓ recall currently sits, or `None` when the field holds live
     /// typing rather than a recalled line.
     history_cursor: Option<usize>,
-    /// Grouped cell edits, most recent last; each entry is one undoable step.
-    undo_stack: Vec<Vec<CellChange>>,
-    redo_stack: Vec<Vec<CellChange>>,
+    /// Undoable steps, most recent last (cell content or cell format).
+    undo_stack: Vec<Edit>,
+    redo_stack: Vec<Edit>,
 }
 
 impl Session {
@@ -191,10 +203,7 @@ impl Session {
     /// How one cell computes right now. Reads route through the ordinary
     /// dependency-tracked path, so this reflects the live values. Uses
     /// interior mutability, hence `&self`.
-    pub fn cell_display(&self, row: usize, col: usize) -> CellDisplay {
-        self.display_at(CellAddress::new(col, row))
-    }
-
+    ///
     /// The live display of one cell by address (values, errors, controls).
     pub fn display_at(&self, address: CellAddress) -> CellDisplay {
         let sheet: Rc<Sheet> = self.store.active_sheet();
@@ -236,11 +245,34 @@ impl Session {
             self.write_raw(change.address, &change.new);
         }
         self.store.recalculate();
-        self.undo_stack.push(changes);
+        self.push_edit(Edit::Cells(changes));
+    }
+
+    /// Record one undoable step, capping the stack and clearing redo.
+    fn push_edit(&mut self, edit: Edit) {
+        self.undo_stack.push(edit);
         if self.undo_stack.len() > MAX_UNDO {
             self.undo_stack.remove(0);
         }
         self.redo_stack.clear();
+    }
+
+    /// Apply one side of an edit — `forward` for the "new" state (do/redo),
+    /// else the "old" state (undo). Cell content recalculates; a format change
+    /// is display-only.
+    fn apply_side(&self, edit: &Edit, forward: bool) {
+        match edit {
+            Edit::Cells(changes) => {
+                for change in changes {
+                    let raw = if forward { &change.new } else { &change.old };
+                    self.write_raw(change.address, raw);
+                }
+                self.store.recalculate();
+            }
+            Edit::Format { address, old, new } => {
+                self.write_format(*address, if forward { new } else { old });
+            }
+        }
     }
 
     /// Low-level cell write (empty string clears the cell); no undo bookkeeping.
@@ -249,25 +281,54 @@ impl Session {
         grid.set_cell(if raw.is_empty() { None } else { Some(raw) }, address);
     }
 
-    /// Undo the most recent edit group, restoring each cell's prior raw.
+    /// Undo the most recent step.
     pub fn undo(&mut self) {
-        if let Some(changes) = self.undo_stack.pop() {
-            for change in &changes {
-                self.write_raw(change.address, &change.old);
-            }
-            self.store.recalculate();
-            self.redo_stack.push(changes);
+        if let Some(edit) = self.undo_stack.pop() {
+            self.apply_side(&edit, false);
+            self.redo_stack.push(edit);
         }
     }
 
-    /// Redo the most recently undone edit group.
+    /// Redo the most recently undone step.
     pub fn redo(&mut self) {
-        if let Some(changes) = self.redo_stack.pop() {
-            for change in &changes {
-                self.write_raw(change.address, &change.new);
-            }
-            self.store.recalculate();
-            self.undo_stack.push(changes);
+        if let Some(edit) = self.redo_stack.pop() {
+            self.apply_side(&edit, true);
+            self.undo_stack.push(edit);
+        }
+    }
+
+    // MARK: Formats (slice ④)
+
+    /// The format applied to a cell (the default when none is set).
+    pub fn cell_format(&self, address: CellAddress) -> CellFormat {
+        self.store
+            .active_sheet()
+            .formats
+            .borrow()
+            .get(&address)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// Set a cell's format as an undoable step. Formats are display-only, so
+    /// there's no recalc; a default format is pruned from the sparse map.
+    pub fn apply_format(&mut self, address: CellAddress, new: CellFormat) {
+        let old = self.cell_format(address);
+        if old == new {
+            return;
+        }
+        self.write_format(address, &new);
+        self.push_edit(Edit::Format { address, old, new });
+    }
+
+    /// Low-level format write; default formats are removed (the sparse-map rule).
+    fn write_format(&self, address: CellAddress, format: &CellFormat) {
+        let sheet = self.store.active_sheet();
+        let mut formats = sheet.formats.borrow_mut();
+        if format.is_default() {
+            formats.remove(&address);
+        } else {
+            formats.insert(address, format.clone());
         }
     }
 

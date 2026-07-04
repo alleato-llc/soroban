@@ -5,23 +5,27 @@
 //! ([`session::Session`]) — variables defined in the log are visible in cells,
 //! and `updateCell(…)` from the log populates the grid. A formula/edit bar
 //! commits cell edits (undoable, ⌘Z / ⇧⌘Z), point mode inserts a cell's
-//! reference when you click it mid-formula, and a control strip drives the
-//! selected cell's slider / stepper / checkbox / dropdown. This file is the
-//! iced shell (state → message → update → view) and the rime-styled rendering;
-//! later slices add cell formats, named cells, the binary editor, and workbook
-//! save/open.
+//! reference when you click it mid-formula, a control strip drives the
+//! selected cell's slider / stepper / checkbox / dropdown, and a format bar
+//! sets its number format, alignment, and colors. This file is the iced shell
+//! (state → message → update → view) and the rime-styled rendering; later
+//! slices add named cells, the binary editor, and workbook save/open.
 
 mod session;
 
 use iced::widget::{column, container, operation, row, scrollable, text, Id};
-use iced::{event, keyboard, Element, Event, Font, Length, Subscription, Task, Theme, Vector};
+use iced::{
+    event, keyboard, Color, Element, Event, Font, Length, Subscription, Task, Theme, Vector,
+};
 use rime::theme::{self, ThemeChoice};
 use rime::widgets::{
     button, card, grid, header_row, section, select, slider, stepper, text_field, toggle,
     CellAlign, GridCell, GridSelection,
 };
 use session::{Outcome, Session, GRID_COLS, GRID_ROWS};
-use soroban_engine::{CellAddress, CellDisplay, Value};
+use soroban_engine::{
+    CellAddress, CellAlignment, CellDisplay, CellFormat, NumberFormat, PaletteColor, Value,
+};
 
 const MONO: Font = Font::MONOSPACE;
 
@@ -72,6 +76,10 @@ enum Message {
     StepperStepped(bool),
     CheckboxToggled,
     DropdownPicked(usize),
+    SetNumberFormat(usize),
+    SetAlignment(usize),
+    SetTextColor(usize),
+    SetFillColor(usize),
 }
 
 impl App {
@@ -141,8 +149,31 @@ impl App {
                     self.load_draft();
                 }
             }
+            // Format edits mutate one field of the active cell's format and
+            // commit it (display-only, undoable).
+            Message::SetNumberFormat(index) => {
+                self.apply_format(|format| format.number_format = number_format_at(index));
+            }
+            Message::SetAlignment(index) => {
+                self.apply_format(|format| format.alignment = CellAlignment::ALL[index]);
+            }
+            Message::SetTextColor(index) => {
+                self.apply_format(|format| format.text_color = color_choice(index));
+            }
+            Message::SetFillColor(index) => {
+                self.apply_format(|format| format.fill_color = color_choice(index));
+            }
         }
         Task::none()
+    }
+
+    /// Mutate the active cell's format via `edit` and commit it undoably.
+    fn apply_format(&mut self, edit: impl FnOnce(&mut CellFormat)) {
+        if let Some(address) = self.active_cell() {
+            let mut format = self.session.cell_format(address);
+            edit(&mut format);
+            self.session.apply_format(address, format);
+        }
     }
 
     /// The active (anchor) cell — where the edit bar reads and writes.
@@ -330,6 +361,9 @@ impl App {
 
         // When the active cell is a control, an interactive strip drives it.
         let mut header = column![edit_bar].spacing(12);
+        if let Some(bar) = self.format_bar() {
+            header = header.push(bar);
+        }
         if let Some(strip) = self.control_strip() {
             header = header.push(strip);
         }
@@ -337,7 +371,12 @@ impl App {
         let palette = *palette;
         let session = &self.session;
         let sheet = grid(GRID_ROWS, GRID_COLS, move |row, col| {
-            map_cell(session.cell_display(row, col), &palette)
+            let address = CellAddress::new(col, row);
+            render_cell(
+                session.display_at(address),
+                &session.cell_format(address),
+                &palette,
+            )
         })
         .offset(self.grid_offset)
         .selection(self.grid_selection)
@@ -407,23 +446,99 @@ impl App {
             _ => None,
         }
     }
+
+    /// The format bar for the active cell: number format, alignment, and text /
+    /// fill color. Each change commits an undoable, display-only format edit.
+    fn format_bar(&self) -> Option<Element<'_, Message>> {
+        let address = self.active_cell()?;
+        let format = self.session.cell_format(address);
+        Some(
+            row![
+                labeled_select(
+                    "Format",
+                    &NUMBER_FORMAT_LABELS,
+                    number_format_index(&format.number_format),
+                    Message::SetNumberFormat,
+                ),
+                labeled_select(
+                    "Align",
+                    &ALIGN_LABELS,
+                    align_index(format.alignment),
+                    Message::SetAlignment,
+                ),
+                labeled_select(
+                    "Text",
+                    &COLOR_LABELS,
+                    color_index(format.text_color),
+                    Message::SetTextColor,
+                ),
+                labeled_select(
+                    "Fill",
+                    &COLOR_LABELS,
+                    color_index(format.fill_color),
+                    Message::SetFillColor,
+                ),
+            ]
+            .spacing(12)
+            .align_y(iced::Alignment::Center)
+            .into(),
+        )
+    }
 }
 
-/// Map a computed cell to a rime grid cell: numbers right-align, labels
-/// left-align, errors show `#ERR` in the danger color, definitions/notes get
-/// their glyph text.
-fn map_cell(display: CellDisplay, palette: &theme::Palette) -> GridCell {
+/// A small `label [ picker ]` cluster: a dropdown over `options` showing the
+/// one at `selected`, emitting `message(index)` on a pick.
+fn labeled_select<'a>(
+    label: &'a str,
+    options: &[&'static str],
+    selected: usize,
+    message: impl Fn(usize) -> Message + 'a,
+) -> Element<'a, Message> {
+    let options: Vec<String> = options.iter().map(|option| option.to_string()).collect();
+    let current = options.get(selected).cloned();
+    let lookup = options.clone();
+    let picker = select(options, current, move |chosen: String| {
+        let index = lookup.iter().position(|o| *o == chosen).unwrap_or(0);
+        message(index)
+    });
+    row![text(label).size(12), picker]
+        .spacing(6)
+        .align_y(iced::Alignment::Center)
+        .into()
+}
+
+/// Render a cell for the grid: the display drives the base text/alignment,
+/// then the cell's format overrides the number rendering, alignment, and
+/// colors on top.
+fn render_cell(display: CellDisplay, format: &CellFormat, palette: &theme::Palette) -> GridCell {
+    let mut cell = base_cell(display, format, palette);
+    if let Some(align) = alignment_override(format.alignment) {
+        cell = cell.align(align);
+    }
+    if let Some(color) = format.text_color {
+        cell = cell.text_color(palette_color(color));
+    }
+    if let Some(color) = format.fill_color {
+        cell = cell.background(fill_color(color));
+    }
+    cell
+}
+
+/// The base cell from a display: numbers right-align (rendered through the
+/// cell's number format), labels left-align, errors show `#ERR`, definitions
+/// and notes get their glyph text.
+fn base_cell(display: CellDisplay, format: &CellFormat, palette: &theme::Palette) -> GridCell {
     match display {
         CellDisplay::Empty => GridCell::default(),
         CellDisplay::Text(label) => GridCell::new(label),
-        CellDisplay::Value(number) => GridCell::right(number.to_string()),
+        CellDisplay::Value(number) => GridCell::right(format.number_format.rendered(&number)),
         CellDisplay::Error(_) => GridCell::new("#ERR")
             .align(CellAlign::Center)
             .text_color(palette.danger),
         CellDisplay::Definition(glyph) => GridCell::new(glyph).text_color(palette.accent),
         CellDisplay::Note(note) => GridCell::new(note).text_color(palette.muted),
         CellDisplay::Slider(info) | CellDisplay::Stepper(info) => {
-            GridCell::right(info.value.to_string())
+            GridCell::right(format.number_format.rendered(&info.value))
         }
         CellDisplay::Checkbox(info) => {
             GridCell::new(if info.is_on { "true" } else { "false" }).align(CellAlign::Center)
@@ -434,6 +549,99 @@ fn map_cell(display: CellDisplay, palette: &theme::Palette) -> GridCell {
             Value::String(text) => GridCell::new(text),
             other => GridCell::right(other.to_string()),
         },
+    }
+}
+
+/// The number-format presets offered in the format bar, in menu order.
+const NUMBER_FORMAT_LABELS: [&str; 7] = [
+    "General", "Number", "Currency", "Percent", "Date", "Hex", "Binary",
+];
+
+fn number_format_at(index: usize) -> NumberFormat {
+    match index {
+        1 => NumberFormat::Number { decimals: 2 },
+        2 => NumberFormat::Currency {
+            symbol: "$".to_string(),
+            decimals: 2,
+        },
+        3 => NumberFormat::Percent { decimals: 2 },
+        4 => NumberFormat::Date,
+        5 => NumberFormat::Hex,
+        6 => NumberFormat::Binary,
+        _ => NumberFormat::General,
+    }
+}
+
+fn number_format_index(format: &NumberFormat) -> usize {
+    match format {
+        NumberFormat::General => 0,
+        NumberFormat::Number { .. } => 1,
+        NumberFormat::Currency { .. } => 2,
+        NumberFormat::Percent { .. } => 3,
+        NumberFormat::Date => 4,
+        NumberFormat::Hex => 5,
+        NumberFormat::Binary => 6,
+    }
+}
+
+const ALIGN_LABELS: [&str; 4] = ["Auto", "Left", "Center", "Right"];
+
+fn align_index(alignment: CellAlignment) -> usize {
+    CellAlignment::ALL
+        .iter()
+        .position(|&a| a == alignment)
+        .unwrap_or(0)
+}
+
+fn alignment_override(alignment: CellAlignment) -> Option<CellAlign> {
+    match alignment {
+        CellAlignment::Auto => None,
+        CellAlignment::Left => Some(CellAlign::Left),
+        CellAlignment::Center => Some(CellAlign::Center),
+        CellAlignment::Right => Some(CellAlign::Right),
+    }
+}
+
+const COLOR_LABELS: [&str; 8] = [
+    "None", "Red", "Orange", "Yellow", "Green", "Blue", "Purple", "Gray",
+];
+
+fn color_choice(index: usize) -> Option<PaletteColor> {
+    index
+        .checked_sub(1)
+        .and_then(|i| PaletteColor::ALL.get(i).copied())
+}
+
+fn color_index(color: Option<PaletteColor>) -> usize {
+    match color {
+        None => 0,
+        Some(color) => PaletteColor::ALL
+            .iter()
+            .position(|&c| c == color)
+            .map(|i| i + 1)
+            .unwrap_or(0),
+    }
+}
+
+/// A semantic palette color as an approximate display color. (The Swift app
+/// maps these to theme-adaptive system colors; fixed values are a first cut.)
+fn palette_color(color: PaletteColor) -> Color {
+    match color {
+        PaletteColor::Red => Color::from_rgb(0.90, 0.30, 0.24),
+        PaletteColor::Orange => Color::from_rgb(0.93, 0.56, 0.18),
+        PaletteColor::Yellow => Color::from_rgb(0.85, 0.70, 0.15),
+        PaletteColor::Green => Color::from_rgb(0.30, 0.70, 0.36),
+        PaletteColor::Blue => Color::from_rgb(0.28, 0.55, 0.90),
+        PaletteColor::Purple => Color::from_rgb(0.60, 0.42, 0.85),
+        PaletteColor::Gray => Color::from_rgb(0.55, 0.58, 0.62),
+    }
+}
+
+/// The same hue as a translucent cell fill, so text stays readable over it.
+fn fill_color(color: PaletteColor) -> Color {
+    Color {
+        a: 0.25,
+        ..palette_color(color)
     }
 }
 
@@ -501,6 +709,6 @@ fn main() -> iced::Result {
         .title("Soroban")
         .theme(App::theme)
         .subscription(App::subscription)
-        .window_size(iced::Size::new(760.0, 620.0))
+        .window_size(iced::Size::new(820.0, 620.0))
         .run()
 }
