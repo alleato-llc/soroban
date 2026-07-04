@@ -139,6 +139,17 @@ point of truth for downloads.
   save/open. `rust/gui` stays out of the cargo workspace (path-dep on `rime` +
   iced; build standalone) until Phase 4 wires it into CI. No change to the
   existing crates or the shared Gherkin suite.
+- Rust ecosystem, Phase 3b — `rust/gui` **chrome pass** to match the AppKit
+  original's minimalist REPL feel: the log's input bar is pinned to the **bottom**
+  behind a `›` prompt with the log flowing oldest→newest (freshest result just
+  above the input), the expression echo is inked in the accent color and its
+  result in plain ink (matching the original), and the window is edge-to-edge —
+  the wordmark and card frame are gone, with the document name + unsaved-changes
+  `•` moved to the **window title** (`Soroban・算盤 — Untitled`). The action
+  buttons (New / Open / Save / Bits / Names / Reference / theme / view-toggle)
+  become a slim, **left-aligned strip that auto-hides** like `fed`'s chrome —
+  revealed only while the pointer is at the top edge (a `chrome_revealed` flag
+  driven by pointer-Y with hysteresis). No engine or session behavior change.
 
 ### Changed
 

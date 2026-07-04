@@ -18,7 +18,7 @@ mod session;
 
 use iced::widget::{column, container, operation, row, scrollable, text, Id};
 use iced::{
-    event, keyboard, Color, Element, Event, Font, Length, Subscription, Task, Theme, Vector,
+    event, keyboard, mouse, Color, Element, Event, Font, Length, Subscription, Task, Theme, Vector,
 };
 use rime::theme::{self, ThemeChoice};
 use rime::widgets::{
@@ -72,6 +72,9 @@ struct App {
     /// (compared against the session's live revision for the dirty indicator).
     file_path: Option<PathBuf>,
     saved_revision: u64,
+    /// The top action strip auto-hides (like fed's chrome): revealed only while
+    /// the pointer is at the top edge. See [`Self::chrome_visible`].
+    chrome_revealed: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -108,6 +111,7 @@ enum Message {
     NewWorkbook,
     OpenWorkbook,
     SaveWorkbook,
+    PointerMoved(f32),
 }
 
 impl App {
@@ -252,6 +256,12 @@ impl App {
                     }
                 }
             }
+            // Reveal the action strip at the top edge; a wider keep-band than the
+            // trigger (hysteresis) stops it flickering as the pointer hovers it.
+            Message::PointerMoved(y) => {
+                let threshold = if self.chrome_revealed { 56.0 } else { 6.0 };
+                self.chrome_revealed = y < threshold;
+            }
         }
         Task::none()
     }
@@ -372,66 +382,85 @@ impl App {
                 "s" | "S" => Some(Message::SaveWorkbook),
                 _ => None,
             },
+            // Track the pointer's y so the top action strip can auto-hide.
+            Event::Mouse(mouse::Event::CursorMoved { position }) => {
+                Some(Message::PointerMoved(position.y))
+            }
             _ => None,
         });
         keys
     }
 
-    fn view(&self) -> Element<'_, Message> {
-        let _scope = theme::enter(self.choice.palette());
-        let palette = theme::tokens();
+    /// The window title carries the document name and unsaved-changes dot, like
+    /// the AppKit original ("Soroban・算盤 — Untitled") — no in-window wordmark.
+    fn window_title(&self) -> String {
+        let name = self
+            .file_path
+            .as_ref()
+            .and_then(|path| path.file_name())
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "Untitled".to_string());
+        format!(
+            "Soroban・算盤 — {name}{}",
+            if self.is_dirty() { " •" } else { "" }
+        )
+    }
 
+    /// Whether the top action strip is currently shown — it auto-hides and is
+    /// revealed by the pointer at the top edge (fed's chrome pattern).
+    fn chrome_visible(&self) -> bool {
+        self.chrome_revealed
+    }
+
+    /// A slim, LEFT-aligned strip of ghost actions (the macOS menu bar sits at
+    /// the top-left, so these do too). The original keeps these in the window
+    /// menu bar; iced has none, so this is the honest home — and it auto-hides.
+    fn action_bar(&self) -> Element<'_, Message> {
         let theme_label = if matches!(self.choice, ThemeChoice::Dark) {
             "☀"
         } else {
             "☾"
         };
         let toggle_label = match self.mode {
-            ViewMode::Log => "Grid  ⌘\\",
-            ViewMode::Grid => "Log  ⌘\\",
+            ViewMode::Log => "Grid",
+            ViewMode::Grid => "Log",
         };
-        // The subtitle names the open document and flags unsaved changes.
-        let document_name = self
-            .file_path
-            .as_ref()
-            .and_then(|path| path.file_name())
-            .map(|name| name.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "Untitled".to_string());
-        let subtitle = format!(
-            "{document_name}{}  ·  Anzan — exact calculation",
-            if self.is_dirty() { " •" } else { "" }
-        );
-        // Inlined header (rime's `header_row` borrows a `&str`; the subtitle is
-        // computed per frame, so it owns its text here).
-        let header = row![
-            text("Soroban").size(22).color(palette.ink),
-            container(text(subtitle).size(13).color(palette.warn))
-                .width(Length::Fill)
-                .align_x(iced::alignment::Horizontal::Right),
-        ]
-        .align_y(iced::Alignment::Center);
-        let top_bar = row![
-            container(header).width(Length::Fill),
-            button::ghost("New  ⌘N", Message::NewWorkbook),
-            button::ghost("Open  ⌘O", Message::OpenWorkbook),
-            button::secondary("Save  ⌘S", Message::SaveWorkbook),
+        row![
             button::secondary(toggle_label, Message::ToggleView),
+            button::ghost("New", Message::NewWorkbook),
+            button::ghost("Open", Message::OpenWorkbook),
+            button::ghost("Save", Message::SaveWorkbook),
             button::ghost("Bits", Message::ToggleBinary),
             button::ghost("Names", Message::ToggleInspector),
             button::ghost("Reference", Message::ToggleReference),
             button::ghost(theme_label, Message::ToggleTheme),
+            container(text("").size(1)).width(Length::Fill),
         ]
-        .spacing(8)
-        .align_y(iced::Alignment::Center);
+        .spacing(6)
+        .align_y(iced::Alignment::Center)
+        .into()
+    }
+
+    fn view(&self) -> Element<'_, Message> {
+        let _scope = theme::enter(self.choice.palette());
+        let palette = theme::tokens();
 
         let body = match self.mode {
             ViewMode::Log => self.log_view(&palette),
             ViewMode::Grid => self.grid_view(&palette),
         };
 
-        let main = container(card(column![top_bar, body].spacing(16)))
-            .padding(20)
-            .center_x(Length::Fill)
+        // Edge-to-edge, no card. The action strip auto-hides — shown only when
+        // revealed at the top edge — so the view fills the whole window; the
+        // log's own input bar sits at the bottom (REPL layout).
+        let mut stack = column![].spacing(10);
+        if self.chrome_visible() {
+            stack = stack.push(self.action_bar());
+        }
+        stack = stack.push(body);
+        let main = container(stack)
+            .padding([10, 16])
+            .width(Length::Fill)
             .height(Length::Fill);
 
         // The main area plus any right-side sidebars (inspector / reference).
@@ -588,19 +617,8 @@ impl App {
     }
 
     fn log_view(&self, palette: &theme::Palette) -> Element<'_, Message> {
-        let input_bar = row![
-            text_field(
-                "Type an expression — try 0.1 + 0.2",
-                self.session.input(),
-                Message::InputChanged
-            )
-            .on_submit(Message::Submit)
-            .font(MONO),
-            button::primary("=", Message::Submit),
-        ]
-        .spacing(8);
-
-        // The log, newest first so the latest result sits right under the input.
+        // The log fills, oldest→newest, so the freshest result sits just above
+        // the input — the terminal/REPL layout of the AppKit original.
         let log: Element<'_, Message> = if self.session.entries().is_empty() {
             container(
                 text("Results appear here. ↑/↓ recall what you typed; ⌘\\ shows the grid.")
@@ -608,10 +626,11 @@ impl App {
                     .color(palette.muted),
             )
             .padding(12)
+            .height(Length::Fill)
             .into()
         } else {
             let mut items = column![].spacing(12);
-            for entry in self.session.entries().iter().rev() {
+            for entry in self.session.entries().iter() {
                 items = items.push(entry_view(&entry.input, &entry.outcome, palette));
             }
             scrollable(items.padding([4, 8]))
@@ -619,7 +638,18 @@ impl App {
                 .into()
         };
 
-        column![input_bar, section("Log"), log].spacing(16).into()
+        // The input is pinned to the BOTTOM, behind a `›` prompt; Enter submits
+        // (no `=` button — the original has none).
+        let input_bar = row![
+            text("›").font(MONO).size(16).color(palette.muted),
+            text_field("Expression", self.session.input(), Message::InputChanged)
+                .on_submit(Message::Submit)
+                .font(MONO),
+        ]
+        .spacing(8)
+        .align_y(iced::Alignment::Center);
+
+        column![log, input_bar].spacing(12).into()
     }
 
     fn grid_view(&self, palette: &theme::Palette) -> Element<'_, Message> {
@@ -944,26 +974,27 @@ fn entry_view<'a>(
     outcome: &Outcome,
     palette: &theme::Palette,
 ) -> Element<'a, Message> {
-    // Echoed input, monospace so an error caret lines up beneath it.
-    let echo = text(format!("› {input}"))
+    // Echoed input in accent, no prefix — matching the original, where the
+    // expression is the colored line and the result below it is plain ink.
+    let echo = text(input.to_string())
         .font(MONO)
-        .size(13)
-        .color(palette.muted);
+        .size(14)
+        .color(palette.accent);
 
     let result: Element<'a, Message> = match outcome {
         Outcome::Value(value) => text(format!("= {value}"))
             .font(MONO)
             .size(14)
-            .color(palette.accent)
+            .color(palette.ink)
             .into(),
         Outcome::Function(signature) => text(format!("λ {signature}"))
             .font(MONO)
-            .size(13)
+            .size(14)
             .color(palette.ink)
             .into(),
         Outcome::Data(declaration) => text(format!("𝑫 {declaration}"))
             .font(MONO)
-            .size(13)
+            .size(14)
             .color(palette.ink)
             .into(),
         Outcome::Comment(note) => text(format!("# {note}"))
@@ -979,9 +1010,9 @@ fn entry_view<'a>(
         Outcome::Error { message, position } => {
             let mut lines = column![].spacing(2);
             if let Some(position) = position {
-                // The echo prefix "› " is two columns wide; offset the caret.
-                let caret = format!("{}^", " ".repeat(2 + position));
-                lines = lines.push(text(caret).font(MONO).size(13).color(palette.danger));
+                // No echo prefix now, so the caret aligns directly under column.
+                let caret = format!("{}^", " ".repeat(*position));
+                lines = lines.push(text(caret).font(MONO).size(14).color(palette.danger));
             }
             lines
                 .push(
@@ -998,7 +1029,7 @@ fn entry_view<'a>(
 
 fn main() -> iced::Result {
     iced::application(App::default, App::update, App::view)
-        .title("Soroban")
+        .title(App::window_title)
         .theme(App::theme)
         .subscription(App::subscription)
         .window_size(iced::Size::new(1040.0, 680.0))
