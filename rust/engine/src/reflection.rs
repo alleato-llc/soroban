@@ -190,8 +190,10 @@ impl HostObject for WorksheetObject {
 /// exactly like a plain reference), `.text` (its displayed string),
 /// `.raw`/`.formula` (the source), `.address`, `.isEmpty`.
 pub(crate) struct CellObject {
-    grid: Weak<Spreadsheet>,
-    address: CellAddress,
+    /// Crate-visible so the mutation API (`sheet_store`) can resolve a cell
+    /// handle back to its grid + address — the `cell_target` seam.
+    pub(crate) grid: Weak<Spreadsheet>,
+    pub(crate) address: CellAddress,
 }
 
 impl CellObject {

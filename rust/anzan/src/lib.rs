@@ -21,9 +21,17 @@ pub mod parser;
 pub use calculator::{Calculator, Completion, CompletionKind, EvalOutcome, FunctionDoc};
 pub use documentation::DocCategory;
 pub use error::EngineError;
+pub use eval::binary_format::{BinaryEditorBits, BinaryEditorPalette, BinaryEditorPresets};
+pub use eval::binary_view::{
+    BinaryView, Field as BinaryField, FieldSpec as BinaryFieldSpec, Kind as BinaryViewKind,
+    Unavailable as BinaryViewUnavailable,
+};
 pub use eval::data_type::{DataField, DataFieldType, DataType};
 pub use eval::environment::{EvaluationEnvironment, UserFunction};
 pub use eval::evaluator::{Evaluator, Locals, Reentry, Resolvers};
+pub use eval::format_builder::{
+    Field as FormatBuilderField, FieldKind as FormatBuilderFieldKind, FormatBuilder,
+};
 pub use eval::registry::FunctionRegistry;
 pub use eval::value::{FunctionValue, HostObject, MapEntry, RecordValue, Value};
 pub use mode::LanguageMode;
