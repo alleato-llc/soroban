@@ -205,6 +205,16 @@ point of truth for downloads.
     Built on rime's new `grid` per-column widths + `.on_resize_column`.
   Requires rime with the per-column-width grid + public `Selection::bounds()`
   (path dependency). No engine behavior change.
+- Rust ecosystem, Phase 3b — **menu-bar chrome** in `rust/gui`, matching the
+  AppKit app's window chrome. The auto-hiding row of ghost text buttons is
+  replaced by a **File / Edit / View menu bar** (rime's `menu_bar`, with
+  ⌘-shortcut hints): File → New/Open/Save, Edit → Undo/Redo/Copy/Cut/Paste,
+  View → Show Grid·Log / Names / Reference / Bits / theme. A **sidebar-toggle
+  icon pins to the bar's right** (like the AppKit title bar's toolbar item) and
+  a **log/grid view-toggle icon sits bottom-right**, mirroring the original's
+  corner affordances. Works identically in calculator (log) and grid modes.
+  Built on rime's new `menu_bar_with_trailing`; drops the pointer-tracked
+  auto-hide plumbing. No engine behavior change.
 
 ### Changed
 

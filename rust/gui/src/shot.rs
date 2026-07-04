@@ -16,7 +16,7 @@
 //! - `SOROBAN_SHOT_VIEW=grid` — start in the grid view (default: the log).
 //! - `SOROBAN_SHOT_SELECT=B4` — select that cell (shows the edit bar / a control
 //!   strip / a control's own value).
-//! - `SOROBAN_SHOT_CHROME=1` — reveal the auto-hiding top action strip.
+//! - `SOROBAN_SHOT_MENU=file|edit|view` — open that top menu's dropdown.
 //! - `SOROBAN_SHOT_EDIT=1` — open the inline editor on the selected cell.
 //! - `SOROBAN_SHOT_PANEL=inspector|reference|bits` — open a side/bottom panel.
 //!
@@ -77,8 +77,11 @@ pub fn configure(app: &mut App) {
     if std::env::var("SOROBAN_SHOT_EDIT").is_ok() {
         app.editing = true;
     }
-    if std::env::var("SOROBAN_SHOT_CHROME").is_ok() {
-        app.chrome_revealed = true;
+    match std::env::var("SOROBAN_SHOT_MENU").as_deref() {
+        Ok("file") => app.menu_open = Some(0),
+        Ok("edit") => app.menu_open = Some(1),
+        Ok("view") => app.menu_open = Some(2),
+        _ => {}
     }
     match std::env::var("SOROBAN_SHOT_PANEL").as_deref() {
         Ok("inspector") => app.inspector_visible = true,

@@ -19,12 +19,13 @@ mod shot;
 
 use iced::widget::{column, container, mouse_area, operation, row, scrollable, text, Id};
 use iced::{
-    event, keyboard, mouse, Color, Element, Event, Font, Length, Subscription, Task, Theme, Vector,
+    event, keyboard, Color, Element, Event, Font, Length, Subscription, Task, Theme, Vector,
 };
 use rime::theme::{self, ThemeChoice};
+use rime::widgets::menu;
 use rime::widgets::{
-    bit_grid, button, card, grid, section, select, slider, stepper, text_field, toggle,
-    CellAlign, GridCell, GridSelection,
+    bit_grid, button, card, grid, menu_bar_with_trailing, section, select, slider, stepper,
+    text_field, toggle, CellAlign, GridCell, GridSelection, Menu, MenuItem,
 };
 use session::{BinaryStatus, Origin, Outcome, Session, GRID_COLS, GRID_ROWS};
 use soroban_engine::{
@@ -84,9 +85,9 @@ struct App {
     /// (compared against the session's live revision for the dirty indicator).
     file_path: Option<PathBuf>,
     saved_revision: u64,
-    /// The top action strip auto-hides (like fed's chrome): revealed only while
-    /// the pointer is at the top edge. See [`Self::chrome_visible`].
-    chrome_revealed: bool,
+    /// Which top menu (File / Edit / View) is open, if any — the menu bar is
+    /// stateless, so the host owns this. See [`Self::menus`].
+    menu_open: Option<usize>,
     /// The review-screenshot harness, present only when `SOROBAN_SHOT` is set —
     /// otherwise `None` and the whole thing is inert. See [`shot`].
     shot: Option<shot::Shot>,
@@ -135,7 +136,8 @@ enum Message {
     NewWorkbook,
     OpenWorkbook,
     SaveWorkbook,
-    PointerMoved(f32),
+    /// Open a top-level menu (`Some(i)`) or close any open one (`None`).
+    ToggleMenu(Option<usize>),
     /// Copy / cut / paste the selection as TSV via the system clipboard.
     Copy,
     Cut,
@@ -152,6 +154,14 @@ enum Message {
 
 impl App {
     fn update(&mut self, message: Message) -> Task<Message> {
+        // Any real action closes an open menu (the backdrop only closes on an
+        // outside click); the toggle itself opens/switches menus, and the
+        // screenshot harness's background frames must leave it be.
+        if self.menu_open.is_some()
+            && !matches!(message, Message::ToggleMenu(_) | Message::Shot(_))
+        {
+            self.menu_open = None;
+        }
         match message {
             Message::InputChanged(text) => self.session.set_input(text),
             Message::Submit => {
@@ -353,12 +363,7 @@ impl App {
                     self.load_draft();
                 }
             }
-            // Reveal the action strip at the top edge; a wider keep-band than the
-            // trigger (hysteresis) stops it flickering as the pointer hovers it.
-            Message::PointerMoved(y) => {
-                let threshold = if self.chrome_revealed { 56.0 } else { 6.0 };
-                self.chrome_revealed = y < threshold;
-            }
+            Message::ToggleMenu(next) => self.menu_open = next,
             // Inspector row → jump: select the cell and show the grid.
             Message::JumpTo(address) => {
                 self.grid_selection = Some(GridSelection::cell(address.row, address.column));
@@ -524,10 +529,6 @@ impl App {
                 }
                 _ => None,
             },
-            // Track the pointer's y so the top action strip can auto-hide.
-            Event::Mouse(mouse::Event::CursorMoved { position }) => {
-                Some(Message::PointerMoved(position.y))
-            }
             _ => None,
         });
         match shot::subscription(self) {
@@ -551,39 +552,52 @@ impl App {
         )
     }
 
-    /// Whether the top action strip is currently shown — it auto-hides and is
-    /// revealed by the pointer at the top edge (fed's chrome pattern).
-    fn chrome_visible(&self) -> bool {
-        self.chrome_revealed
-    }
-
-    /// A slim, LEFT-aligned strip of ghost actions (the macOS menu bar sits at
-    /// the top-left, so these do too). The original keeps these in the window
-    /// menu bar; iced has none, so this is the honest home — and it auto-hides.
-    fn action_bar(&self) -> Element<'_, Message> {
+    /// The menu bar's File / Edit / View menus — the honest in-window stand-in
+    /// for the macOS menu bar the AppKit app uses (iced has no system menu bar).
+    /// Labels track state (Show Grid ↔ Show Log, Light ↔ Dark Theme).
+    fn menus(&self) -> Vec<Menu<Message>> {
+        let view_label = match self.mode {
+            ViewMode::Log => "Show Grid",
+            ViewMode::Grid => "Show Log",
+        };
         let theme_label = if matches!(self.choice, ThemeChoice::Dark) {
-            "☀"
+            "Light Theme"
         } else {
-            "☾"
+            "Dark Theme"
         };
-        let toggle_label = match self.mode {
-            ViewMode::Log => "Grid",
-            ViewMode::Grid => "Log",
-        };
-        row![
-            button::secondary(toggle_label, Message::ToggleView),
-            button::ghost("New", Message::NewWorkbook),
-            button::ghost("Open", Message::OpenWorkbook),
-            button::ghost("Save", Message::SaveWorkbook),
-            button::ghost("Bits", Message::ToggleBinary),
-            button::ghost("Names", Message::ToggleInspector),
-            button::ghost("Reference", Message::ToggleReference),
-            button::ghost(theme_label, Message::ToggleTheme),
-            container(text("").size(1)).width(Length::Fill),
+        vec![
+            Menu::new(
+                "File",
+                vec![
+                    MenuItem::shortcut("New", "⌘N", Message::NewWorkbook),
+                    MenuItem::shortcut("Open…", "⌘O", Message::OpenWorkbook),
+                    MenuItem::shortcut("Save", "⌘S", Message::SaveWorkbook),
+                ],
+            ),
+            Menu::new(
+                "Edit",
+                vec![
+                    MenuItem::shortcut("Undo", "⌘Z", Message::Undo),
+                    MenuItem::shortcut("Redo", "⇧⌘Z", Message::Redo),
+                    MenuItem::separator(),
+                    MenuItem::shortcut("Copy", "⌘C", Message::Copy),
+                    MenuItem::shortcut("Cut", "⌘X", Message::Cut),
+                    MenuItem::shortcut("Paste", "⌘V", Message::Paste),
+                ],
+            ),
+            Menu::new(
+                "View",
+                vec![
+                    MenuItem::shortcut(view_label, "⌘\\", Message::ToggleView),
+                    MenuItem::separator(),
+                    MenuItem::action("Names", Message::ToggleInspector),
+                    MenuItem::action("Reference", Message::ToggleReference),
+                    MenuItem::action("Bits", Message::ToggleBinary),
+                    MenuItem::separator(),
+                    MenuItem::action(theme_label, Message::ToggleTheme),
+                ],
+            ),
         ]
-        .spacing(6)
-        .align_y(iced::Alignment::Center)
-        .into()
     }
 
     fn view(&self) -> Element<'_, Message> {
@@ -595,15 +609,9 @@ impl App {
             ViewMode::Grid => self.grid_view(&palette),
         };
 
-        // Edge-to-edge, no card. The action strip auto-hides — shown only when
-        // revealed at the top edge — so the view fills the whole window; the
-        // log's own input bar sits at the bottom (REPL layout).
-        let mut stack = column![].spacing(10);
-        if self.chrome_visible() {
-            stack = stack.push(self.action_bar());
-        }
-        stack = stack.push(body);
-        let main = container(stack)
+        // Edge-to-edge, no card — the view fills the window; the log's own input
+        // bar sits at the bottom (REPL layout).
+        let main = container(body)
             .padding([10, 16])
             .width(Length::Fill)
             .height(Length::Fill);
@@ -623,7 +631,7 @@ impl App {
         };
 
         // The binary bit-editor rides underneath as a full-width strip.
-        if self.binary_visible {
+        let content: Element<'_, Message> = if self.binary_visible {
             column![
                 container(horizontal).height(Length::Fill),
                 self.binary_panel(&palette)
@@ -631,7 +639,26 @@ impl App {
             .into()
         } else {
             horizontal
-        }
+        };
+
+        // The menu bar overlays the top (File / Edit / View) with a sidebar-
+        // toggle icon pinned to its right — like the AppKit title bar's toolbar
+        // item; the content sits below it, pushed down by the bar's height.
+        let inspector_icon = button::ghost("◨", Message::ToggleInspector);
+        let bar = menu_bar_with_trailing(
+            self.menus(),
+            self.menu_open,
+            Message::ToggleMenu,
+            Some(inspector_icon.into()),
+        );
+        iced::widget::stack![
+            column![
+                iced::widget::Space::new().height(Length::Fixed(menu::BAR_HEIGHT)),
+                content,
+            ],
+            bar,
+        ]
+        .into()
     }
 
     /// The binary bit-editor strip: a clickable bit grid for the last result,
@@ -910,7 +937,9 @@ impl App {
             }
         }
 
-        // A sheet-tab strip at the bottom-left, like the original's `Mortgage +`.
+        // A sheet-tab strip at the bottom-left, like the original's `Mortgage +`,
+        // with a log/grid view-toggle icon pinned bottom-right (the AppKit app's
+        // corner affordance).
         let sheet_tab = row![
             container(
                 text(self.session.active_sheet_name())
@@ -921,6 +950,8 @@ impl App {
             .padding([4, 12])
             .style(move |_| container::background(palette.surface)),
             text("+").size(15).color(palette.muted),
+            container(text("").size(1)).width(Length::Fill),
+            button::ghost("☰", Message::ToggleView),
         ]
         .spacing(8)
         .align_y(iced::Alignment::Center);
