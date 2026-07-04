@@ -73,6 +73,7 @@ pub struct LogEntry {
 /// The displayable result of one submission — the log renders each kind
 /// differently (a value, a definition, a note, a documentation block, an
 /// error with an optional caret column).
+#[derive(Debug)]
 pub enum Outcome {
     /// `= 42` — a computed value, at full precision.
     Value(String),

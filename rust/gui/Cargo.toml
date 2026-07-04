@@ -14,6 +14,12 @@ description = "The Soroban desktop app (Rust/iced) — the log-view calculator o
 name = "soroban-gui"
 path = "src/main.rs"
 
+# The UI-free session model is also a library, so the headless BDD suite
+# (tests/session.rs) can drive it without linking iced.
+[lib]
+name = "soroban_gui"
+path = "src/lib.rs"
+
 [dependencies]
 # The whole engine (soroban-engine re-exports the anzan language).
 soroban-engine = { path = "../engine" }
@@ -28,3 +34,15 @@ rfd = "0.15"
 # PNG encoder for the built-in review-screenshot harness (see `shot` in
 # main.rs): headless wgpu capture, env-gated by SOROBAN_SHOT, inert otherwise.
 png = "0.17"
+
+[dev-dependencies]
+# The BDD harness for the headless session-scenario suite (tests/session.rs): it
+# drives the UI-free `Session` — no iced, no rendering, a fast `cargo test`. The
+# Rust counterpart to the Swift SorobanSessionTests. Versions match the engine's
+# parity suite (rust/engine); gui is workspace-excluded, so they're pinned here.
+cucumber = "0.21"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+[[test]]
+name = "session"
+harness = false # cucumber owns the runner

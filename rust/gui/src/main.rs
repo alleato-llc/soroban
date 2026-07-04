@@ -2,7 +2,7 @@
 //!
 //! Slice ①–④: a log-view calculator plus an editable spreadsheet grid, with
 //! ⌘\ toggling between them. The log and grid share one engine session
-//! ([`session::Session`]) — variables defined in the log are visible in cells,
+//! (`soroban_gui::session::Session`) — variables defined in the log are visible in cells,
 //! and `updateCell(…)` from the log populates the grid. A formula/edit bar
 //! commits cell edits (undoable, ⌘Z / ⇧⌘Z), point mode inserts a cell's
 //! reference when you click it mid-formula, a control strip drives the
@@ -14,7 +14,6 @@
 //! → update → view) and the rime-styled rendering; the last slice adds workbook
 //! save/open.
 
-mod session;
 mod shot;
 
 use iced::widget::{column, container, mouse_area, operation, row, scrollable, text, Id};
@@ -27,7 +26,7 @@ use rime::widgets::{
     bit_grid, button, card, grid, menu_bar_with_trailing, section, select, slider, stepper,
     text_field, toggle, CellAlign, GridCell, GridSelection, Menu, MenuItem,
 };
-use session::{BinaryStatus, Origin, Outcome, Session, GRID_COLS, GRID_ROWS};
+use soroban_gui::session::{BinaryStatus, Origin, Outcome, Session, GRID_COLS, GRID_ROWS};
 use soroban_engine::{
     CellAddress, CellAlignment, CellDisplay, CellFormat, NumberFormat, PaletteColor,
 };

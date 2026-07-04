@@ -215,6 +215,17 @@ point of truth for downloads.
   corner affordances. Works identically in calculator (log) and grid modes.
   Built on rime's new `menu_bar_with_trailing`; drops the pointer-tracked
   auto-hide plumbing. No engine behavior change.
+- Rust ecosystem, Phase 3b — **headless session-scenario suite** for `rust/gui`
+  (`tests/session.feature` + a cucumber-rs runner), the Rust counterpart to the
+  Swift `SorobanSessionTests` but a **fast `cargo test`** (~0.15s for 16
+  scenarios — it drives the UI-free `Session` directly, no iced, no rendering,
+  no `xcodebuild`). Covers the calculator (log values, `ans`, function defs,
+  errors, comments) and the sheet (cell values / formulas / labels / errors,
+  shared log↔grid variables, undo·redo, checkbox·slider commits, TSV
+  copy/paste, named cells, column-width round-trip, workbook save/reopen). The
+  gui crate gains a `[lib]` target exposing `Session` so the suite can link it
+  without iced. Rust-only by design (the cross-ecosystem parity oracle stays
+  `spec/anzan`, run by the engine's gherkin suite). No engine behavior change.
 
 ### Changed
 
