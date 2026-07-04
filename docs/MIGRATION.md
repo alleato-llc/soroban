@@ -9,6 +9,40 @@ repo (it serves other apps) and is extended with the generic widgets Soroban nee
 
 ---
 
+## Status (2026-07-04)
+
+Phases **0–3b are done**; both implementations pass the shared `spec/`. The rest
+of this document is the original plan (2026-07-03), kept for rationale — where it
+reads as future tense, cross-check against this section.
+
+- **0 — monorepo restructure**: done. Swift green under `swift/`, `spec/` shared.
+- **1 — `anzan` language crate**: done. All language features green against the
+  cucumber oracle.
+- **2a — `soroban` CLI**: done.
+- **2b — `engine` crate** (sheet + persistence, workbook interchange): done —
+  **522/522** shared Gherkin scenarios green in both ecosystems. A follow-on
+  Phase 2c ported the engine remainder the shared suite doesn't exercise on its
+  own (`ReferenceRewriter`, `NamedCells`, journal/package/`DataStore`/CSV, the
+  log-only mutation commands, structural edits, `History` reflection, the binary
+  bit-editor model, docs assembly).
+- **3a — rime extensions**: done as needed — `grid` (virtualized; per-cell
+  overlays, double-click activation, per-column widths + resize-drag), `bit_grid`,
+  `menu_bar`/`menu_bar_with_trailing`, plus the small gaps. **`autocomplete_field`
+  is not yet built** (the gui has no autocomplete — see gaps).
+- **3b — `gui` slices ①–⑥**: all landed, each demoed. Beyond the slice plan the
+  gui also gained inline cell editing, in-cell controls, keyboard navigation
+  (arrows / shift-arrows / Enter / type-to-edit / Esc), copy·cut·paste as TSV,
+  column-width resize, and a File/Edit/View **menu bar** with corner icons
+  (replacing an earlier auto-hiding button strip).
+
+**Remaining `rust/gui` gaps** (fidelity, not blockers): multiple sheets (the `+`
+tab is decorative), row-height resize, structural edits (insert/delete rows &
+columns), Fill Down/Right, relative-reference paste adjustment, and autocomplete.
+
+**Next — Phase 4**: fold `rust/gui` into CI (settle the rime path-dep) and
+dual-asset releases (§6). The §8 grid-performance risk is **resolved** — the
+virtualized grid shipped and performs.
+
 ## 1. Target layout
 
 ```
@@ -26,12 +60,14 @@ soroban/
 │   ├── project.yml            # ← project.yml (paths updated)
 │   └── Soroban.xcodeproj      # generated, gitignored (unchanged rule)
 ├── rust/                      # one cargo workspace
-│   ├── Cargo.toml             # [workspace] members = anzan, engine, cli, gui, kit
+│   ├── Cargo.toml             # members = anzan, cli, engine; gui is EXCLUDED (below)
 │   ├── anzan/                 # the language crate (no grid/file knowledge)
 │   ├── engine/                # hosting layer: sheet + persistence (pub use anzan)
 │   ├── cli/                   # `soroban` binary (depends on anzan only)
-│   ├── gui/                   # iced + rime app
-│   └── kit/                   # bit-editor model/widgets shared with Rust Tama
+│   └── gui/                   # iced + rime app — workspace-EXCLUDED (rime path-dep
+│                              # + iced/wgpu); builds standalone, folded in at Phase 4
+│                              # (`kit/` was planned but never split out — the bit
+│                              #  editor lives in gui on rime's bit_grid)
 ├── site/                      # Astro landing page (unchanged)
 ├── docs/                      # shared language/format docs (ANZAN.md, FORMAT.md, …)
 ├── salpa.yaml                 # per-ecosystem build config (see §6)
@@ -150,9 +186,10 @@ hold no state, know nothing of the domain). Soroban needs, roughly in order:
    (suggestions when open, history otherwise) + programmatic-write suppression.
    Generalizes rime's `text_field`; fed/tty want this too.
 3. **`bit_grid`** — the macOS-Calculator-style bit editor (labeled bit buttons,
-   field bands, enum pickers). This is also **Tama's** core — build it as
-   rime components + a `rust/kit` model crate mirroring `swift/Kit`
-   (NibbleLayout etc.), so Rust Tama is a thin shell later.
+   field bands, enum pickers). This is also **Tama's** core. *(As built: the bit
+   editor lives directly in `rust/gui` on rime's `bit_grid`; the once-planned
+   `rust/kit` model crate mirroring `swift/Kit` was not split out. If Rust Tama
+   happens, extract it then.)*
 4. Small gaps as found: `log_list` (selectable text + context menu rows),
    caret-under-column error rendering (monospace + offset — trivial), cell
    format menus (rime `menu_bar`/`context_menu` already exist).
@@ -210,9 +247,10 @@ parallel with 2b since rime work is domain-free.
 
 ## 8. Risks
 
-- **Grid performance/feel in iced** — the one thing with no existing proof. Spike
-  it first in rime-demo with a 1000×26 synthetic sheet before committing to the
-  timeline; the fallback is canvas-based cell rendering.
+- **Grid performance/feel in iced** — ~~the one thing with no existing proof~~
+  **RESOLVED**: the virtualized `grid` shipped (rime, custom `Widget`) through gui
+  slice ⑥ + column resize and performs on a 1000×26 sheet; the canvas fallback
+  wasn't needed.
 - **Numeric divergence** — bounded by porting BigDecimal by hand + the
   full-precision feature values; transcendental ulp drift handled per §3.
 - **Spec drift under dual maintenance** — the standing cost of "both live
