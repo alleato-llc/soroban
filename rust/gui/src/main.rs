@@ -22,13 +22,14 @@ use iced::{
 };
 use rime::theme::{self, ThemeChoice};
 use rime::widgets::{
-    bit_grid, button, card, grid, header_row, section, select, slider, stepper, text_field, toggle,
+    bit_grid, button, card, grid, section, select, slider, stepper, text_field, toggle,
     CellAlign, GridCell, GridSelection,
 };
 use session::{BinaryStatus, Outcome, Session, GRID_COLS, GRID_ROWS};
 use soroban_engine::{
     CellAddress, CellAlignment, CellDisplay, CellFormat, NumberFormat, PaletteColor, Value,
 };
+use std::path::PathBuf;
 
 const MONO: Font = Font::MONOSPACE;
 
@@ -67,6 +68,10 @@ struct App {
     reference_query: String,
     /// Whether the binary bit-editor strip is showing.
     binary_visible: bool,
+    /// The saved file, if any, and the revision at which it was last saved
+    /// (compared against the session's live revision for the dirty indicator).
+    file_path: Option<PathBuf>,
+    saved_revision: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -100,6 +105,9 @@ enum Message {
     ToggleBinary,
     BitToggled(usize),
     UseBinary,
+    NewWorkbook,
+    OpenWorkbook,
+    SaveWorkbook,
 }
 
 impl App {
@@ -213,8 +221,54 @@ impl App {
                 // The value lands in the log input; show it.
                 self.mode = ViewMode::Log;
             }
+            Message::NewWorkbook => {
+                self.session.new_workbook();
+                self.file_path = None;
+                self.after_document_change();
+            }
+            Message::OpenWorkbook => {
+                if let Some(path) = rfd::FileDialog::new()
+                    .add_filter("Soroban workbook", &["soroban"])
+                    .pick_file()
+                {
+                    if self.session.open_from(&path).is_ok() {
+                        self.file_path = Some(path);
+                        self.after_document_change();
+                    }
+                }
+            }
+            Message::SaveWorkbook => {
+                // Save to the current file, or prompt for one the first time.
+                let target = self.file_path.clone().or_else(|| {
+                    rfd::FileDialog::new()
+                        .add_filter("Soroban workbook", &["soroban"])
+                        .set_file_name("Untitled.soroban")
+                        .save_file()
+                });
+                if let Some(path) = target {
+                    if self.session.save_to(&path).is_ok() {
+                        self.file_path = Some(path);
+                        self.saved_revision = self.session.revision();
+                    }
+                }
+            }
         }
         Task::none()
+    }
+
+    /// After a New/Open replaces the document, drop the transient view state and
+    /// mark the session clean at its current revision.
+    fn after_document_change(&mut self) {
+        self.grid_selection = None;
+        self.editing = false;
+        self.saved_revision = self.session.revision();
+        self.load_draft();
+    }
+
+    /// True when the document has unsaved changes (the live revision has moved
+    /// past the one last written).
+    fn is_dirty(&self) -> bool {
+        self.session.revision() != self.saved_revision
     }
 
     /// Mutate the active cell's format via `edit` and commit it undoably.
@@ -313,6 +367,9 @@ impl App {
                 "\\" => Some(Message::ToggleView),
                 "z" | "Z" if modifiers.shift() => Some(Message::Redo),
                 "z" | "Z" => Some(Message::Undo),
+                "n" | "N" => Some(Message::NewWorkbook),
+                "o" | "O" => Some(Message::OpenWorkbook),
+                "s" | "S" => Some(Message::SaveWorkbook),
                 _ => None,
             },
             _ => None,
@@ -333,12 +390,31 @@ impl App {
             ViewMode::Log => "Grid  ⌘\\",
             ViewMode::Grid => "Log  ⌘\\",
         };
+        // The subtitle names the open document and flags unsaved changes.
+        let document_name = self
+            .file_path
+            .as_ref()
+            .and_then(|path| path.file_name())
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "Untitled".to_string());
+        let subtitle = format!(
+            "{document_name}{}  ·  Anzan — exact calculation",
+            if self.is_dirty() { " •" } else { "" }
+        );
+        // Inlined header (rime's `header_row` borrows a `&str`; the subtitle is
+        // computed per frame, so it owns its text here).
+        let header = row![
+            text("Soroban").size(22).color(palette.ink),
+            container(text(subtitle).size(13).color(palette.warn))
+                .width(Length::Fill)
+                .align_x(iced::alignment::Horizontal::Right),
+        ]
+        .align_y(iced::Alignment::Center);
         let top_bar = row![
-            container(header_row(
-                "Soroban",
-                "Anzan — exact calculation (50 significant digits)"
-            ))
-            .width(Length::Fill),
+            container(header).width(Length::Fill),
+            button::ghost("New  ⌘N", Message::NewWorkbook),
+            button::ghost("Open  ⌘O", Message::OpenWorkbook),
+            button::secondary("Save  ⌘S", Message::SaveWorkbook),
             button::secondary(toggle_label, Message::ToggleView),
             button::ghost("Bits", Message::ToggleBinary),
             button::ghost("Names", Message::ToggleInspector),
@@ -925,6 +1001,6 @@ fn main() -> iced::Result {
         .title("Soroban")
         .theme(App::theme)
         .subscription(App::subscription)
-        .window_size(iced::Size::new(820.0, 620.0))
+        .window_size(iced::Size::new(1040.0, 680.0))
         .run()
 }

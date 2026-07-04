@@ -7,11 +7,14 @@
 
 use soroban_engine::named_cells::NamedCells;
 use soroban_engine::spreadsheet::SheetDefinitionKind;
+use soroban_engine::workbook::{restore_session, SheetPayload, Workbook};
 use soroban_engine::{
-    BigDecimal, BinaryView, BinaryViewUnavailable, Calculator, CellAddress, CellDisplay,
-    CellFormat, Control, EvalOutcome, Sheet, SheetStore, Spreadsheet, Value,
+    package, BigDecimal, BinaryView, BinaryViewUnavailable, Calculator, CellAddress, CellDisplay,
+    CellFormat, Control, EvalOutcome, Sheet, SheetStore, Spreadsheet, UserFunction, Value,
 };
 use std::cell::RefCell;
+use std::collections::HashMap;
+use std::path::Path;
 use std::rc::Rc;
 
 /// One inspector row: a name or signature, and a short detail (a value, or the
@@ -129,14 +132,14 @@ pub struct Session {
     /// The binary bit-editor's current draft (a flip stages a new one); `None`
     /// when closed or when `ans` isn't editable.
     binary: Option<BinaryView>,
+    /// Bumped on every document mutation; the shell compares it against a saved
+    /// baseline for the dirty indicator.
+    revision: u64,
 }
 
 impl Session {
     pub fn new() -> Self {
-        // The log and the grid share one calculator: variables defined in the
-        // log are visible in cells, and cell references resolve from the log.
-        let calculator = Rc::new(RefCell::new(Calculator::new()));
-        let store = SheetStore::new(Rc::clone(&calculator));
+        let (calculator, store) = Self::fresh_engine();
         Self {
             calculator,
             store,
@@ -147,7 +150,17 @@ impl Session {
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
             binary: None,
+            revision: 0,
         }
+    }
+
+    /// A fresh calculator and a sheet store wired to it. The log and the grid
+    /// share one calculator: variables defined in the log are visible in cells,
+    /// and cell references resolve from the log.
+    fn fresh_engine() -> (Rc<RefCell<Calculator>>, SheetStore) {
+        let calculator = Rc::new(RefCell::new(Calculator::new()));
+        let store = SheetStore::new(Rc::clone(&calculator));
+        (calculator, store)
     }
 
     // MARK: Log
@@ -184,6 +197,8 @@ impl Session {
         }
         self.input.clear();
         self.history_cursor = None;
+        // A log line may define a variable/function/type — mark the doc dirty.
+        self.revision += 1;
     }
 
     fn evaluate(&self, line: &str) -> Outcome {
@@ -303,6 +318,7 @@ impl Session {
             self.undo_stack.remove(0);
         }
         self.redo_stack.clear();
+        self.revision += 1;
     }
 
     /// Apply one side of an edit — `forward` for the "new" state (do/redo),
@@ -351,6 +367,7 @@ impl Session {
         if let Some(edit) = self.undo_stack.pop() {
             self.apply_side(&edit, false);
             self.redo_stack.push(edit);
+            self.revision += 1;
         }
     }
 
@@ -359,6 +376,7 @@ impl Session {
         if let Some(edit) = self.redo_stack.pop() {
             self.apply_side(&edit, true);
             self.undo_stack.push(edit);
+            self.revision += 1;
         }
     }
 
@@ -627,6 +645,123 @@ impl Session {
             self.input = view.value().display_description();
             self.history_cursor = None;
         }
+    }
+
+    // MARK: Workbook (slice ⑥)
+
+    /// A monotonic mutation counter — the shell compares it to a saved baseline
+    /// to show the dirty indicator.
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
+
+    /// Snapshot the document into a `Workbook`: every sheet's raw cells and
+    /// named cells, plus the log's variables, functions, and data types. (Cell
+    /// formats aren't persisted yet — the engine's workbook `formats` field is
+    /// still untyped; see docs/FORMAT.md.)
+    fn build_workbook(&self) -> Workbook {
+        let payloads: Vec<SheetPayload> = self
+            .store
+            .sheets()
+            .iter()
+            .map(|sheet| {
+                let mut payload = SheetPayload::new(
+                    sheet.name(),
+                    sheet
+                        .grid
+                        .raws()
+                        .into_iter()
+                        .map(|(address, raw)| (address.to_string(), raw))
+                        .collect::<HashMap<String, String>>(),
+                );
+                payload.names = sheet
+                    .grid
+                    .cell_names()
+                    .into_iter()
+                    .map(|(address, name)| (address.to_string(), name))
+                    .collect();
+                payload
+            })
+            .collect();
+
+        let calculator = self.calculator.borrow();
+        let environment = calculator.environment();
+        let functions: Vec<UserFunction> = environment
+            .all_user_functions()
+            .into_iter()
+            .cloned()
+            .collect();
+        Workbook::new(
+            payloads,
+            None,
+            environment.user_variables(),
+            &functions,
+            environment.user_data_types(),
+            environment.namespace_sources().to_vec(),
+            environment.imported_namespaces().to_vec(),
+        )
+    }
+
+    /// Write the document to a `.soroban` package. No data sheets in the gui
+    /// yet, so no database is copied in.
+    pub fn save_to(&self, path: &Path) -> Result<(), String> {
+        let workbook = self.build_workbook();
+        package::write(&workbook, path, None).map_err(|error| error.to_string())
+    }
+
+    /// Open a `.soroban` (package or legacy flat file), replacing the current
+    /// document. Restore order is types → functions → variables (via
+    /// `restore_session`), then the sheets.
+    pub fn open_from(&mut self, path: &Path) -> Result<(), String> {
+        let workbook = package::read(path).map_err(|error| error.to_string())?;
+        self.load_workbook(workbook);
+        Ok(())
+    }
+
+    /// Reset to an empty single-sheet document (New).
+    pub fn new_workbook(&mut self) {
+        let (calculator, store) = Self::fresh_engine();
+        self.calculator = calculator;
+        self.store = store;
+        self.reset_document_state();
+    }
+
+    /// Rebuild the engine from a decoded workbook and swap it in.
+    fn load_workbook(&mut self, workbook: Workbook) {
+        let (calculator, store) = Self::fresh_engine();
+        restore_session(&mut calculator.borrow_mut(), &workbook);
+        let mut sheets = Vec::new();
+        for payload in &workbook.sheets {
+            let sheet = store.make_sheet(&payload.name);
+            let contents: HashMap<CellAddress, String> = payload
+                .cells
+                .iter()
+                .filter_map(|(key, raw)| CellAddress::from_key(key).map(|a| (a, raw.clone())))
+                .collect();
+            let names: HashMap<CellAddress, String> = payload
+                .names
+                .iter()
+                .filter_map(|(key, name)| CellAddress::from_key(key).map(|a| (a, name.clone())))
+                .collect();
+            sheet.grid.load(&contents);
+            sheet.grid.load_cell_names(names);
+            sheets.push(sheet);
+        }
+        let first = workbook.sheets.first().map(|payload| payload.name.clone());
+        store.replace_sheets(sheets, first.as_deref());
+        self.calculator = calculator;
+        self.store = store;
+        self.reset_document_state();
+    }
+
+    /// Clear the per-document transient state after New/Open (the log tape is a
+    /// global running history, so it's kept).
+    fn reset_document_state(&mut self) {
+        self.undo_stack.clear();
+        self.redo_stack.clear();
+        self.binary = None;
+        self.input.clear();
+        self.history_cursor = None;
     }
 
     /// The active sheet's definition cells of one kind (name + address, sorted

@@ -124,6 +124,21 @@ point of truth for downloads.
   expression (the SpeedCrunch flow). A decimal / negative / too-wide value shows
   why it can't be edited. Uses rime's `bit_grid`. This completes slice ⑤. No
   change to the existing crates or the shared Gherkin suite.
+- Rust ecosystem, Phase 3b slice ⑥ (docs/MIGRATION.md): the **workbook manager**
+  in `rust/gui` — **New / Open / Save** in the top bar (⌘N / ⌘O / ⌘S), backed by
+  native `rfd` file dialogs. Save writes a real `.soroban` document package (the
+  engine `Workbook` codec — cells, names, and log-defined variables / functions /
+  data types / namespaces via `soroban_engine::package`), remembering the file so
+  a re-save skips the panel; Open restores through `restore_session` (types →
+  functions → variables) and rebuilds the grid; New starts a fresh session. The
+  title subtitle names the open document and shows a `•` when the live revision
+  has moved past the last save (a session `revision` counter bumped on every
+  submit / edit / undo / redo). This completes **Phase 3b** — the Rust/iced app
+  now covers the log calculator, the editable grid, controls, formats, named
+  cells, the inspector, the reference window, the binary editor, and workbook
+  save/open. `rust/gui` stays out of the cargo workspace (path-dep on `rime` +
+  iced; build standalone) until Phase 4 wires it into CI. No change to the
+  existing crates or the shared Gherkin suite.
 
 ### Changed
 
