@@ -11,8 +11,10 @@
 
 use crate::cell_address::CellAddress;
 use crate::context::ResolutionContext;
+use crate::reference_rewriter::ReferenceRewriter;
+use crate::reflection::{CellObject, WorksheetObject};
 use crate::spreadsheet::{CellDisplay, Spreadsheet};
-use anzan::{Calculator, EngineError};
+use anzan::{BigDecimal, Calculator, EngineError, Value};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
@@ -52,6 +54,10 @@ pub(crate) struct StoreInner {
     pub(crate) sheets: RefCell<Vec<Rc<Sheet>>>,
     pub(crate) active_index: std::cell::Cell<usize>,
     pub(crate) context: Rc<ResolutionContext>,
+    /// The calculation log, for the `History` reflection API (log-only).
+    /// Set by the host; `None` in the CLI/tests without a log, where
+    /// `History` is simply unknown.
+    pub(crate) log_source: RefCell<Option<Rc<dyn crate::history_reflection::LogSource>>>,
 }
 
 impl StoreInner {
@@ -102,6 +108,273 @@ impl StoreInner {
         }
         self.active_sheet()
     }
+
+    // MARK: Sheet mechanics
+    //
+    // These live on StoreInner (not SheetStore) so the resolver closures —
+    // which capture only a `Weak<StoreInner>` — can mutate the store. The
+    // SheetStore methods of the same names delegate here.
+
+    /// Drops every sheet's memo — a log variable changed, a sheet was
+    /// renamed/removed, or a workbook loaded.
+    pub(crate) fn recalculate(&self) {
+        for sheet in self.sheets.borrow().iter() {
+            sheet.grid.recalculate();
+        }
+    }
+
+    /// A fresh empty sheet built against this store's shared context.
+    pub(crate) fn make_sheet(&self, name: &str) -> Rc<Sheet> {
+        Sheet::new(name, Spreadsheet::new(Rc::clone(&self.context)))
+    }
+
+    fn check_capacity(&self) -> Result<(), EngineError> {
+        if self.sheets.borrow().len() >= SheetStore::MAX_SHEETS {
+            return Err(EngineError::domain(format!(
+                "a workbook holds at most {} sheets",
+                SheetStore::MAX_SHEETS
+            )));
+        }
+        Ok(())
+    }
+
+    /// Adds an empty grid sheet with a specific (validated) name — the
+    /// mutation API's `addWorksheet(name)`.
+    pub(crate) fn add_sheet_named(&self, name: &str) -> Result<Rc<Sheet>, EngineError> {
+        self.check_capacity()?;
+        let validated = self.validated_name(name, None)?;
+        let sheet = self.make_sheet(&validated);
+        self.sheets.borrow_mut().push(Rc::clone(&sheet));
+        Ok(sheet)
+    }
+
+    pub(crate) fn remove_sheet(&self, index: usize) -> Result<(), EngineError> {
+        {
+            let mut sheets = self.sheets.borrow_mut();
+            if sheets.len() <= 1 {
+                return Err(EngineError::domain("a workbook needs at least one sheet"));
+            }
+            if index >= sheets.len() {
+                return Ok(());
+            }
+            sheets.remove(index);
+            let count = sheets.len();
+            self.active_index
+                .set(self.active_index.get().min(count - 1));
+        }
+        self.recalculate(); // formulas referencing the removed sheet error
+        Ok(())
+    }
+
+    pub(crate) fn rename(&self, index: usize, new_name: &str) -> Result<(), EngineError> {
+        {
+            let sheets = self.sheets.borrow();
+            if index >= sheets.len() {
+                return Ok(());
+            }
+            let name = self.validated_name_against(new_name, &sheets, Some(index))?;
+            *sheets[index].name.borrow_mut() = name.clone();
+            sheets[index].grid.set_display_name(Some(name));
+        }
+        self.recalculate(); // references resolve by name
+        Ok(())
+    }
+
+    fn validated_name(&self, name: &str, except: Option<usize>) -> Result<String, EngineError> {
+        let sheets = self.sheets.borrow();
+        self.validated_name_against(name, &sheets, except)
+    }
+
+    /// Trimmed, non-empty, ≤128 chars, unique (case-insensitive), and free
+    /// of the characters that would break the `Sheet!A:1` syntax.
+    fn validated_name_against(
+        &self,
+        name: &str,
+        existing: &[Rc<Sheet>],
+        except: Option<usize>,
+    ) -> Result<String, EngineError> {
+        let trimmed = name.trim();
+        if trimmed.is_empty() {
+            return Err(EngineError::domain("sheet names can't be empty"));
+        }
+        if trimmed.chars().count() > SheetStore::MAX_NAME_LENGTH {
+            return Err(EngineError::domain(format!(
+                "sheet names are limited to {} characters",
+                SheetStore::MAX_NAME_LENGTH
+            )));
+        }
+        if trimmed.contains('!') || trimmed.contains('\'') {
+            return Err(EngineError::domain("sheet names can't contain ! or '"));
+        }
+        for (i, sheet) in existing.iter().enumerate() {
+            if Some(i) == except {
+                continue;
+            }
+            if sheet.name().to_lowercase() == trimmed.to_lowercase() {
+                return Err(EngineError::domain(format!(
+                    "a sheet named '{trimmed}' already exists"
+                )));
+            }
+        }
+        Ok(trimmed.to_string())
+    }
+
+    // MARK: Workbook mutation (the log-only commands' DIRECT default)
+    //
+    // `updateCell` / `addWorksheet` / `renameWorksheet` / `deleteWorksheet`
+    // mutate the store directly — no undo, no journal — which is what the
+    // CLI and headless tests want. An app host may replace the resolver to
+    // make the SAME commands undoable; these are the reference semantics
+    // that override must match. A worksheet TARGET is either a `Worksheet`
+    // handle (`Workbook.worksheets[0]`) or a sheet-name string — both
+    // resolve to an index via `sheet_index_for_target`.
+
+    /// A `Worksheet` handle for the sheet at `index` — the value the
+    /// mutation commands return, built identically by the engine default
+    /// and any host override.
+    pub(crate) fn worksheet_handle(&self, index: usize) -> Value {
+        Value::Host(Rc::new(WorksheetObject {
+            sheet: Rc::downgrade(&self.sheets.borrow()[index]),
+        }))
+    }
+
+    /// The concrete cell handle behind `updateCell`'s first argument.
+    fn cell_object(value: &Value) -> Result<&CellObject, EngineError> {
+        let not_a_cell =
+            || EngineError::domain("updateCell()'s first argument is a cell — e.g. cell(\"A\", 1)");
+        let Value::Host(object) = value else {
+            return Err(not_a_cell());
+        };
+        let any: &dyn std::any::Any = object.as_ref();
+        any.downcast_ref::<CellObject>().ok_or_else(not_a_cell)
+    }
+
+    /// Resolves a CELL handle (`cell("A", 1)` / `…cell("A", 1)`) to the
+    /// index of the sheet it lives on and its address — so a host can write
+    /// it undoably.
+    pub(crate) fn cell_target(&self, value: &Value) -> Result<(usize, CellAddress), EngineError> {
+        let cell = Self::cell_object(value)?;
+        let stale = || EngineError::domain("that cell's sheet is no longer in the workbook");
+        let grid = cell.grid.upgrade().ok_or_else(stale)?;
+        let sheets = self.sheets.borrow();
+        let index = sheets
+            .iter()
+            .position(|s| Rc::ptr_eq(&s.grid, &grid))
+            .ok_or_else(stale)?;
+        Ok((index, cell.address))
+    }
+
+    /// Resolves a worksheet TARGET — a `Worksheet` handle or a name string —
+    /// to its current index in the workbook.
+    pub(crate) fn sheet_index_for_target(&self, value: &Value) -> Result<usize, EngineError> {
+        match value {
+            Value::String(name) => {
+                let needle = name.to_lowercase();
+                self.sheets
+                    .borrow()
+                    .iter()
+                    .position(|s| s.name().to_lowercase() == needle)
+                    .ok_or_else(|| EngineError::domain(format!("unknown sheet '{name}'")))
+            }
+            Value::Host(object) => {
+                let stale = || EngineError::domain("that worksheet is no longer in the workbook");
+                let any: &dyn std::any::Any = object.as_ref();
+                let worksheet = any.downcast_ref::<WorksheetObject>().ok_or_else(stale)?;
+                let sheet = worksheet.sheet.upgrade().ok_or_else(stale)?;
+                self.sheets
+                    .borrow()
+                    .iter()
+                    .position(|s| Rc::ptr_eq(s, &sheet))
+                    .ok_or_else(stale)
+            }
+            other => Err(EngineError::domain(format!(
+                "expected a worksheet or a sheet name, got {}",
+                other.kind_name()
+            ))),
+        }
+    }
+
+    /// Sets a cell's raw contents from a value: a number becomes its
+    /// digits, a string is taken verbatim (so `updateCell(c, "=B:1*2")`
+    /// writes a formula and `updateCell(c, "Total")` a label). An empty
+    /// string clears the cell.
+    fn mutate_update_cell(&self, arguments: &[Value]) -> Result<Value, EngineError> {
+        if arguments.len() != 2 {
+            return Err(EngineError::domain(
+                "updateCell(cell, value) takes a cell and a value",
+            ));
+        }
+        let cell = Self::cell_object(&arguments[0])?;
+        let Some(grid) = cell.grid.upgrade() else {
+            return Err(EngineError::domain(
+                "that cell's sheet is no longer in the workbook",
+            ));
+        };
+        let raw = SheetStore::raw_text_from(&arguments[1])?;
+        grid.set_cell(if raw.is_empty() { None } else { Some(&raw) }, cell.address);
+        self.recalculate(); // set_cell invalidates readers; recalc keeps cross-sheet fresh
+        Ok(arguments[1].clone())
+    }
+
+    /// Adds an empty grid sheet and returns its handle.
+    fn mutate_add_worksheet(&self, arguments: &[Value]) -> Result<Value, EngineError> {
+        let [Value::String(name)] = arguments else {
+            return Err(EngineError::domain("addWorksheet(name) takes a sheet name"));
+        };
+        let sheet = self.add_sheet_named(name)?;
+        self.recalculate(); // a new sheet may satisfy a previously-unknown qualifier
+        Ok(Value::Host(Rc::new(WorksheetObject {
+            sheet: Rc::downgrade(&sheet),
+        })))
+    }
+
+    /// Renames a worksheet AND rewrites every `Old!A:1` / `'Old'!A:1`
+    /// qualifier across all grid sheets — the same auto-rewrite the UI
+    /// rename performs (references are by name; that's why you rename).
+    /// Returns the handle.
+    fn mutate_rename_worksheet(&self, arguments: &[Value]) -> Result<Value, EngineError> {
+        if arguments.len() != 2 {
+            return Err(EngineError::domain(
+                "renameWorksheet(sheet, newName) takes a worksheet (or name) and the new name",
+            ));
+        }
+        let index = self.sheet_index_for_target(&arguments[0])?;
+        let Value::String(new_name) = &arguments[1] else {
+            return Err(EngineError::domain("renameWorksheet()'s new name is text"));
+        };
+        let old_name = self.sheets.borrow()[index].name();
+        self.rename(index, new_name)?; // validates + recalculates
+        let resolved = self.sheets.borrow()[index].name();
+        if old_name != resolved {
+            for sheet in self.sheets.borrow().clone() {
+                for (address, raw) in sheet.grid.raws() {
+                    if let Some(rewritten) =
+                        ReferenceRewriter::renaming_sheet(&raw, &old_name, &resolved)
+                    {
+                        sheet.grid.set_cell(Some(&rewritten), address);
+                    }
+                }
+            }
+            self.recalculate();
+        }
+        Ok(self.worksheet_handle(index))
+    }
+
+    /// Removes a worksheet (refuses the last one) and returns the new
+    /// count. Formulas referencing the removed sheet become "unknown sheet"
+    /// errors, exactly as when a tab is removed in the UI.
+    fn mutate_delete_worksheet(&self, arguments: &[Value]) -> Result<Value, EngineError> {
+        if arguments.len() != 1 {
+            return Err(EngineError::domain(
+                "deleteWorksheet(sheet) takes a worksheet or a sheet name",
+            ));
+        }
+        let index = self.sheet_index_for_target(&arguments[0])?;
+        self.remove_sheet(index)?; // validates (≥1 sheet) + recalculates
+        Ok(Value::Number(BigDecimal::from_int(
+            self.sheets.borrow().len() as i64,
+        )))
+    }
 }
 
 pub struct SheetStore {
@@ -113,12 +386,22 @@ impl SheetStore {
     pub const MAX_SHEETS: usize = 256;
     pub const MAX_NAME_LENGTH: usize = 128;
 
+    /// The mutation command names — the log-only gated set, shared so any
+    /// host override gates exactly the same commands.
+    pub const MUTATION_NAMES: [&'static str; 4] = [
+        "updateCell",
+        "addWorksheet",
+        "renameWorksheet",
+        "deleteWorksheet",
+    ];
+
     pub fn new(calculator: Rc<RefCell<Calculator>>) -> Self {
         let context = ResolutionContext::new();
         let inner = Rc::new(StoreInner {
             sheets: RefCell::new(Vec::new()),
             active_index: std::cell::Cell::new(0),
             context: Rc::clone(&context),
+            log_source: RefCell::new(None),
         });
         inner
             .sheets
@@ -135,6 +418,11 @@ impl SheetStore {
 
     pub fn calculator(&self) -> &Rc<RefCell<Calculator>> {
         &self.calculator
+    }
+
+    /// Attaches the host's log for `History` reflection (log-only).
+    pub fn set_log_source(&self, source: Rc<dyn crate::history_reflection::LogSource>) {
+        *self.inner.log_source.borrow_mut() = Some(source);
     }
 
     fn install_resolvers(&self) {
@@ -207,7 +495,7 @@ impl SheetStore {
         // the flat cell()/sheetName()/sheetNames()/rowCount()/columnCount()
         // accessors. Reflection names are case-sensitive, like data types.
         let weak = Rc::downgrade(&self.inner);
-        calculator.resolvers.host_value = Some(Box::new(move |name, _in_log| {
+        calculator.resolvers.host_value = Some(Box::new(move |name, in_log| {
             let inner = weak.upgrade()?;
             match name {
                 "Workbook" => Some(anzan::Value::Host(Rc::new(
@@ -215,7 +503,13 @@ impl SheetStore {
                         store: Rc::downgrade(&inner),
                     },
                 ))),
-                // `History` is log-only and arrives with the LogSource seam.
+                // `History` is LOG-ONLY: in a cell it stays None and the
+                // name degrades to a text label (unknownVariable → text),
+                // never an error. Unknown too when no host wired a log.
+                "History" if in_log => {
+                    let source = inner.log_source.borrow().as_ref().map(Rc::clone)?;
+                    Some(crate::history_reflection::value_from(&source))
+                }
                 _ => None,
             }
         }));
@@ -288,6 +582,37 @@ impl SheetStore {
                 _ => Ok(None),
             }
         }));
+
+        // The DEFAULT (direct, no-undo) workbook mutation API: `updateCell`
+        // / `addWorksheet` / `renameWorksheet` / `deleteWorksheet`. These
+        // change the workbook, so they run from the LOG only — `in_log` is
+        // false during cell recalc and the resolver throws then (recalc
+        // stays reproducible). Resolved LAST in call resolution, so a
+        // user's own `updateCell(…)` shadows it; an app host may replace
+        // this resolver to make the same commands undoable — this default
+        // is what the CLI and headless tests see.
+        let weak = Rc::downgrade(&self.inner);
+        calculator.resolvers.host_mutation =
+            Some(Box::new(move |_host, name, arguments, in_log| {
+                let Some(inner) = weak.upgrade() else {
+                    return Ok(None);
+                };
+                if !Self::MUTATION_NAMES.contains(&name) {
+                    return Ok(None);
+                }
+                if !in_log {
+                    return Err(EngineError::domain(format!(
+                    "'{name}' changes the workbook — it runs in the calculation log, not a cell"
+                )));
+                }
+                match name {
+                    "updateCell" => inner.mutate_update_cell(arguments).map(Some),
+                    "addWorksheet" => inner.mutate_add_worksheet(arguments).map(Some),
+                    "renameWorksheet" => inner.mutate_rename_worksheet(arguments).map(Some),
+                    "deleteWorksheet" => inner.mutate_delete_worksheet(arguments).map(Some),
+                    _ => Ok(None),
+                }
+            }));
     }
 
     // MARK: Host conveniences (the outermost-borrow entry points)
@@ -334,113 +659,65 @@ impl SheetStore {
 
     /// Adds an auto-named empty grid sheet (the UI's +-button path).
     pub fn add_sheet(&self) -> Result<Rc<Sheet>, EngineError> {
-        self.check_capacity()?;
         let mut n = self.inner.sheets.borrow().len() + 1;
         while self.sheet_named(&format!("Sheet {n}")).is_some() {
             n += 1;
         }
-        let sheet = self.make_sheet(&format!("Sheet {n}"));
-        self.inner.sheets.borrow_mut().push(Rc::clone(&sheet));
-        Ok(sheet)
+        self.inner.add_sheet_named(&format!("Sheet {n}"))
     }
 
     /// Adds an empty grid sheet with a specific (validated) name — the
     /// mutation API's `addWorksheet(name)`.
     pub fn add_sheet_named(&self, name: &str) -> Result<Rc<Sheet>, EngineError> {
-        self.check_capacity()?;
-        let validated = self.validated_name(name, None)?;
-        let sheet = self.make_sheet(&validated);
-        self.inner.sheets.borrow_mut().push(Rc::clone(&sheet));
-        Ok(sheet)
-    }
-
-    fn check_capacity(&self) -> Result<(), EngineError> {
-        if self.inner.sheets.borrow().len() >= Self::MAX_SHEETS {
-            return Err(EngineError::domain(format!(
-                "a workbook holds at most {} sheets",
-                Self::MAX_SHEETS
-            )));
-        }
-        Ok(())
+        self.inner.add_sheet_named(name)
     }
 
     pub fn remove_sheet(&self, index: usize) -> Result<(), EngineError> {
-        {
-            let mut sheets = self.inner.sheets.borrow_mut();
-            if sheets.len() <= 1 {
-                return Err(EngineError::domain("a workbook needs at least one sheet"));
-            }
-            if index >= sheets.len() {
-                return Ok(());
-            }
-            sheets.remove(index);
-            let count = sheets.len();
-            self.inner
-                .active_index
-                .set(self.inner.active_index.get().min(count - 1));
-        }
-        self.recalculate(); // formulas referencing the removed sheet error
-        Ok(())
+        self.inner.remove_sheet(index)
     }
 
     pub fn rename(&self, index: usize, new_name: &str) -> Result<(), EngineError> {
-        {
-            let sheets = self.inner.sheets.borrow();
-            if index >= sheets.len() {
-                return Ok(());
-            }
-            let name = self.validated_name_against(new_name, &sheets, Some(index))?;
-            *sheets[index].name.borrow_mut() = name.clone();
-            sheets[index].grid.set_display_name(Some(name));
-        }
-        self.recalculate(); // references resolve by name
-        Ok(())
-    }
-
-    fn validated_name(&self, name: &str, except: Option<usize>) -> Result<String, EngineError> {
-        let sheets = self.inner.sheets.borrow();
-        self.validated_name_against(name, &sheets, except)
-    }
-
-    /// Trimmed, non-empty, ≤128 chars, unique (case-insensitive), and free
-    /// of the characters that would break the `Sheet!A:1` syntax.
-    fn validated_name_against(
-        &self,
-        name: &str,
-        existing: &[Rc<Sheet>],
-        except: Option<usize>,
-    ) -> Result<String, EngineError> {
-        let trimmed = name.trim();
-        if trimmed.is_empty() {
-            return Err(EngineError::domain("sheet names can't be empty"));
-        }
-        if trimmed.chars().count() > Self::MAX_NAME_LENGTH {
-            return Err(EngineError::domain(format!(
-                "sheet names are limited to {} characters",
-                Self::MAX_NAME_LENGTH
-            )));
-        }
-        if trimmed.contains('!') || trimmed.contains('\'') {
-            return Err(EngineError::domain("sheet names can't contain ! or '"));
-        }
-        for (i, sheet) in existing.iter().enumerate() {
-            if Some(i) == except {
-                continue;
-            }
-            if sheet.name().to_lowercase() == trimmed.to_lowercase() {
-                return Err(EngineError::domain(format!(
-                    "a sheet named '{trimmed}' already exists"
-                )));
-            }
-        }
-        Ok(trimmed.to_string())
+        self.inner.rename(index, new_name)
     }
 
     /// Drops every sheet's memo — a log variable changed, a sheet was
     /// renamed/removed, or a workbook loaded.
     pub fn recalculate(&self) {
-        for sheet in self.inner.sheets.borrow().iter() {
-            sheet.grid.recalculate();
+        self.inner.recalculate();
+    }
+
+    // MARK: Mutation seams (public — a host's undoable override reuses them)
+
+    /// A `Worksheet` handle for the sheet at `index` — the value the
+    /// mutation commands return, built identically by the engine default
+    /// and any host override.
+    pub fn worksheet_handle(&self, index: usize) -> Value {
+        self.inner.worksheet_handle(index)
+    }
+
+    /// Resolves a CELL handle (`cell("A", 1)` / `…cell("A", 1)`) to the
+    /// index of the sheet it lives on and its address — so a host can write
+    /// it undoably.
+    pub fn cell_target(&self, value: &Value) -> Result<(usize, CellAddress), EngineError> {
+        self.inner.cell_target(value)
+    }
+
+    /// Resolves a worksheet TARGET — a `Worksheet` handle or a name string —
+    /// to its current index in the workbook.
+    pub fn sheet_index_for_target(&self, value: &Value) -> Result<usize, EngineError> {
+        self.inner.sheet_index_for_target(value)
+    }
+
+    /// A value as a cell's raw text: numbers become digits, strings are
+    /// verbatim. Structures/functions/handles can't live in a cell.
+    pub fn raw_text_from(value: &Value) -> Result<String, EngineError> {
+        match value {
+            Value::Number(number) => Ok(number.to_string()),
+            Value::String(text) => Ok(text.clone()),
+            other => Err(EngineError::domain(format!(
+                "a cell holds a number or text, not {}",
+                other.kind_name()
+            ))),
         }
     }
 
@@ -459,6 +736,6 @@ impl SheetStore {
     /// A fresh empty sheet built against this store's shared context — for
     /// workbook loading.
     pub fn make_sheet(&self, name: &str) -> Rc<Sheet> {
-        Sheet::new(name, Spreadsheet::new(Rc::clone(&self.inner.context)))
+        self.inner.make_sheet(name)
     }
 }

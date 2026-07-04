@@ -4,6 +4,7 @@
 //! functions are generated live from the environment (Calculator).
 
 use crate::calculator::FunctionDoc;
+use crate::eval::registry::{FunctionCategory, FunctionRegistry};
 
 fn doc(name: &str, signature: &str, summary: &str, examples: &[&str]) -> FunctionDoc {
     FunctionDoc {
@@ -19,6 +20,45 @@ fn doc(name: &str, signature: &str, summary: &str, examples: &[&str]) -> Functio
 pub struct DocCategory {
     pub title: String,
     pub entries: Vec<FunctionDoc>,
+}
+
+/// Every category shown in the reference window — Swift's
+/// `Calculator.builtinDocumentation`: Special Forms first, then each
+/// registry category that has entries (built-ins document themselves at
+/// registration), then the curated Operators & Syntax and Constants pages.
+pub fn builtin_documentation() -> Vec<DocCategory> {
+    let mut categories = vec![DocCategory {
+        title: "Special Forms".to_string(),
+        entries: special_forms(),
+    }];
+    for kind in FunctionCategory::ALL {
+        let entries: Vec<FunctionDoc> = FunctionRegistry::standard()
+            .all()
+            .into_iter()
+            .filter(|f| f.category == kind)
+            .map(|f| FunctionDoc {
+                name: f.name.to_string(),
+                signature: f.signature.to_string(),
+                summary: f.summary.to_string(),
+                examples: f.examples.iter().map(|e| e.to_string()).collect(),
+            })
+            .collect();
+        if !entries.is_empty() {
+            categories.push(DocCategory {
+                title: kind.heading().to_string(),
+                entries,
+            });
+        }
+    }
+    categories.push(DocCategory {
+        title: "Operators & Syntax".to_string(),
+        entries: operators(),
+    });
+    categories.push(DocCategory {
+        title: "Constants".to_string(),
+        entries: constants(),
+    });
+    categories
 }
 
 pub(crate) fn special_forms() -> Vec<FunctionDoc> {

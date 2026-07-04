@@ -25,6 +25,22 @@ point of truth for downloads.
   in Rust), and the `soroban` CLI. The shared Gherkin suite passes 522/522
   in both ecosystems. New `rust-ci.yml` workflow (fmt/clippy/tests on
   Linux + macOS). No app behavior change.
+- Rust ecosystem, Phase 2c (docs/MIGRATION.md): the engine-remainder ports that
+  the shared Gherkin suite doesn't exercise on its own — token-precise
+  reference rewriting (`ReferenceRewriter`: structural shifts, relative
+  fill/paste adjustment, sheet-rename rewriting) and named-cell rewriting
+  (`NamedCells`); the scratch journal (`WorkbookJournal`), document package
+  reader/writer (`WorkbookPackage`), SQLite-backed data store (`DataStore`/
+  `DataSheet`), and CSV codec; the log-only Workbook mutation commands
+  (`updateCell`/`addWorksheet`/`renameWorksheet`/`deleteWorksheet`) with the
+  in-cell refusal, and the structural-edit engine (`StructuralChange` insert/
+  delete rows & columns with exact-inverse undo); the `History` reflection
+  port (real `LogSource`, replacing the stub); the binary bit-editor model
+  (`BinaryView`, bit-field formats, the visual `FormatBuilder`, and the
+  `Bits::BitFormat` presets); and the reference-window documentation assembly.
+  Ported with parity unit/integration suites (typed-error equality, recursion,
+  cross-sheet invalidation, the mortgage workbook end-to-end); Gherkin stays
+  522/522. No app behavior change.
 
 ### Changed
 

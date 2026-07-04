@@ -222,7 +222,11 @@ impl PartialEq for Value {
 /// calls (`.cell("A", 2)`) all route here. The host returns plain `Value`s
 /// (often immutable snapshots), keeping Anzan ignorant of grids/sheets/
 /// files. Default implementations make every capability opt-in.
-pub trait HostObject {
+///
+/// `Any` is a supertrait so hosts can recover their own concrete handles —
+/// the mutation API resolves `updateCell(cell("A", 1), …)`'s first argument
+/// back to a cell target by downcasting (the Swift side's `as? CellObject`).
+pub trait HostObject: std::any::Any {
     /// For `kind_name` / error messages — e.g. "Worksheet".
     fn type_name(&self) -> String;
     /// Canonical display (need not re-parse — host handles aren't literals).

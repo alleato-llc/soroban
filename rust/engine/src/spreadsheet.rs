@@ -481,6 +481,12 @@ impl Spreadsheet {
         self.context.invalidate(self.key(address));
     }
 
+    /// Drops every mid-drag preview at once — no drag survives a structural
+    /// edit, whose reindexing would leave overrides pinned to stale addresses.
+    pub fn clear_all_slider_overrides(&self) {
+        self.slider_overrides.borrow_mut().clear();
+    }
+
     // MARK: Evaluation
 
     /// A cell formula against the live environment — mutation always

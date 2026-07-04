@@ -316,6 +316,40 @@ impl Calculator {
         None
     }
 
+    /// Everything the reference window shows, in display order. Instance
+    /// method because "Your Functions"/"Your Data Types" read the live
+    /// environment; the built-in categories follow.
+    pub fn documentation(&self) -> Vec<crate::documentation::DocCategory> {
+        let mut categories: Vec<crate::documentation::DocCategory> = Vec::new();
+
+        let mut user_functions: Vec<UserFunction> =
+            self.environment.user_functions().into_values().collect();
+        user_functions.sort_by_key(|f| f.name.to_lowercase());
+        if !user_functions.is_empty() {
+            categories.push(crate::documentation::DocCategory {
+                title: "Your Functions".to_string(),
+                entries: user_functions.iter().map(Self::doc_for_user).collect(),
+            });
+        }
+
+        let mut user_data_types: Vec<DataType> = self
+            .environment
+            .user_data_types()
+            .values()
+            .cloned()
+            .collect();
+        user_data_types.sort_by_key(|t| t.name.to_lowercase());
+        if !user_data_types.is_empty() {
+            categories.push(crate::documentation::DocCategory {
+                title: "Your Data Types".to_string(),
+                entries: user_data_types.iter().map(Self::doc_for_type).collect(),
+            });
+        }
+
+        categories.extend(crate::documentation::builtin_documentation());
+        categories
+    }
+
     fn doc_for_user(function: &UserFunction) -> FunctionDoc {
         FunctionDoc {
             name: function.name.clone(),

@@ -17,5 +17,8 @@ stacker = "0.1"
 # Workbook persistence: the .soroban JSON envelope (docs/FORMAT.md).
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# SQLite-backed data sheets (DataStore). `bundled` compiles SQLite in, so CI
+# runners need no system library (Swift links the macOS system SQLite).
+rusqlite = { version = "0.32", features = ["bundled"] }
 cucumber = "0.21"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
