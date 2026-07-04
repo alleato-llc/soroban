@@ -53,6 +53,16 @@ point of truth for downloads.
   workspace/CI build must not touch it; build it standalone with
   `cd rust/gui && cargo build`. Phase 4 moves it into a dedicated CI job. No
   change to the existing crates or the shared Gherkin suite.
+- Rust ecosystem, Phase 3b slice ② (docs/MIGRATION.md): a **read-only
+  spreadsheet grid** in `rust/gui`, sharing the log's engine session — ⌘\
+  toggles between the log and the grid. Cells computed by the engine render
+  through a new rime `grid` widget (numbers right-aligned, labels left,
+  `#ERR`/`λ`/`𝑫`/notes styled from the theme palette), scroll virtualized over
+  the full sheet, with click / shift-click selection. Because the log and grid
+  share one `Calculator` + `SheetStore`, a `updateCell(cell("A",1), …)` typed
+  into the log populates the grid and cell formulas recompute through the
+  dependency graph. Editing lands in a later slice. No change to the existing
+  crates or the shared Gherkin suite.
 
 ### Changed
 

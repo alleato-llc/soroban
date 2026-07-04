@@ -1,26 +1,40 @@
 //! Soroban — the Rust/iced desktop app (docs/MIGRATION.md Phase 3b).
 //!
-//! Slice ①: a working log-view calculator. Type an expression, press Enter,
-//! and the Anzan engine evaluates it into the log; ↑/↓ recall the input
-//! history. The engine and history live in [`session::Session`]; this file is
-//! the iced shell (state → message → update → view) and the rime-styled
-//! rendering. Later slices add the grid, controls, the binary editor, and
-//! workbook save/open.
+//! Slice ①–②: a log-view calculator plus a read-only spreadsheet grid, with
+//! ⌘\ toggling between them. The log and grid share one engine session
+//! ([`session::Session`]) — variables defined in the log are visible in cells,
+//! and `updateCell(…)` from the log populates the grid. This file is the iced
+//! shell (state → message → update → view) and the rime-styled rendering;
+//! later slices add cell editing, controls, the binary editor, and workbook
+//! save/open.
 
 mod session;
 
 use iced::widget::{column, container, row, scrollable, text};
-use iced::{event, keyboard, Element, Event, Font, Length, Subscription, Theme};
+use iced::{event, keyboard, Element, Event, Font, Length, Subscription, Theme, Vector};
 use rime::theme::{self, ThemeChoice};
-use rime::widgets::{button, card, header_row, section, text_field};
-use session::{Outcome, Session};
+use rime::widgets::{
+    button, card, grid, header_row, section, text_field, CellAlign, GridCell, GridSelection,
+};
+use session::{Outcome, Session, GRID_COLS, GRID_ROWS};
+use soroban_engine::CellDisplay;
 
 const MONO: Font = Font::MONOSPACE;
+
+#[derive(Default, PartialEq, Eq, Clone, Copy)]
+enum ViewMode {
+    #[default]
+    Log,
+    Grid,
+}
 
 #[derive(Default)]
 struct App {
     session: Session,
     choice: ThemeChoice,
+    mode: ViewMode,
+    grid_offset: Vector,
+    grid_selection: Option<GridSelection>,
 }
 
 #[derive(Debug, Clone)]
@@ -30,6 +44,9 @@ enum Message {
     HistoryPrevious,
     HistoryNext,
     ToggleTheme,
+    ToggleView,
+    GridScrolled(Vector),
+    GridSelected(usize, usize, bool),
 }
 
 impl App {
@@ -37,9 +54,29 @@ impl App {
         match message {
             Message::InputChanged(text) => self.session.set_input(text),
             Message::Submit => self.session.submit(),
-            Message::HistoryPrevious => self.session.recall_previous(),
-            Message::HistoryNext => self.session.recall_next(),
+            // ↑/↓ recall history only in the log; the grid owns its own keys.
+            Message::HistoryPrevious if self.mode == ViewMode::Log => {
+                self.session.recall_previous()
+            }
+            Message::HistoryNext if self.mode == ViewMode::Log => self.session.recall_next(),
+            Message::HistoryPrevious | Message::HistoryNext => {}
             Message::ToggleTheme => self.choice = self.choice.toggled(),
+            Message::ToggleView => {
+                self.mode = match self.mode {
+                    ViewMode::Log => ViewMode::Grid,
+                    ViewMode::Grid => ViewMode::Log,
+                }
+            }
+            Message::GridScrolled(offset) => self.grid_offset = offset,
+            Message::GridSelected(row, col, extend) => {
+                self.grid_selection = Some(match (extend, self.grid_selection) {
+                    (true, Some(current)) => GridSelection {
+                        anchor: current.anchor,
+                        extent: (row, col),
+                    },
+                    _ => GridSelection::cell(row, col),
+                });
+            }
         }
     }
 
@@ -47,8 +84,7 @@ impl App {
         self.choice.theme()
     }
 
-    /// ↑/↓ drive input-history recall. A single-line input ignores them, so
-    /// capturing them globally is safe (the input is the only field).
+    /// ↑/↓ recall input history; ⌘\ toggles the log/grid view.
     fn subscription(&self) -> Subscription<Message> {
         event::listen_with(|event, _status, _window| match event {
             Event::Keyboard(keyboard::Event::KeyPressed {
@@ -59,6 +95,11 @@ impl App {
                 key: keyboard::Key::Named(keyboard::key::Named::ArrowDown),
                 ..
             }) => Some(Message::HistoryNext),
+            Event::Keyboard(keyboard::Event::KeyPressed {
+                key: keyboard::Key::Character(character),
+                modifiers,
+                ..
+            }) if modifiers.command() && character.as_str() == "\\" => Some(Message::ToggleView),
             _ => None,
         })
     }
@@ -68,11 +109,39 @@ impl App {
         let palette = theme::tokens();
 
         let theme_label = if matches!(self.choice, ThemeChoice::Dark) {
-            "☀ Light"
+            "☀"
         } else {
-            "☾ Dark"
+            "☾"
+        };
+        let toggle_label = match self.mode {
+            ViewMode::Log => "Grid  ⌘\\",
+            ViewMode::Grid => "Log  ⌘\\",
+        };
+        let top_bar = row![
+            container(header_row(
+                "Soroban",
+                "Anzan — exact calculation (50 significant digits)"
+            ))
+            .width(Length::Fill),
+            button::secondary(toggle_label, Message::ToggleView),
+            button::ghost(theme_label, Message::ToggleTheme),
+        ]
+        .spacing(8)
+        .align_y(iced::Alignment::Center);
+
+        let body = match self.mode {
+            ViewMode::Log => self.log_view(&palette),
+            ViewMode::Grid => self.grid_view(&palette),
         };
 
+        container(card(column![top_bar, body].spacing(16)))
+            .padding(20)
+            .center_x(Length::Fill)
+            .height(Length::Fill)
+            .into()
+    }
+
+    fn log_view(&self, palette: &theme::Palette) -> Element<'_, Message> {
         let input_bar = row![
             text_field(
                 "Type an expression — try 0.1 + 0.2",
@@ -82,14 +151,13 @@ impl App {
             .on_submit(Message::Submit)
             .font(MONO),
             button::primary("=", Message::Submit),
-            button::ghost(theme_label, Message::ToggleTheme),
         ]
         .spacing(8);
 
         // The log, newest first so the latest result sits right under the input.
         let log: Element<'_, Message> = if self.session.entries().is_empty() {
             container(
-                text("Results appear here. ↑/↓ recall what you typed.")
+                text("Results appear here. ↑/↓ recall what you typed; ⌘\\ shows the grid.")
                     .size(13)
                     .color(palette.muted),
             )
@@ -98,31 +166,59 @@ impl App {
         } else {
             let mut items = column![].spacing(12);
             for entry in self.session.entries().iter().rev() {
-                items = items.push(entry_view(&entry.input, &entry.outcome, &palette));
+                items = items.push(entry_view(&entry.input, &entry.outcome, palette));
             }
             scrollable(items.padding([4, 8]))
                 .height(Length::Fill)
                 .into()
         };
 
-        let body = card(
-            column![
-                header_row(
-                    "Soroban",
-                    "Anzan — exact calculation (50 significant digits)"
-                ),
-                input_bar,
-                section("Log"),
-                log,
-            ]
-            .spacing(16),
-        );
+        column![input_bar, section("Log"), log].spacing(16).into()
+    }
 
-        container(body)
-            .padding(20)
-            .center_x(Length::Fill)
-            .height(Length::Fill)
-            .into()
+    fn grid_view(&self, palette: &theme::Palette) -> Element<'_, Message> {
+        let palette = *palette;
+        let session = &self.session;
+        let sheet = grid(GRID_ROWS, GRID_COLS, move |row, col| {
+            map_cell(session.cell_display(row, col), &palette)
+        })
+        .offset(self.grid_offset)
+        .selection(self.grid_selection)
+        .on_scroll(Message::GridScrolled)
+        .on_select(Message::GridSelected);
+
+        column![
+            section(&format!(
+                "Grid — {} (read-only)",
+                self.session.active_sheet_name()
+            )),
+            container(sheet).height(Length::Fill),
+        ]
+        .spacing(16)
+        .into()
+    }
+}
+
+/// Map a computed cell to a rime grid cell: numbers right-align, labels
+/// left-align, errors show `#ERR` in the danger color, definitions/notes get
+/// their glyph text.
+fn map_cell(display: CellDisplay, palette: &theme::Palette) -> GridCell {
+    match display {
+        CellDisplay::Empty => GridCell::default(),
+        CellDisplay::Text(label) => GridCell::new(label),
+        CellDisplay::Value(number) => GridCell::right(number.to_string()),
+        CellDisplay::Error(_) => GridCell::new("#ERR")
+            .align(CellAlign::Center)
+            .text_color(palette.danger),
+        CellDisplay::Definition(glyph) => GridCell::new(glyph).text_color(palette.accent),
+        CellDisplay::Note(note) => GridCell::new(note).text_color(palette.muted),
+        CellDisplay::Slider(info) | CellDisplay::Stepper(info) => {
+            GridCell::right(info.value.to_string())
+        }
+        CellDisplay::Checkbox(info) => {
+            GridCell::new(if info.is_on { "true" } else { "false" }).align(CellAlign::Center)
+        }
+        CellDisplay::Dropdown(info) => GridCell::new(info.value.display_description()),
     }
 }
 
@@ -190,6 +286,6 @@ fn main() -> iced::Result {
         .title("Soroban")
         .theme(App::theme)
         .subscription(App::subscription)
-        .window_size(iced::Size::new(720.0, 560.0))
+        .window_size(iced::Size::new(760.0, 600.0))
         .run()
 }

@@ -1,10 +1,19 @@
 //! The calculator session — the engine-facing half of the app, kept free of
-//! any iced/rendering concern. It owns the [`Calculator`] (variables, `ans`,
-//! user functions), the log tape, and the ↑/↓ input history. This is the Rust
-//! counterpart to the Swift app's `CalculatorSession`; the iced `State` in
-//! `main.rs` is a thin shell over it.
+//! any iced/rendering concern. It owns the shared [`Calculator`] (variables,
+//! `ans`, user functions), the [`SheetStore`] wired to it (so log lines can
+//! reference cells and mutate the grid), the log tape, and the ↑/↓ input
+//! history. The Rust counterpart to the Swift app's `CalculatorSession`; the
+//! iced `State` in `main.rs` is a thin shell over it.
 
-use soroban_engine::{Calculator, EvalOutcome};
+use soroban_engine::{
+    Calculator, CellAddress, CellDisplay, EvalOutcome, Sheet, SheetStore, Spreadsheet,
+};
+use std::cell::RefCell;
+use std::rc::Rc;
+
+/// The grid's fixed logical size (the engine's sheet bounds).
+pub const GRID_ROWS: usize = Spreadsheet::ROW_COUNT;
+pub const GRID_COLS: usize = Spreadsheet::COLUMN_COUNT;
 
 /// One line of the log: what was typed and what it produced.
 pub struct LogEntry {
@@ -35,7 +44,8 @@ pub enum Outcome {
 }
 
 pub struct Session {
-    calculator: Calculator,
+    calculator: Rc<RefCell<Calculator>>,
+    store: SheetStore,
     entries: Vec<LogEntry>,
     input: String,
     /// Submitted lines, oldest first — the ↑/↓ recall tape.
@@ -47,14 +57,21 @@ pub struct Session {
 
 impl Session {
     pub fn new() -> Self {
+        // The log and the grid share one calculator: variables defined in the
+        // log are visible in cells, and cell references resolve from the log.
+        let calculator = Rc::new(RefCell::new(Calculator::new()));
+        let store = SheetStore::new(Rc::clone(&calculator));
         Self {
-            calculator: Calculator::new(),
+            calculator,
+            store,
             entries: Vec::new(),
             input: String::new(),
             history: Vec::new(),
             history_cursor: None,
         }
     }
+
+    // MARK: Log
 
     pub fn entries(&self) -> &[LogEntry] {
         &self.entries
@@ -90,8 +107,9 @@ impl Session {
         self.history_cursor = None;
     }
 
-    fn evaluate(&mut self, line: &str) -> Outcome {
-        match self.calculator.evaluate(line) {
+    fn evaluate(&self, line: &str) -> Outcome {
+        let result = self.calculator.borrow_mut().evaluate(line);
+        match result {
             Ok(outcome) => {
                 // Multi-line results (pretty JSON, man pages) render raw.
                 if let Some(block) = outcome.raw_block() {
@@ -142,6 +160,23 @@ impl Session {
             }
             None => {}
         }
+    }
+
+    // MARK: Grid (read-only in slice ②)
+
+    /// The active sheet's name — shown on the grid tab.
+    pub fn active_sheet_name(&self) -> String {
+        self.store.active_sheet().name()
+    }
+
+    /// How one cell computes right now. Reads route through the ordinary
+    /// dependency-tracked path, so this reflects the live values. Uses
+    /// interior mutability, hence `&self`. (The grid is read-only in this
+    /// slice; cells are populated from the log via `updateCell(…)`.)
+    pub fn cell_display(&self, row: usize, col: usize) -> CellDisplay {
+        let sheet: Rc<Sheet> = self.store.active_sheet();
+        self.store
+            .display_value_on(&sheet, CellAddress::new(col, row))
     }
 }
 
