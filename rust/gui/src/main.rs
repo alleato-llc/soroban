@@ -8,9 +8,10 @@
 //! reference when you click it mid-formula, a control strip drives the
 //! selected cell's slider / stepper / checkbox / dropdown, a format bar sets
 //! its number format, alignment, and colors, a name box names its location
-//! (`'Rate'`), and a Names inspector sidebar lists every live name. This file
-//! is the iced shell (state → message → update → view) and the rime-styled
-//! rendering; later slices add the binary editor and workbook save/open.
+//! (`'Rate'`), a Names inspector sidebar lists every live name, and a
+//! searchable Reference sidebar documents every function. This file is the iced
+//! shell (state → message → update → view) and the rime-styled rendering;
+//! later slices add the binary editor and workbook save/open.
 
 mod session;
 
@@ -60,6 +61,9 @@ struct App {
     editing: bool,
     /// Whether the names inspector sidebar is showing.
     inspector_visible: bool,
+    /// Whether the reference (docs) sidebar is showing, and its search query.
+    reference_visible: bool,
+    reference_query: String,
 }
 
 #[derive(Debug, Clone)]
@@ -88,6 +92,8 @@ enum Message {
     NameChanged(String),
     NameCommitted,
     ToggleInspector,
+    ToggleReference,
+    ReferenceQueryChanged(String),
 }
 
 impl App {
@@ -181,6 +187,8 @@ impl App {
                 }
             }
             Message::ToggleInspector => self.inspector_visible = !self.inspector_visible,
+            Message::ToggleReference => self.reference_visible = !self.reference_visible,
+            Message::ReferenceQueryChanged(text) => self.reference_query = text,
         }
         Task::none()
     }
@@ -309,6 +317,7 @@ impl App {
             .width(Length::Fill),
             button::secondary(toggle_label, Message::ToggleView),
             button::ghost("Names", Message::ToggleInspector),
+            button::ghost("Reference", Message::ToggleReference),
             button::ghost(theme_label, Message::ToggleTheme),
         ]
         .spacing(8)
@@ -324,13 +333,61 @@ impl App {
             .center_x(Length::Fill)
             .height(Length::Fill);
 
-        if self.inspector_visible {
-            row![main.width(Length::Fill), self.inspector_panel(&palette)]
-                .height(Length::Fill)
-                .into()
-        } else {
-            main.into()
+        if !self.inspector_visible && !self.reference_visible {
+            return main.into();
         }
+        let mut panels = row![main.width(Length::Fill)].height(Length::Fill);
+        if self.inspector_visible {
+            panels = panels.push(self.inspector_panel(&palette));
+        }
+        if self.reference_visible {
+            panels = panels.push(self.reference_panel(&palette));
+        }
+        panels.into()
+    }
+
+    /// The reference window: every function, operator, and constant — the
+    /// user's own first — with a live search filter.
+    fn reference_panel(&self, palette: &theme::Palette) -> Element<'_, Message> {
+        let search = text_field(
+            "Search the reference…",
+            &self.reference_query,
+            Message::ReferenceQueryChanged,
+        );
+        let mut list = column![].spacing(14);
+        let groups = self.session.reference(&self.reference_query);
+        if groups.is_empty() {
+            list = list.push(text("No matches.").size(12).color(palette.muted));
+        }
+        for group in groups {
+            let mut group_column = column![section(&group.title)].spacing(8);
+            for entry in group.entries {
+                group_column = group_column.push(
+                    column![
+                        text(entry.signature)
+                            .font(MONO)
+                            .size(12)
+                            .color(palette.accent),
+                        text(entry.summary).size(11).color(palette.muted),
+                    ]
+                    .spacing(2),
+                );
+            }
+            list = list.push(group_column);
+        }
+
+        container(card(
+            column![
+                text("Reference").size(15).color(palette.ink),
+                search,
+                scrollable(list).height(Length::Fill),
+            ]
+            .spacing(12),
+        ))
+        .width(Length::Fixed(320.0))
+        .padding(20)
+        .height(Length::Fill)
+        .into()
     }
 
     /// The names inspector: every live variable, named cell, function, and data

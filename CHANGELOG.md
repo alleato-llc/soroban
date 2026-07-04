@@ -109,6 +109,13 @@ point of truth for downloads.
   grouped and sorted, read-only. The Rust port of the Swift `InspectorView`'s
   two-source (log + sheet) merge. No change to the existing crates or the
   shared Gherkin suite.
+- Rust ecosystem, Phase 3b slice ⑤, part 2 (docs/MIGRATION.md): the **reference
+  window** in `rust/gui`. A "Reference" toggle opens a searchable docs sidebar
+  from `Calculator::documentation()` — the user's own functions and data types
+  first (with their `# comment` docs), then Special Forms and every registry
+  category, each entry showing signature + summary. A search field filters by
+  signature/summary live. No change to the existing crates or the shared
+  Gherkin suite.
 
 ### Changed
 

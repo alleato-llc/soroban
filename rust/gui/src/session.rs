@@ -21,6 +21,19 @@ pub struct InspectorRow {
     pub detail: String,
 }
 
+/// One reference-window entry: a function/operator signature and its summary.
+pub struct DocEntry {
+    pub signature: String,
+    pub summary: String,
+}
+
+/// A titled group of reference entries (Special Forms, a registry category,
+/// Operators, Constants, or the user's own functions/types).
+pub struct DocGroup {
+    pub title: String,
+    pub entries: Vec<DocEntry>,
+}
+
 /// The grid's fixed logical size (the engine's sheet bounds).
 pub const GRID_ROWS: usize = Spreadsheet::ROW_COUNT;
 pub const GRID_COLS: usize = Spreadsheet::COLUMN_COUNT;
@@ -511,6 +524,41 @@ impl Session {
         }
         sort_rows(&mut rows);
         rows
+    }
+
+    // MARK: Reference window (slice ⑤)
+
+    /// The reference documentation, filtered by `query` (matched against each
+    /// entry's signature and summary, case-insensitively). Empty query returns
+    /// everything; categories with no surviving entries are dropped. Includes
+    /// the user's own functions and data types first (via `Calculator`).
+    pub fn reference(&self, query: &str) -> Vec<DocGroup> {
+        let needle = query.trim().to_lowercase();
+        self.calculator
+            .borrow()
+            .documentation()
+            .into_iter()
+            .filter_map(|category| {
+                let entries: Vec<DocEntry> = category
+                    .entries
+                    .into_iter()
+                    .filter(|entry| {
+                        needle.is_empty()
+                            || entry.name.to_lowercase().contains(&needle)
+                            || entry.signature.to_lowercase().contains(&needle)
+                            || entry.summary.to_lowercase().contains(&needle)
+                    })
+                    .map(|entry| DocEntry {
+                        signature: entry.signature,
+                        summary: entry.summary,
+                    })
+                    .collect();
+                (!entries.is_empty()).then_some(DocGroup {
+                    title: category.title,
+                    entries,
+                })
+            })
+            .collect()
     }
 
     /// The active sheet's definition cells of one kind (name + address, sorted
