@@ -316,6 +316,28 @@ impl Session {
         self.store.active_sheet().grid.raw(address)
     }
 
+    /// Per-column widths for the active sheet, as a full `GRID_COLS`-length
+    /// vector the grid indexes directly. Unset columns report `0.0`, which the
+    /// grid reads as "use the default width".
+    pub fn column_widths(&self) -> Vec<f32> {
+        let sheet = self.store.active_sheet();
+        let widths = sheet.column_widths.borrow();
+        (0..GRID_COLS)
+            .map(|col| widths.get(&col).copied().unwrap_or(0.0) as f32)
+            .collect()
+    }
+
+    /// Set a column's width on the active sheet. Display-only (it never touches
+    /// the dependency graph), but it dirties the document so the size is saved.
+    pub fn set_column_width(&mut self, col: usize, width: f32) {
+        self.store
+            .active_sheet()
+            .column_widths
+            .borrow_mut()
+            .insert(col, width as f64);
+        self.revision += 1;
+    }
+
     /// Would a leading operator complete this draft? True means the draft
     /// "expects an operand", so a cell click inserts a reference (point mode)
     /// rather than committing. Mirrors the Swift `Calculator.expectsOperand`.
@@ -335,6 +357,70 @@ impl Session {
             old,
             new: raw.to_string(),
         }]);
+    }
+
+    /// TSV of the raw cell contents in the inclusive `(r0..=r1, c0..=c1)` rect —
+    /// rows on `\n`, cells on `\t` (Excel/Numbers interchange). For copy/cut.
+    pub fn selection_tsv(&self, r0: usize, r1: usize, c0: usize, c1: usize) -> String {
+        (r0..=r1)
+            .map(|row| {
+                (c0..=c1)
+                    .map(|col| self.cell_raw(CellAddress::new(col, row)))
+                    .collect::<Vec<_>>()
+                    .join("\t")
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// Clear every cell in the inclusive rect as one undoable edit (cut).
+    pub fn clear_range(&mut self, r0: usize, r1: usize, c0: usize, c1: usize) {
+        let mut changes = Vec::new();
+        for row in r0..=r1 {
+            for col in c0..=c1 {
+                let address = CellAddress::new(col, row);
+                let old = self.cell_raw(address);
+                if !old.is_empty() {
+                    changes.push(CellChange {
+                        address,
+                        old,
+                        new: String::new(),
+                    });
+                }
+            }
+        }
+        if !changes.is_empty() {
+            self.apply_edit(changes);
+        }
+    }
+
+    /// Write a TSV block with its top-left at `anchor`, clipped to the grid, as
+    /// one undoable edit. Rows split on `\n` (trailing `\r` tolerated), cells on
+    /// `\t` — the inverse of [`Self::selection_tsv`], and Excel/Numbers-pasteable.
+    pub fn paste_tsv(&mut self, anchor: CellAddress, tsv: &str) {
+        let mut changes = Vec::new();
+        for (drow, line) in tsv.split('\n').enumerate() {
+            let line = line.strip_suffix('\r').unwrap_or(line);
+            for (dcol, field) in line.split('\t').enumerate() {
+                let row = anchor.row + drow;
+                let col = anchor.column + dcol;
+                if row >= GRID_ROWS || col >= GRID_COLS {
+                    continue;
+                }
+                let address = CellAddress::new(col, row);
+                let old = self.cell_raw(address);
+                if old != field {
+                    changes.push(CellChange {
+                        address,
+                        old,
+                        new: field.to_string(),
+                    });
+                }
+            }
+        }
+        if !changes.is_empty() {
+            self.apply_edit(changes);
+        }
     }
 
     /// Apply a group of cell changes as one undo step (route every mutation
@@ -716,6 +802,12 @@ impl Session {
                     .into_iter()
                     .map(|(address, name)| (address.to_string(), name))
                     .collect();
+                payload.column_widths = sheet
+                    .column_widths
+                    .borrow()
+                    .iter()
+                    .map(|(col, width)| (CellAddress::column_name_for(*col), *width))
+                    .collect();
                 payload
             })
             .collect();
@@ -781,6 +873,13 @@ impl Session {
                 .collect();
             sheet.grid.load(&contents);
             sheet.grid.load_cell_names(names);
+            *sheet.column_widths.borrow_mut() = payload
+                .column_widths
+                .iter()
+                .filter_map(|(name, width)| {
+                    CellAddress::column_index(name).map(|col| (col, *width))
+                })
+                .collect();
             sheets.push(sheet);
         }
         let first = workbook.sheets.first().map(|payload| payload.name.clone());

@@ -188,6 +188,23 @@ point of truth for downloads.
   is gone. A new `Session::control_cells()` enumerates them by scanning only the
   sheet's occupied cells. Requires rime with grid overlay support (path dep). No
   engine or session behavior change.
+- Rust ecosystem, Phase 3b — **grid usability gaps** in `rust/gui`, closing the
+  last interaction differences from the AppKit grid:
+  - **Keyboard navigation.** Arrow keys move the selection (Shift-arrow extends
+    it), Enter/type-to-edit opens the inline editor (a printable key seeds it),
+    Enter commits and advances down (Excel-style), Esc cancels. Grid-only keys
+    are gated on `mode == Grid && !editing` so a focused editor keeps its own
+    keys (iced gives no focus query); the clamping lives in a pure
+    `next_selection` (unit-tested).
+  - **Copy / cut / paste.** ⌘C/⌘X copy the selection as TSV (Excel/Numbers
+    interop) via `Session::selection_tsv`; ⌘V pastes clipboard TSV from the
+    anchor, clipped to the grid, as one undoable edit (`paste_tsv`); cut also
+    clears the source range.
+  - **Column-width resize.** Drag a column's right border in the header strip to
+    resize it (↔ cursor, 24px minimum); widths persist per sheet in the workbook.
+    Built on rime's new `grid` per-column widths + `.on_resize_column`.
+  Requires rime with the per-column-width grid + public `Selection::bounds()`
+  (path dependency). No engine behavior change.
 
 ### Changed
 

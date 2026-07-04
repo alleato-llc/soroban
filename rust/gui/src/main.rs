@@ -96,16 +96,24 @@ struct App {
 enum Message {
     InputChanged(String),
     Submit,
-    HistoryPrevious,
-    HistoryNext,
+    /// An arrow key: (Δrow, Δcol, extend-selection). Routes by view — history
+    /// recall in the log, cell-selection movement in the grid.
+    ArrowKey(i32, i32, bool),
     ToggleTheme,
     ToggleView,
     GridScrolled(Vector),
     GridSelected(usize, usize, bool),
+    /// A column-header border was dragged: (column, new width in px).
+    ColumnResized(usize, f32),
     EditChanged(String),
-    EditCommitted,
+    EditSubmitted,
     EditCanceled,
     EditActivated(usize, usize),
+    /// Enter pressed in the grid with no editor open — start editing the cell.
+    GridEnter,
+    /// A printable character typed in the grid with no editor open — start
+    /// editing the cell seeded with that character (type-to-edit).
+    GridType(String),
     Undo,
     Redo,
     SliderChanged(CellAddress, f32),
@@ -128,6 +136,12 @@ enum Message {
     OpenWorkbook,
     SaveWorkbook,
     PointerMoved(f32),
+    /// Copy / cut / paste the selection as TSV via the system clipboard.
+    Copy,
+    Cut,
+    Paste,
+    /// The clipboard contents arrived (from a Paste) — write them at the anchor.
+    Pasted(Option<String>),
     /// Jump to a cell from an inspector provenance tag (select it, show the grid).
     JumpTo(CellAddress),
     /// Insert a sample expression from the empty-state into the log input.
@@ -147,12 +161,22 @@ impl App {
                     self.session.refresh_binary();
                 }
             }
-            // ↑/↓ recall history only in the log; the grid owns its own keys.
-            Message::HistoryPrevious if self.mode == ViewMode::Log => {
-                self.session.recall_previous()
-            }
-            Message::HistoryNext if self.mode == ViewMode::Log => self.session.recall_next(),
-            Message::HistoryPrevious | Message::HistoryNext => {}
+            // Arrows: history recall in the log (↑/↓ only); cell navigation in the
+            // grid (when not editing — an open editor owns its own arrows).
+            Message::ArrowKey(drow, dcol, extend) => match self.mode {
+                ViewMode::Log => {
+                    if drow < 0 {
+                        self.session.recall_previous();
+                    } else if drow > 0 {
+                        self.session.recall_next();
+                    }
+                }
+                ViewMode::Grid => {
+                    if !self.editing {
+                        self.move_selection(drow, dcol, extend);
+                    }
+                }
+            },
             Message::ToggleTheme => self.choice = self.choice.toggled(),
             Message::ToggleView => {
                 self.mode = match self.mode {
@@ -164,11 +188,16 @@ impl App {
             Message::GridSelected(row, col, extend) => {
                 return self.select_or_point(row, col, extend)
             }
+            Message::ColumnResized(col, width) => self.session.set_column_width(col, width),
             Message::EditChanged(text) => {
                 self.edit_draft = text;
                 self.editing = true;
             }
-            Message::EditCommitted => self.commit_edit(),
+            // Enter in the editor: commit, then advance the selection down (Excel).
+            Message::EditSubmitted => {
+                self.commit_edit();
+                self.move_selection(1, 0, false);
+            }
             Message::EditCanceled => {
                 self.editing = false;
                 self.load_draft();
@@ -180,6 +209,21 @@ impl App {
                 self.load_draft();
                 self.editing = true;
                 return operation::focus(grid_editor_id());
+            }
+            // Enter with no editor open → start editing the selected cell.
+            Message::GridEnter => {
+                if self.mode == ViewMode::Grid && !self.editing && self.active_cell().is_some() {
+                    self.editing = true;
+                    return operation::focus(grid_editor_id());
+                }
+            }
+            // Type-to-edit: a character with no editor open seeds a fresh edit.
+            Message::GridType(text) => {
+                if self.mode == ViewMode::Grid && !self.editing && self.active_cell().is_some() {
+                    self.edit_draft = text;
+                    self.editing = true;
+                    return operation::focus(grid_editor_id());
+                }
             }
             Message::Undo => {
                 self.session.undo();
@@ -279,6 +323,36 @@ impl App {
                     }
                 }
             }
+            // Copy / cut / paste the grid selection as TSV (Excel-interop). Only
+            // in the grid — in the log, ⌘C/⌘V fall through to normal text copy.
+            Message::Copy => {
+                if self.mode == ViewMode::Grid {
+                    if let Some((r0, r1, c0, c1)) = self.selection_bounds() {
+                        return iced::clipboard::write(self.session.selection_tsv(r0, r1, c0, c1));
+                    }
+                }
+            }
+            Message::Cut => {
+                if self.mode == ViewMode::Grid {
+                    if let Some((r0, r1, c0, c1)) = self.selection_bounds() {
+                        let tsv = self.session.selection_tsv(r0, r1, c0, c1);
+                        self.session.clear_range(r0, r1, c0, c1);
+                        self.load_draft();
+                        return iced::clipboard::write(tsv);
+                    }
+                }
+            }
+            Message::Paste => {
+                if self.mode == ViewMode::Grid && !self.editing && self.active_cell().is_some() {
+                    return iced::clipboard::read().map(Message::Pasted);
+                }
+            }
+            Message::Pasted(contents) => {
+                if let (Some(text), Some(anchor)) = (contents, self.active_cell()) {
+                    self.session.paste_tsv(anchor, &text);
+                    self.load_draft();
+                }
+            }
             // Reveal the action strip at the top edge; a wider keep-band than the
             // trigger (hysteresis) stops it flickering as the pointer hovers it.
             Message::PointerMoved(y) => {
@@ -323,6 +397,11 @@ impl App {
             edit(&mut format);
             self.session.apply_format(address, format);
         }
+    }
+
+    /// The selection's inclusive `(r0, r1, c0, c1)` rect, corners normalized.
+    fn selection_bounds(&self) -> Option<(usize, usize, usize, usize)> {
+        self.grid_selection.map(|selection| selection.bounds())
     }
 
     /// The active (anchor) cell — where the edit bar reads and writes.
@@ -385,37 +464,64 @@ impl App {
         Task::none()
     }
 
+    /// Move the grid selection by `(drow, dcol)`, clamped to the grid. With
+    /// `extend`, the anchor holds and the opposite corner moves (shift-arrow);
+    /// otherwise it's a plain single-cell move that reloads the edit draft.
+    fn move_selection(&mut self, drow: i32, dcol: i32, extend: bool) {
+        let current = self.grid_selection.unwrap_or_else(|| GridSelection::cell(0, 0));
+        self.grid_selection = Some(next_selection(current, drow, dcol, extend));
+        if !extend {
+            self.load_draft();
+        }
+    }
+
     fn theme(&self) -> Theme {
         self.choice.theme()
     }
 
-    /// ↑/↓ recall input history; ⌘\ toggles the view; ⌘Z / ⇧⌘Z undo & redo;
-    /// Escape cancels an in-progress cell edit.
+    /// Arrows navigate (history in the log, cells in the grid); Enter edits the
+    /// selected cell, a bare character type-to-edits; ⌘\ toggles the view; ⌘Z /
+    /// ⇧⌘Z undo & redo; ⌘C/⌘X/⌘V copy/cut/paste; Escape cancels an edit. The
+    /// grid-only messages are gated in `update` (they no-op while editing / in
+    /// the log), so a focused editor keeps its own keys.
     fn subscription(&self) -> Subscription<Message> {
+        use keyboard::key::Named;
         let keys = event::listen_with(|event, _status, _window| match event {
-            Event::Keyboard(keyboard::Event::KeyPressed {
-                key: keyboard::Key::Named(keyboard::key::Named::ArrowUp),
-                ..
-            }) => Some(Message::HistoryPrevious),
-            Event::Keyboard(keyboard::Event::KeyPressed {
-                key: keyboard::Key::Named(keyboard::key::Named::ArrowDown),
-                ..
-            }) => Some(Message::HistoryNext),
-            Event::Keyboard(keyboard::Event::KeyPressed {
-                key: keyboard::Key::Named(keyboard::key::Named::Escape),
-                ..
-            }) => Some(Message::EditCanceled),
-            Event::Keyboard(keyboard::Event::KeyPressed {
-                key: keyboard::Key::Character(character),
-                modifiers,
-                ..
-            }) if modifiers.command() => match character.as_str() {
-                "\\" => Some(Message::ToggleView),
-                "z" | "Z" if modifiers.shift() => Some(Message::Redo),
-                "z" | "Z" => Some(Message::Undo),
-                "n" | "N" => Some(Message::NewWorkbook),
-                "o" | "O" => Some(Message::OpenWorkbook),
-                "s" | "S" => Some(Message::SaveWorkbook),
+            Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => match key {
+                keyboard::Key::Named(Named::ArrowUp) => {
+                    Some(Message::ArrowKey(-1, 0, modifiers.shift()))
+                }
+                keyboard::Key::Named(Named::ArrowDown) => {
+                    Some(Message::ArrowKey(1, 0, modifiers.shift()))
+                }
+                keyboard::Key::Named(Named::ArrowLeft) => {
+                    Some(Message::ArrowKey(0, -1, modifiers.shift()))
+                }
+                keyboard::Key::Named(Named::ArrowRight) => {
+                    Some(Message::ArrowKey(0, 1, modifiers.shift()))
+                }
+                keyboard::Key::Named(Named::Enter) => Some(Message::GridEnter),
+                keyboard::Key::Named(Named::Escape) => Some(Message::EditCanceled),
+                keyboard::Key::Character(character) if modifiers.command() => {
+                    match character.as_str() {
+                        "\\" => Some(Message::ToggleView),
+                        "z" | "Z" if modifiers.shift() => Some(Message::Redo),
+                        "z" | "Z" => Some(Message::Undo),
+                        "n" | "N" => Some(Message::NewWorkbook),
+                        "o" | "O" => Some(Message::OpenWorkbook),
+                        "s" | "S" => Some(Message::SaveWorkbook),
+                        "c" | "C" => Some(Message::Copy),
+                        "x" | "X" => Some(Message::Cut),
+                        "v" | "V" => Some(Message::Paste),
+                        _ => None,
+                    }
+                }
+                // A bare character (no ⌘/⌃/⌥) → type-to-edit in the grid.
+                keyboard::Key::Character(character)
+                    if !modifiers.command() && !modifiers.control() && !modifiers.alt() =>
+                {
+                    Some(Message::GridType(character.to_string()))
+                }
                 _ => None,
             },
             // Track the pointer's y so the top action strip can auto-hide.
@@ -745,7 +851,7 @@ impl App {
                 Message::EditChanged
             )
             .id(edit_bar_id())
-            .on_submit(Message::EditCommitted)
+            .on_submit(Message::EditSubmitted)
             .font(MONO),
         ]
         .spacing(8)
@@ -770,9 +876,11 @@ impl App {
         })
         .offset(self.grid_offset)
         .selection(self.grid_selection)
+        .column_widths(self.session.column_widths())
         .on_scroll(Message::GridScrolled)
         .on_select(Message::GridSelected)
-        .on_activate(Message::EditActivated);
+        .on_activate(Message::EditActivated)
+        .on_resize_column(Message::ColumnResized);
 
         // Host each control (slider / stepper / checkbox / dropdown) as an
         // interactive widget inside its own cell — the AppKit behavior — except
@@ -794,7 +902,7 @@ impl App {
                 let editor = iced::widget::text_input("", &self.edit_draft)
                     .id(grid_editor_id())
                     .on_input(Message::EditChanged)
-                    .on_submit(Message::EditCommitted)
+                    .on_submit(Message::EditSubmitted)
                     .padding(2)
                     .size(13)
                     .font(MONO);
@@ -1018,6 +1126,25 @@ fn fill_color(color: PaletteColor) -> Color {
     }
 }
 
+/// Move a grid selection by `(drow, dcol)`, clamped to the grid bounds. Extend
+/// keeps the anchor and moves the extent (shift-arrow); a plain move relocates
+/// the whole single-cell selection. Pure, so the clamping is unit-tested.
+fn next_selection(current: GridSelection, drow: i32, dcol: i32, extend: bool) -> GridSelection {
+    let clamp = |value: usize, delta: i32, limit: usize| -> usize {
+        (value as i32 + delta).clamp(0, limit as i32 - 1) as usize
+    };
+    if extend {
+        let (row, col) = current.extent;
+        GridSelection {
+            anchor: current.anchor,
+            extent: (clamp(row, drow, GRID_ROWS), clamp(col, dcol, GRID_COLS)),
+        }
+    } else {
+        let (row, col) = current.anchor;
+        GridSelection::cell(clamp(row, drow, GRID_ROWS), clamp(col, dcol, GRID_COLS))
+    }
+}
+
 /// A compact interactive control widget for a cell, hosted in place over it via
 /// the grid's overlay mechanism. The cell address rides each message, since many
 /// controls can be live at once. Returns `None` for non-control displays.
@@ -1158,4 +1285,37 @@ fn main() -> iced::Result {
         .subscription(App::subscription)
         .window_size(iced::Size::new(1040.0, 680.0))
         .run()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn move_relocates_single_cell() {
+        let next = next_selection(GridSelection::cell(4, 2), 1, 0, false);
+        assert_eq!(next.anchor, (5, 2));
+        assert_eq!(next.extent, (5, 2));
+    }
+
+    #[test]
+    fn move_clamps_at_the_top_left_corner() {
+        let next = next_selection(GridSelection::cell(0, 0), -1, -1, false);
+        assert_eq!(next.anchor, (0, 0));
+    }
+
+    #[test]
+    fn move_clamps_at_the_bottom_right_corner() {
+        let start = GridSelection::cell(GRID_ROWS - 1, GRID_COLS - 1);
+        let next = next_selection(start, 1, 1, false);
+        assert_eq!(next.anchor, (GRID_ROWS - 1, GRID_COLS - 1));
+    }
+
+    #[test]
+    fn extend_holds_the_anchor_and_moves_the_extent() {
+        let start = GridSelection::cell(4, 2);
+        let next = next_selection(start, 2, 1, true);
+        assert_eq!(next.anchor, (4, 2));
+        assert_eq!(next.extent, (6, 3));
+    }
 }
