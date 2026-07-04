@@ -17,6 +17,7 @@
 //! - `SOROBAN_SHOT_SELECT=B4` — select that cell (shows the edit bar / a control
 //!   strip / a control's own value).
 //! - `SOROBAN_SHOT_CHROME=1` — reveal the auto-hiding top action strip.
+//! - `SOROBAN_SHOT_PANEL=inspector|reference|bits` — open a side/bottom panel.
 //!
 //! Capture waits three painted frames (so fonts/layout settle) then requests the
 //! screenshot and exits.
@@ -74,6 +75,12 @@ pub fn configure(app: &mut App) {
     app.load_draft();
     if std::env::var("SOROBAN_SHOT_CHROME").is_ok() {
         app.chrome_revealed = true;
+    }
+    match std::env::var("SOROBAN_SHOT_PANEL").as_deref() {
+        Ok("inspector") => app.inspector_visible = true,
+        Ok("reference") => app.reference_visible = true,
+        Ok("bits") => app.binary_visible = true,
+        _ => {}
     }
     app.session.refresh_binary();
 

@@ -155,8 +155,20 @@ point of truth for downloads.
   readback (headless, no screen-recording permission); the harness is inert
   unless `SOROBAN_SHOT=<path>` is set and is fully parameterized by environment
   (`SOROBAN_SHOT_SEED` = a file of log inputs to run first, `SOROBAN_SHOT_VIEW`,
-  `SOROBAN_SHOT_SELECT`, `SOROBAN_SHOT_CHROME`) so a slice can be captured for
-  review without editing code. Adds a `png` dependency (gui-only).
+  `SOROBAN_SHOT_SELECT`, `SOROBAN_SHOT_CHROME`, `SOROBAN_SHOT_PANEL`) so a slice
+  can be captured for review without editing code. Adds a `png` dependency
+  (gui-only).
+- Rust ecosystem, Phase 3b — `rust/gui` **fidelity batch** closing the visible
+  gap to the AppKit original: the log's prompt is `>` (was `›`); the empty state
+  reads "Type an expression below — or click one:" with three clickable sample
+  expressions that insert themselves into the input; the two signature corner
+  icons (docs 📖 / grid ▦) sit at the input's right, always visible. The
+  **inspector** is rebuilt to match — an `Environment` header over small-caps
+  `VARIABLES` / `FUNCTIONS` / `DATA TYPES` sections (named cells fold into
+  Variables), each row tagged with its provenance: a muted `log`, or a clickable
+  `B:2 ↗` that jumps to and selects the cell. The grid gains a `Sheet 1 +`
+  tab strip at the bottom-left (replacing the "Grid — Sheet N" label). Cosmetic
+  only — no engine or session behavior change.
 
 ### Changed
 

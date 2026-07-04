@@ -17,7 +17,7 @@
 mod session;
 mod shot;
 
-use iced::widget::{column, container, operation, row, scrollable, text, Id};
+use iced::widget::{column, container, mouse_area, operation, row, scrollable, text, Id};
 use iced::{
     event, keyboard, mouse, Color, Element, Event, Font, Length, Subscription, Task, Theme, Vector,
 };
@@ -26,7 +26,7 @@ use rime::widgets::{
     bit_grid, button, card, grid, section, select, slider, stepper, text_field, toggle,
     CellAlign, GridCell, GridSelection,
 };
-use session::{BinaryStatus, Outcome, Session, GRID_COLS, GRID_ROWS};
+use session::{BinaryStatus, Origin, Outcome, Session, GRID_COLS, GRID_ROWS};
 use soroban_engine::{
     CellAddress, CellAlignment, CellDisplay, CellFormat, NumberFormat, PaletteColor, Value,
 };
@@ -38,6 +38,11 @@ const MONO: Font = Font::MONOSPACE;
 /// insertion (a grid click steals focus, so we grab it back).
 fn edit_bar_id() -> Id {
     Id::new("soroban-edit-bar")
+}
+
+/// The log input's widget id, so clicking an empty-state sample can focus it.
+fn log_input_id() -> Id {
+    Id::new("soroban-log-input")
 }
 
 #[derive(Default, PartialEq, Eq, Clone, Copy)]
@@ -116,6 +121,10 @@ enum Message {
     OpenWorkbook,
     SaveWorkbook,
     PointerMoved(f32),
+    /// Jump to a cell from an inspector provenance tag (select it, show the grid).
+    JumpTo(CellAddress),
+    /// Insert a sample expression from the empty-state into the log input.
+    SampleClicked(String),
     /// Review-screenshot harness lifecycle (see [`shot`]); inert unless armed.
     Shot(shot::Event),
 }
@@ -267,6 +276,17 @@ impl App {
             Message::PointerMoved(y) => {
                 let threshold = if self.chrome_revealed { 56.0 } else { 6.0 };
                 self.chrome_revealed = y < threshold;
+            }
+            // Inspector row → jump: select the cell and show the grid.
+            Message::JumpTo(address) => {
+                self.grid_selection = Some(GridSelection::cell(address.row, address.column));
+                self.mode = ViewMode::Grid;
+                self.editing = false;
+                self.load_draft();
+            }
+            Message::SampleClicked(sample) => {
+                self.session.set_input(sample);
+                return operation::focus(log_input_id());
             }
             Message::Shot(event) => return shot::handle(self, event),
         }
@@ -585,15 +605,16 @@ impl App {
         .into()
     }
 
-    /// The names inspector: every live variable, named cell, function, and data
-    /// type — from the log and the active sheet — grouped and read-only.
+    /// The names inspector: every live variable (log vars, named cells, sheet 𝑖
+    /// definitions), function, and data type — grouped into three sections like
+    /// the original, each row tagged with its provenance (`log` or a clickable
+    /// `B:2 ↗` that jumps to the cell).
     fn inspector_panel(&self, palette: &theme::Palette) -> Element<'_, Message> {
-        let mut sections = column![text("Names").size(15).color(palette.ink)].spacing(14);
+        let mut sections = column![text("Environment").size(15).color(palette.ink)].spacing(16);
         let groups = [
-            ("Variables", self.session.inspector_variables()),
-            ("Named cells", self.session.inspector_named_cells()),
-            ("Functions", self.session.inspector_functions()),
-            ("Data types", self.session.inspector_data_types()),
+            ("VARIABLES", self.session.inspector_variables()),
+            ("FUNCTIONS", self.session.inspector_functions()),
+            ("DATA TYPES", self.session.inspector_data_types()),
         ];
         let mut any = false;
         for (title, rows) in groups {
@@ -601,13 +622,21 @@ impl App {
                 continue;
             }
             any = true;
-            let mut group = column![section(title)].spacing(6);
+            // A small-caps muted section heading, like the original.
+            let mut group = column![text(title).size(11).color(palette.muted)].spacing(8);
             for row in rows {
-                let mut line = column![text(row.label).font(MONO).size(12).color(palette.ink)];
+                let mut line = column![row![
+                    text(row.label).font(MONO).size(12).color(palette.accent),
+                    container(origin_tag(row.origin, palette))
+                        .width(Length::Fill)
+                        .align_x(iced::alignment::Horizontal::Right),
+                ]
+                .align_y(iced::Alignment::Center)]
+                .spacing(1);
                 if !row.detail.is_empty() {
-                    line = line.push(text(row.detail).size(11).color(palette.muted));
+                    line = line.push(text(row.detail).font(MONO).size(11).color(palette.muted));
                 }
-                group = group.push(line.spacing(1));
+                group = group.push(line);
             }
             sections = sections.push(group);
         }
@@ -630,14 +659,7 @@ impl App {
         // The log fills, oldest→newest, so the freshest result sits just above
         // the input — the terminal/REPL layout of the AppKit original.
         let log: Element<'_, Message> = if self.session.entries().is_empty() {
-            container(
-                text("Results appear here. ↑/↓ recall what you typed; ⌘\\ shows the grid.")
-                    .size(13)
-                    .color(palette.muted),
-            )
-            .padding(12)
-            .height(Length::Fill)
-            .into()
+            self.empty_log(palette)
         } else {
             let mut items = column![].spacing(12);
             for entry in self.session.entries().iter() {
@@ -648,18 +670,47 @@ impl App {
                 .into()
         };
 
-        // The input is pinned to the BOTTOM, behind a `›` prompt; Enter submits
-        // (no `=` button — the original has none).
+        // The input is pinned to the BOTTOM, behind a `>` prompt; Enter submits
+        // (no `=` button — the original has none). The two signature corner
+        // icons (docs / grid) sit at the right, always visible like the original.
         let input_bar = row![
-            text("›").font(MONO).size(16).color(palette.muted),
+            text(">").font(MONO).size(16).color(palette.muted),
             text_field("Expression", self.session.input(), Message::InputChanged)
+                .id(log_input_id())
                 .on_submit(Message::Submit)
                 .font(MONO),
+            button::ghost("📖", Message::ToggleReference),
+            button::ghost("▦", Message::ToggleView),
         ]
         .spacing(8)
         .align_y(iced::Alignment::Center);
 
         column![log, input_bar].spacing(12).into()
+    }
+
+    /// The empty-state: an invitation plus a few sample expressions that insert
+    /// themselves into the input on click (the original's "double-click one").
+    fn empty_log(&self, palette: &theme::Palette) -> Element<'_, Message> {
+        const SAMPLES: [&str; 3] = [
+            "map(n -> n * n, filter(x -> x % 2 == 0, seq(1, 20)))",
+            "fact(52) / (fact(5) * fact(47))",
+            "0.1 + 0.2",
+        ];
+        let mut column = column![text("Type an expression below — or click one:")
+            .size(14)
+            .color(palette.muted)]
+        .spacing(10);
+        for sample in SAMPLES {
+            column = column.push(
+                mouse_area(text(sample).font(MONO).size(14).color(palette.accent))
+                    .on_press(Message::SampleClicked(sample.to_string()))
+                    .interaction(iced::mouse::Interaction::Pointer),
+            );
+        }
+        container(column)
+            .padding(12)
+            .height(Length::Fill)
+            .into()
     }
 
     fn grid_view(&self, palette: &theme::Palette) -> Element<'_, Message> {
@@ -715,12 +766,27 @@ impl App {
         .on_scroll(Message::GridScrolled)
         .on_select(Message::GridSelected);
 
+        // A sheet-tab strip at the bottom-left, like the original's `Mortgage +`.
+        let sheet_tab = row![
+            container(
+                text(self.session.active_sheet_name())
+                    .font(MONO)
+                    .size(13)
+                    .color(palette.ink)
+            )
+            .padding([4, 12])
+            .style(move |_| container::background(palette.surface)),
+            text("+").size(15).color(palette.muted),
+        ]
+        .spacing(8)
+        .align_y(iced::Alignment::Center);
+
         column![
             header,
-            section(&format!("Grid — {}", self.session.active_sheet_name())),
             container(sheet).height(Length::Fill),
+            sheet_tab,
         ]
-        .spacing(16)
+        .spacing(12)
         .into()
     }
 
@@ -974,6 +1040,23 @@ fn fill_color(color: PaletteColor) -> Color {
     Color {
         a: 0.25,
         ..palette_color(color)
+    }
+}
+
+/// An inspector row's provenance tag: `log` (muted, inert) or a clickable
+/// `B:2 ↗` (accent) that jumps to the cell.
+fn origin_tag<'a>(origin: Origin, palette: &theme::Palette) -> Element<'a, Message> {
+    match origin {
+        Origin::Log => text("log").size(11).color(palette.muted).into(),
+        Origin::Cell(address) => mouse_area(
+            text(format!("{address} ↗"))
+                .font(MONO)
+                .size(11)
+                .color(palette.accent),
+        )
+        .on_press(Message::JumpTo(address))
+        .interaction(iced::mouse::Interaction::Pointer)
+        .into(),
     }
 }
 

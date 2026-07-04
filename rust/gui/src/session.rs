@@ -17,11 +17,20 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::rc::Rc;
 
-/// One inspector row: a name or signature, and a short detail (a value, or the
-/// definition's kind and cell). The gui renders these grouped into sections.
+/// Where an inspector entry comes from — the calculation log, or a cell (which
+/// the gui renders as a clickable `B:2 ↗` tag that jumps to it).
+#[derive(Clone, Copy)]
+pub enum Origin {
+    Log,
+    Cell(CellAddress),
+}
+
+/// One inspector row: a name or signature, a short detail (its value or doc),
+/// and its provenance. The gui renders these grouped into sections.
 pub struct InspectorRow {
     pub label: String,
     pub detail: String,
+    pub origin: Origin,
 }
 
 /// One reference-window entry: a function/operator signature and its summary.
@@ -478,38 +487,34 @@ impl Session {
                 .map(|(name, value)| InspectorRow {
                     label: name.clone(),
                     detail: value.display_description(),
+                    origin: Origin::Log,
                 })
                 .collect()
         };
+        // Sheet-scoped 𝑖 definitions (name a value in a cell).
         for definition in self.active_definitions(SheetDefinitionKind::Variable) {
+            let detail = match self.display_at(definition.address) {
+                CellDisplay::Value(number) => number.to_string(),
+                _ => String::new(),
+            };
             rows.push(InspectorRow {
                 label: definition.name,
-                detail: format!("𝑖 {}", definition.address),
+                detail,
+                origin: Origin::Cell(definition.address),
             });
         }
-        sort_rows(&mut rows);
-        rows
-    }
-
-    /// Named cell locations, each with its address and current value.
-    pub fn inspector_named_cells(&self) -> Vec<InspectorRow> {
-        let mut rows: Vec<InspectorRow> = self
-            .store
-            .active_sheet()
-            .grid
-            .cell_names()
-            .into_iter()
-            .map(|(address, name)| {
-                let detail = match self.display_at(address) {
-                    CellDisplay::Value(number) => format!("{address} = {number}"),
-                    _ => address.to_string(),
-                };
-                InspectorRow {
-                    label: format!("'{name}'"),
-                    detail,
-                }
-            })
-            .collect();
+        // Named cell locations (name a place; value is the cell's).
+        for (address, name) in self.store.active_sheet().grid.cell_names() {
+            let detail = match self.display_at(address) {
+                CellDisplay::Value(number) => number.to_string(),
+                _ => String::new(),
+            };
+            rows.push(InspectorRow {
+                label: name,
+                detail,
+                origin: Origin::Cell(address),
+            });
+        }
         sort_rows(&mut rows);
         rows
     }
@@ -525,13 +530,15 @@ impl Session {
                 .map(|function| InspectorRow {
                     label: function.signature(),
                     detail: function.documentation().unwrap_or_default(),
+                    origin: Origin::Log,
                 })
                 .collect()
         };
         for definition in self.active_definitions(SheetDefinitionKind::Function) {
             rows.push(InspectorRow {
                 label: definition.signature(),
-                detail: format!("λ {}", definition.address),
+                detail: String::new(),
+                origin: Origin::Cell(definition.address),
             });
         }
         sort_rows(&mut rows);
@@ -549,13 +556,15 @@ impl Session {
                 .map(|data_type| InspectorRow {
                     label: data_type.name.clone(),
                     detail: String::new(),
+                    origin: Origin::Log,
                 })
                 .collect()
         };
         for definition in self.active_definitions(SheetDefinitionKind::DataType) {
             rows.push(InspectorRow {
                 label: definition.name,
-                detail: format!("𝑫 {}", definition.address),
+                detail: String::new(),
+                origin: Origin::Cell(definition.address),
             });
         }
         sort_rows(&mut rows);
