@@ -45,6 +45,12 @@ fn log_input_id() -> Id {
     Id::new("soroban-log-input")
 }
 
+/// The inline cell editor's widget id (hosted inside the grid on the active
+/// cell), so double-click / point-mode can focus it.
+fn grid_editor_id() -> Id {
+    Id::new("soroban-grid-editor")
+}
+
 #[derive(Default, PartialEq, Eq, Clone, Copy)]
 enum ViewMode {
     #[default]
@@ -99,6 +105,7 @@ enum Message {
     EditChanged(String),
     EditCommitted,
     EditCanceled,
+    EditActivated(usize, usize),
     Undo,
     Redo,
     SliderChanged(f32),
@@ -165,6 +172,14 @@ impl App {
             Message::EditCanceled => {
                 self.editing = false;
                 self.load_draft();
+            }
+            // Double-click a cell → edit it in place: select it, load its raw,
+            // open the inline editor and focus it.
+            Message::EditActivated(row, col) => {
+                self.grid_selection = Some(GridSelection::cell(row, col));
+                self.load_draft();
+                self.editing = true;
+                return operation::focus(grid_editor_id());
             }
             Message::Undo => {
                 self.session.undo();
@@ -358,7 +373,8 @@ impl App {
         if point_mode {
             self.edit_draft
                 .push_str(&CellAddress::new(col, row).to_string());
-            return operation::focus(edit_bar_id());
+            // Focus the inline editor (the in-grid editor is the active one).
+            return operation::focus(grid_editor_id());
         }
         if self.editing {
             // Navigating away commits the in-progress edit (Excel behavior).
@@ -753,7 +769,7 @@ impl App {
 
         let palette = *palette;
         let session = &self.session;
-        let sheet = grid(GRID_ROWS, GRID_COLS, move |row, col| {
+        let mut sheet = grid(GRID_ROWS, GRID_COLS, move |row, col| {
             let address = CellAddress::new(col, row);
             render_cell(
                 session.display_at(address),
@@ -764,7 +780,23 @@ impl App {
         .offset(self.grid_offset)
         .selection(self.grid_selection)
         .on_scroll(Message::GridScrolled)
-        .on_select(Message::GridSelected);
+        .on_select(Message::GridSelected)
+        .on_activate(Message::EditActivated);
+
+        // While editing, host an inline text editor over the active cell — the
+        // cell edits in place (the AppKit behavior), mirroring the formula bar.
+        if self.editing {
+            if let Some((row, col)) = self.grid_selection.map(|s| s.anchor) {
+                let editor = iced::widget::text_input("", &self.edit_draft)
+                    .id(grid_editor_id())
+                    .on_input(Message::EditChanged)
+                    .on_submit(Message::EditCommitted)
+                    .padding(2)
+                    .size(13)
+                    .font(MONO);
+                sheet = sheet.editor(row, col, editor);
+            }
+        }
 
         // A sheet-tab strip at the bottom-left, like the original's `Mortgage +`.
         let sheet_tab = row![

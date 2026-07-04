@@ -169,6 +169,16 @@ point of truth for downloads.
   `B:2 ↗` that jumps to and selects the cell. The grid gains a `Sheet 1 +`
   tab strip at the bottom-left (replacing the "Grid — Sheet N" label). Cosmetic
   only — no engine or session behavior change.
+- Rust ecosystem, Phase 3b — **inline cell editing** in `rust/gui`, the biggest
+  remaining fidelity item. Double-clicking a cell (or point-mode reference
+  insertion) now opens a text editor **inside the cell** (mirroring the formula
+  bar), the way the AppKit app edits — instead of only the top formula bar. Built
+  on a new rime `grid` capability (`.editor(row, col, element)` + `.on_activate`),
+  the grid hosts the editor over the active cell and forwards it events + focus;
+  Enter commits, Esc cancels, and clicking another cell mid-edit still inserts its
+  reference (point mode) and refocuses the inline editor. Requires rime with the
+  grid inline-editor support (path dependency). No engine or session behavior
+  change.
 
 ### Changed
 
