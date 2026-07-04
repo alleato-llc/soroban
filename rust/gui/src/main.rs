@@ -7,10 +7,10 @@
 //! commits cell edits (undoable, ⌘Z / ⇧⌘Z), point mode inserts a cell's
 //! reference when you click it mid-formula, a control strip drives the
 //! selected cell's slider / stepper / checkbox / dropdown, a format bar sets
-//! its number format, alignment, and colors, and a name box names its location
-//! (`'Rate'`). This file is the iced shell (state → message → update → view)
-//! and the rime-styled rendering; later slices add the binary editor and
-//! workbook save/open.
+//! its number format, alignment, and colors, a name box names its location
+//! (`'Rate'`), and a Names inspector sidebar lists every live name. This file
+//! is the iced shell (state → message → update → view) and the rime-styled
+//! rendering; later slices add the binary editor and workbook save/open.
 
 mod session;
 
@@ -58,6 +58,8 @@ struct App {
     /// a grid click on an operand-expecting draft inserts a reference instead
     /// of moving the selection.
     editing: bool,
+    /// Whether the names inspector sidebar is showing.
+    inspector_visible: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -85,6 +87,7 @@ enum Message {
     SetFillColor(usize),
     NameChanged(String),
     NameCommitted,
+    ToggleInspector,
 }
 
 impl App {
@@ -177,6 +180,7 @@ impl App {
                     self.load_draft();
                 }
             }
+            Message::ToggleInspector => self.inspector_visible = !self.inspector_visible,
         }
         Task::none()
     }
@@ -304,6 +308,7 @@ impl App {
             ))
             .width(Length::Fill),
             button::secondary(toggle_label, Message::ToggleView),
+            button::ghost("Names", Message::ToggleInspector),
             button::ghost(theme_label, Message::ToggleTheme),
         ]
         .spacing(8)
@@ -314,9 +319,57 @@ impl App {
             ViewMode::Grid => self.grid_view(&palette),
         };
 
-        container(card(column![top_bar, body].spacing(16)))
+        let main = container(card(column![top_bar, body].spacing(16)))
             .padding(20)
             .center_x(Length::Fill)
+            .height(Length::Fill);
+
+        if self.inspector_visible {
+            row![main.width(Length::Fill), self.inspector_panel(&palette)]
+                .height(Length::Fill)
+                .into()
+        } else {
+            main.into()
+        }
+    }
+
+    /// The names inspector: every live variable, named cell, function, and data
+    /// type — from the log and the active sheet — grouped and read-only.
+    fn inspector_panel(&self, palette: &theme::Palette) -> Element<'_, Message> {
+        let mut sections = column![text("Names").size(15).color(palette.ink)].spacing(14);
+        let groups = [
+            ("Variables", self.session.inspector_variables()),
+            ("Named cells", self.session.inspector_named_cells()),
+            ("Functions", self.session.inspector_functions()),
+            ("Data types", self.session.inspector_data_types()),
+        ];
+        let mut any = false;
+        for (title, rows) in groups {
+            if rows.is_empty() {
+                continue;
+            }
+            any = true;
+            let mut group = column![section(title)].spacing(6);
+            for row in rows {
+                let mut line = column![text(row.label).font(MONO).size(12).color(palette.ink)];
+                if !row.detail.is_empty() {
+                    line = line.push(text(row.detail).size(11).color(palette.muted));
+                }
+                group = group.push(line.spacing(1));
+            }
+            sections = sections.push(group);
+        }
+        if !any {
+            sections = sections.push(
+                text("Nothing defined yet — assign a variable or name a cell.")
+                    .size(12)
+                    .color(palette.muted),
+            );
+        }
+
+        container(card(scrollable(sections).height(Length::Fill)))
+            .width(Length::Fixed(260.0))
+            .padding(20)
             .height(Length::Fill)
             .into()
     }

@@ -102,6 +102,13 @@ point of truth for downloads.
   name — both as one undoable step (the undo model gains a name edit alongside
   cells and formats). A duplicate/illegal name is rejected by the engine and
   the box reverts. No change to the existing crates or the shared Gherkin suite.
+- Rust ecosystem, Phase 3b slice ⑤, part 1 (docs/MIGRATION.md): the **names
+  inspector** in `rust/gui`. A "Names" toggle opens a sidebar listing every
+  live name from both the log and the active sheet — variables (with values),
+  named cells (address + value), functions (signatures), and data types —
+  grouped and sorted, read-only. The Rust port of the Swift `InspectorView`'s
+  two-source (log + sheet) merge. No change to the existing crates or the
+  shared Gherkin suite.
 
 ### Changed
 

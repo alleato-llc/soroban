@@ -1,6 +1,7 @@
 # The Rust/iced Soroban app (docs/MIGRATION.md Phase 3b). Built in vertical
 # slices: ① a log-view calculator, ② a grid over the SheetStore (⌘\), ③ cell
-# editing with undo + point mode, ④ controls + formats + named cells.
+# editing with undo + point mode, ④ controls + formats + named cells, ⑤ the
+# names inspector.
 [package]
 name = "soroban-gui"
 version = "0.1.0"

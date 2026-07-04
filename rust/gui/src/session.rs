@@ -6,12 +6,20 @@
 //! iced `State` in `main.rs` is a thin shell over it.
 
 use soroban_engine::named_cells::NamedCells;
+use soroban_engine::spreadsheet::SheetDefinitionKind;
 use soroban_engine::{
     BigDecimal, Calculator, CellAddress, CellDisplay, CellFormat, Control, EvalOutcome, Sheet,
     SheetStore, Spreadsheet, Value,
 };
 use std::cell::RefCell;
 use std::rc::Rc;
+
+/// One inspector row: a name or signature, and a short detail (a value, or the
+/// definition's kind and cell). The gui renders these grouped into sections.
+pub struct InspectorRow {
+    pub label: String,
+    pub detail: String,
+}
 
 /// The grid's fixed logical size (the engine's sheet bounds).
 pub const GRID_ROWS: usize = Spreadsheet::ROW_COUNT;
@@ -407,6 +415,119 @@ impl Session {
         Ok(())
     }
 
+    // MARK: Inspector (slice ⑤)
+
+    /// Live variables: log-defined user variables (`name = value`) and the
+    /// active sheet's 𝑖 definitions, sorted case-insensitively.
+    pub fn inspector_variables(&self) -> Vec<InspectorRow> {
+        let mut rows: Vec<InspectorRow> = {
+            let calculator = self.calculator.borrow();
+            calculator
+                .environment()
+                .user_variables()
+                .iter()
+                .map(|(name, value)| InspectorRow {
+                    label: name.clone(),
+                    detail: value.display_description(),
+                })
+                .collect()
+        };
+        for definition in self.active_definitions(SheetDefinitionKind::Variable) {
+            rows.push(InspectorRow {
+                label: definition.name,
+                detail: format!("𝑖 {}", definition.address),
+            });
+        }
+        sort_rows(&mut rows);
+        rows
+    }
+
+    /// Named cell locations, each with its address and current value.
+    pub fn inspector_named_cells(&self) -> Vec<InspectorRow> {
+        let mut rows: Vec<InspectorRow> = self
+            .store
+            .active_sheet()
+            .grid
+            .cell_names()
+            .into_iter()
+            .map(|(address, name)| {
+                let detail = match self.display_at(address) {
+                    CellDisplay::Value(number) => format!("{address} = {number}"),
+                    _ => address.to_string(),
+                };
+                InspectorRow {
+                    label: format!("'{name}'"),
+                    detail,
+                }
+            })
+            .collect();
+        sort_rows(&mut rows);
+        rows
+    }
+
+    /// User functions: log-defined signatures and the sheet's λ definitions.
+    pub fn inspector_functions(&self) -> Vec<InspectorRow> {
+        let mut rows: Vec<InspectorRow> = {
+            let calculator = self.calculator.borrow();
+            calculator
+                .environment()
+                .user_functions()
+                .values()
+                .map(|function| InspectorRow {
+                    label: function.signature(),
+                    detail: function.documentation().unwrap_or_default(),
+                })
+                .collect()
+        };
+        for definition in self.active_definitions(SheetDefinitionKind::Function) {
+            rows.push(InspectorRow {
+                label: definition.signature(),
+                detail: format!("λ {}", definition.address),
+            });
+        }
+        sort_rows(&mut rows);
+        rows
+    }
+
+    /// Declared data types: log-defined and the sheet's 𝑫 definitions.
+    pub fn inspector_data_types(&self) -> Vec<InspectorRow> {
+        let mut rows: Vec<InspectorRow> = {
+            let calculator = self.calculator.borrow();
+            calculator
+                .environment()
+                .user_data_types()
+                .values()
+                .map(|data_type| InspectorRow {
+                    label: data_type.name.clone(),
+                    detail: String::new(),
+                })
+                .collect()
+        };
+        for definition in self.active_definitions(SheetDefinitionKind::DataType) {
+            rows.push(InspectorRow {
+                label: definition.name,
+                detail: format!("𝑫 {}", definition.address),
+            });
+        }
+        sort_rows(&mut rows);
+        rows
+    }
+
+    /// The active sheet's definition cells of one kind (name + address, sorted
+    /// later by the caller). Kept private — the gui reads the four groups.
+    fn active_definitions(
+        &self,
+        kind: SheetDefinitionKind,
+    ) -> Vec<soroban_engine::spreadsheet::SheetDefinition> {
+        self.store
+            .active_sheet()
+            .grid
+            .definitions()
+            .into_values()
+            .filter(|definition| definition.kind() == kind)
+            .collect()
+    }
+
     /// The reference rewrites a rename triggers: every cell whose raw mentions
     /// `'old'` gets it respelled to `'new'` (token-precise, spacing preserved).
     fn rename_references(&self, old: &str, new: &str) -> Vec<CellChange> {
@@ -512,6 +633,12 @@ fn option_literal(value: &Value) -> String {
 }
 
 /// Clamp a value into `[minimum, maximum]` (exact, `BigDecimal` ordering).
+/// Sort inspector rows case-insensitively by label (the reading order the
+/// Swift inspector uses).
+fn sort_rows(rows: &mut [InspectorRow]) {
+    rows.sort_by(|a, b| a.label.to_lowercase().cmp(&b.label.to_lowercase()));
+}
+
 fn clamp(value: BigDecimal, minimum: &BigDecimal, maximum: &BigDecimal) -> BigDecimal {
     if value < *minimum {
         minimum.clone()
