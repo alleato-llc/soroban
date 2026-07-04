@@ -179,6 +179,15 @@ point of truth for downloads.
   reference (point mode) and refocuses the inline editor. Requires rime with the
   grid inline-editor support (path dependency). No engine or session behavior
   change.
+- Rust ecosystem, Phase 3b — **inline controls** in `rust/gui`: slider / stepper /
+  checkbox / dropdown cells now render their interactive widget **inside the cell**
+  (the AppKit behavior), driven directly there, instead of in a control strip
+  above the grid. Built on rime's generalized grid overlays (`.overlay(row, col,
+  element)`), the app hosts a compact control over each control cell (the cell
+  address rides each message, since many are live at once) and the control strip
+  is gone. A new `Session::control_cells()` enumerates them by scanning only the
+  sheet's occupied cells. Requires rime with grid overlay support (path dep). No
+  engine or session behavior change.
 
 ### Changed
 

@@ -28,7 +28,7 @@ use rime::widgets::{
 };
 use session::{BinaryStatus, Origin, Outcome, Session, GRID_COLS, GRID_ROWS};
 use soroban_engine::{
-    CellAddress, CellAlignment, CellDisplay, CellFormat, NumberFormat, PaletteColor, Value,
+    CellAddress, CellAlignment, CellDisplay, CellFormat, NumberFormat, PaletteColor,
 };
 use std::path::PathBuf;
 
@@ -108,10 +108,10 @@ enum Message {
     EditActivated(usize, usize),
     Undo,
     Redo,
-    SliderChanged(f32),
-    StepperStepped(bool),
-    CheckboxToggled,
-    DropdownPicked(usize),
+    SliderChanged(CellAddress, f32),
+    StepperStepped(CellAddress, bool),
+    CheckboxToggled(CellAddress),
+    DropdownPicked(CellAddress, usize),
     SetNumberFormat(usize),
     SetAlignment(usize),
     SetTextColor(usize),
@@ -191,31 +191,24 @@ impl App {
                 self.editing = false;
                 self.load_draft();
             }
-            // Control interactions rewrite the cell's storage literal; reload
-            // the edit bar so it shows the new value.
-            Message::SliderChanged(value) => {
-                if let Some(address) = self.active_cell() {
-                    self.session.set_slider(address, value as f64);
-                    self.load_draft();
-                }
+            // Inline control interactions rewrite the cell's storage literal (the
+            // address rides the message, since many controls are live at once);
+            // reload the draft so an open editor / the formula bar stays in sync.
+            Message::SliderChanged(address, value) => {
+                self.session.set_slider(address, value as f64);
+                self.load_draft();
             }
-            Message::StepperStepped(up) => {
-                if let Some(address) = self.active_cell() {
-                    self.session.step_control(address, up);
-                    self.load_draft();
-                }
+            Message::StepperStepped(address, up) => {
+                self.session.step_control(address, up);
+                self.load_draft();
             }
-            Message::CheckboxToggled => {
-                if let Some(address) = self.active_cell() {
-                    self.session.toggle_checkbox(address);
-                    self.load_draft();
-                }
+            Message::CheckboxToggled(address) => {
+                self.session.toggle_checkbox(address);
+                self.load_draft();
             }
-            Message::DropdownPicked(index) => {
-                if let Some(address) = self.active_cell() {
-                    self.session.set_dropdown_index(address, index);
-                    self.load_draft();
-                }
+            Message::DropdownPicked(address, index) => {
+                self.session.set_dropdown_index(address, index);
+                self.load_draft();
             }
             // Format edits mutate one field of the active cell's format and
             // commit it (display-only, undoable).
@@ -758,13 +751,11 @@ impl App {
         .spacing(8)
         .align_y(iced::Alignment::Center);
 
-        // When the active cell is a control, an interactive strip drives it.
+        // Controls now render inline in their cells (below); the header keeps the
+        // formula/name bar and the format bar.
         let mut header = column![edit_bar].spacing(12);
         if let Some(bar) = self.format_bar() {
             header = header.push(bar);
-        }
-        if let Some(strip) = self.control_strip() {
-            header = header.push(strip);
         }
 
         let palette = *palette;
@@ -782,6 +773,19 @@ impl App {
         .on_scroll(Message::GridScrolled)
         .on_select(Message::GridSelected)
         .on_activate(Message::EditActivated);
+
+        // Host each control (slider / stepper / checkbox / dropdown) as an
+        // interactive widget inside its own cell — the AppKit behavior — except
+        // the cell currently being edited (the editor takes that one).
+        let editing_cell = self.editing.then(|| self.active_cell()).flatten();
+        for (address, display) in self.session.control_cells() {
+            if Some(address) == editing_cell {
+                continue;
+            }
+            if let Some(widget) = control_widget(address, display) {
+                sheet = sheet.overlay(address.row, address.column, widget);
+            }
+        }
 
         // While editing, host an inline text editor over the active cell — the
         // cell edits in place (the AppKit behavior), mirroring the formula bar.
@@ -820,61 +824,6 @@ impl App {
         ]
         .spacing(12)
         .into()
-    }
-
-    /// If the active cell is a control (slider / stepper / checkbox / dropdown),
-    /// render the interactive widget that drives its stored literal.
-    fn control_strip(&self) -> Option<Element<'_, Message>> {
-        let address = self.active_cell()?;
-        // A control's own 𝑖 name reads better than the raw address when set.
-        let label = |name: &Option<String>| name.clone().unwrap_or_else(|| address.to_string());
-        match self.session.display_at(address) {
-            CellDisplay::Slider(info) => {
-                let range = (info.minimum.to_f64() as f32)..=(info.maximum.to_f64() as f32);
-                let value = info.value.to_f64() as f32;
-                Some(slider(
-                    label(&info.name),
-                    range,
-                    value,
-                    info.value.to_string(),
-                    Message::SliderChanged,
-                ))
-            }
-            CellDisplay::Stepper(info) => Some(stepper(
-                &label(&info.name),
-                info.value.to_string(),
-                Message::StepperStepped(false),
-                Message::StepperStepped(true),
-            )),
-            CellDisplay::Checkbox(info) => Some(toggle(
-                &label(&info.name),
-                info.is_on,
-                Message::CheckboxToggled,
-            )),
-            CellDisplay::Dropdown(info) => {
-                let options: Vec<String> = info
-                    .options
-                    .iter()
-                    .map(|value| value.display_description())
-                    .collect();
-                let selected = info.value.display_description();
-                let lookup = options.clone();
-                let picker = select(options, Some(selected), move |chosen: String| {
-                    let index = lookup
-                        .iter()
-                        .position(|option| *option == chosen)
-                        .unwrap_or(0);
-                    Message::DropdownPicked(index)
-                });
-                Some(
-                    row![text(label(&info.name)).size(13), picker]
-                        .spacing(10)
-                        .align_y(iced::Alignment::Center)
-                        .into(),
-                )
-            }
-            _ => None,
-        }
     }
 
     /// The format bar for the active cell: number format, alignment, and text /
@@ -967,18 +916,12 @@ fn base_cell(display: CellDisplay, format: &CellFormat, palette: &theme::Palette
             .text_color(palette.danger),
         CellDisplay::Definition(glyph) => GridCell::new(glyph).text_color(palette.accent),
         CellDisplay::Note(note) => GridCell::new(note).text_color(palette.muted),
-        CellDisplay::Slider(info) | CellDisplay::Stepper(info) => {
-            GridCell::right(format.number_format.rendered(&info.value))
-        }
-        CellDisplay::Checkbox(info) => {
-            GridCell::new(if info.is_on { "true" } else { "false" }).align(CellAlign::Center)
-        }
-        // The dropdown's value IS the cell's value: a string shows as a label,
-        // a number right-aligns like any figure.
-        CellDisplay::Dropdown(info) => match info.value {
-            Value::String(text) => GridCell::new(text),
-            other => GridCell::right(other.to_string()),
-        },
+        // Controls render as interactive overlay widgets in their cells (see
+        // `control_widget`), so the painted cell underneath is left empty.
+        CellDisplay::Slider(_)
+        | CellDisplay::Stepper(_)
+        | CellDisplay::Checkbox(_)
+        | CellDisplay::Dropdown(_) => GridCell::default(),
     }
 }
 
@@ -1072,6 +1015,52 @@ fn fill_color(color: PaletteColor) -> Color {
     Color {
         a: 0.25,
         ..palette_color(color)
+    }
+}
+
+/// A compact interactive control widget for a cell, hosted in place over it via
+/// the grid's overlay mechanism. The cell address rides each message, since many
+/// controls can be live at once. Returns `None` for non-control displays.
+fn control_widget<'a>(address: CellAddress, display: CellDisplay) -> Option<Element<'a, Message>> {
+    match display {
+        CellDisplay::Slider(info) => {
+            let range = (info.minimum.to_f64() as f32)..=(info.maximum.to_f64() as f32);
+            let value = info.value.to_f64() as f32;
+            Some(slider("", range, value, info.value.to_string(), move |v| {
+                Message::SliderChanged(address, v)
+            }))
+        }
+        CellDisplay::Stepper(info) => Some(stepper(
+            "",
+            info.value.to_string(),
+            Message::StepperStepped(address, false),
+            Message::StepperStepped(address, true),
+        )),
+        CellDisplay::Checkbox(info) => Some(toggle(
+            "",
+            info.is_on,
+            Message::CheckboxToggled(address),
+        )),
+        CellDisplay::Dropdown(info) => {
+            let options: Vec<String> = info
+                .options
+                .iter()
+                .map(|value| value.display_description())
+                .collect();
+            let selected = info.value.display_description();
+            let lookup = options.clone();
+            Some(
+                select(options, Some(selected), move |chosen: String| {
+                    let index = lookup
+                        .iter()
+                        .position(|option| *option == chosen)
+                        .unwrap_or(0);
+                    Message::DropdownPicked(address, index)
+                })
+                .into(),
+            )
+        }
+        _ => None,
     }
 }
 

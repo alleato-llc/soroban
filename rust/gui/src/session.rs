@@ -282,6 +282,33 @@ impl Session {
         self.store.display_value_on(&sheet, address)
     }
 
+    /// The active sheet's control cells (slider / stepper / checkbox / dropdown),
+    /// each with its live display — the gui hosts an interactive widget over each.
+    /// Scans only the occupied cells (sparse), so it's cheap per frame.
+    pub fn control_cells(&self) -> Vec<(CellAddress, CellDisplay)> {
+        let mut controls: Vec<(CellAddress, CellDisplay)> = self
+            .store
+            .active_sheet()
+            .grid
+            .raws()
+            .into_keys()
+            .filter_map(|address| {
+                let display = self.display_at(address);
+                matches!(
+                    display,
+                    CellDisplay::Slider(_)
+                        | CellDisplay::Stepper(_)
+                        | CellDisplay::Checkbox(_)
+                        | CellDisplay::Dropdown(_)
+                )
+                .then_some((address, display))
+            })
+            .collect();
+        // Stable order (HashMap iteration isn't) so overlays don't reshuffle.
+        controls.sort_by_key(|(address, _)| (address.column, address.row));
+        controls
+    }
+
     // MARK: Editing (slice ③)
 
     /// The raw (unevaluated) text stored in a cell — what the edit bar shows.
