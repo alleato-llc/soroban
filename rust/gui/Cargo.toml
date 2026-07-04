@@ -25,3 +25,6 @@ iced = { version = "0.14", features = ["canvas", "advanced"] }
 # Native Open/Save file dialogs — iced has none. gui-only; the workspace
 # crates stay dependency-free.
 rfd = "0.15"
+# PNG encoder for the built-in review-screenshot harness (see `shot` in
+# main.rs): headless wgpu capture, env-gated by SOROBAN_SHOT, inert otherwise.
+png = "0.17"

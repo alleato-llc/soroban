@@ -150,6 +150,13 @@ point of truth for downloads.
   become a slim, **left-aligned strip that auto-hides** like `fed`'s chrome —
   revealed only while the pointer is at the top edge (a `chrome_revealed` flag
   driven by pointer-Y with hysteresis). No engine or session behavior change.
+- Rust ecosystem, dev tooling — a permanent, env-gated **review-screenshot
+  harness** in `rust/gui` (`src/shot.rs`). iced captures its own window via wgpu
+  readback (headless, no screen-recording permission); the harness is inert
+  unless `SOROBAN_SHOT=<path>` is set and is fully parameterized by environment
+  (`SOROBAN_SHOT_SEED` = a file of log inputs to run first, `SOROBAN_SHOT_VIEW`,
+  `SOROBAN_SHOT_SELECT`, `SOROBAN_SHOT_CHROME`) so a slice can be captured for
+  review without editing code. Adds a `png` dependency (gui-only).
 
 ### Changed
 

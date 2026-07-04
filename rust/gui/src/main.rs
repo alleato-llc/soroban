@@ -15,6 +15,7 @@
 //! save/open.
 
 mod session;
+mod shot;
 
 use iced::widget::{column, container, operation, row, scrollable, text, Id};
 use iced::{
@@ -75,6 +76,9 @@ struct App {
     /// The top action strip auto-hides (like fed's chrome): revealed only while
     /// the pointer is at the top edge. See [`Self::chrome_visible`].
     chrome_revealed: bool,
+    /// The review-screenshot harness, present only when `SOROBAN_SHOT` is set —
+    /// otherwise `None` and the whole thing is inert. See [`shot`].
+    shot: Option<shot::Shot>,
 }
 
 #[derive(Debug, Clone)]
@@ -112,6 +116,8 @@ enum Message {
     OpenWorkbook,
     SaveWorkbook,
     PointerMoved(f32),
+    /// Review-screenshot harness lifecycle (see [`shot`]); inert unless armed.
+    Shot(shot::Event),
 }
 
 impl App {
@@ -262,6 +268,7 @@ impl App {
                 let threshold = if self.chrome_revealed { 56.0 } else { 6.0 };
                 self.chrome_revealed = y < threshold;
             }
+            Message::Shot(event) => return shot::handle(self, event),
         }
         Task::none()
     }
@@ -388,7 +395,10 @@ impl App {
             }
             _ => None,
         });
-        keys
+        match shot::subscription(self) {
+            Some(shot) => Subscription::batch([keys, shot]),
+            None => keys,
+        }
     }
 
     /// The window title carries the document name and unsaved-changes dot, like
@@ -1027,8 +1037,18 @@ fn entry_view<'a>(
     column![echo, result].spacing(2).into()
 }
 
+impl App {
+    /// The initial state: `App::default`, then the screenshot harness gets a
+    /// chance to seed it (a no-op unless `SOROBAN_SHOT` is set — see [`shot`]).
+    fn launch() -> Self {
+        let mut app = App::default();
+        shot::configure(&mut app);
+        app
+    }
+}
+
 fn main() -> iced::Result {
-    iced::application(App::default, App::update, App::view)
+    iced::application(App::launch, App::update, App::view)
         .title(App::window_title)
         .theme(App::theme)
         .subscription(App::subscription)
