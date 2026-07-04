@@ -8,8 +8,8 @@
 use soroban_engine::named_cells::NamedCells;
 use soroban_engine::spreadsheet::SheetDefinitionKind;
 use soroban_engine::{
-    BigDecimal, Calculator, CellAddress, CellDisplay, CellFormat, Control, EvalOutcome, Sheet,
-    SheetStore, Spreadsheet, Value,
+    BigDecimal, BinaryView, BinaryViewUnavailable, Calculator, CellAddress, CellDisplay,
+    CellFormat, Control, EvalOutcome, Sheet, SheetStore, Spreadsheet, Value,
 };
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -32,6 +32,20 @@ pub struct DocEntry {
 pub struct DocGroup {
     pub title: String,
     pub entries: Vec<DocEntry>,
+}
+
+/// The binary bit-editor's state for the current draft: an editable bit grid,
+/// or a reason the last result can't be edited (a decimal, a negative, …).
+pub enum BinaryStatus {
+    Editable {
+        /// LSB-first (bit 0 is `bits[0]`).
+        bits: Vec<bool>,
+        /// The value's re-parseable text (`42`, `Int32(255)`).
+        value: String,
+        width: u32,
+        signed: bool,
+    },
+    Unavailable(String),
 }
 
 /// The grid's fixed logical size (the engine's sheet bounds).
@@ -112,6 +126,9 @@ pub struct Session {
     /// Undoable steps, most recent last (cell content or cell format).
     undo_stack: Vec<Edit>,
     redo_stack: Vec<Edit>,
+    /// The binary bit-editor's current draft (a flip stages a new one); `None`
+    /// when closed or when `ans` isn't editable.
+    binary: Option<BinaryView>,
 }
 
 impl Session {
@@ -129,6 +146,7 @@ impl Session {
             history_cursor: None,
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
+            binary: None,
         }
     }
 
@@ -561,6 +579,56 @@ impl Session {
             .collect()
     }
 
+    // MARK: Binary editor (slice ⑤)
+
+    /// The last computed result — the value the bit editor edits.
+    fn ans(&self) -> Value {
+        self.calculator.borrow().environment().ans()
+    }
+
+    /// (Re)build the bit-editor draft from `ans`. Called when the editor opens
+    /// and after each submit, so it tracks the latest result until you flip a
+    /// bit (which stages a draft of its own).
+    pub fn refresh_binary(&mut self) {
+        self.binary = BinaryView::make(&self.ans(), 32).ok();
+    }
+
+    /// Flip bit `index` (0 = LSB) of the draft, staging a new pattern.
+    pub fn flip_binary_bit(&mut self, index: usize) {
+        if let Some(view) = &self.binary {
+            if (index as u32) < view.width {
+                self.binary = Some(view.flipping_bit(index as u32));
+            }
+        }
+    }
+
+    /// The editor's current state: the editable grid, or why `ans` can't be
+    /// edited as bits.
+    pub fn binary_status(&self) -> BinaryStatus {
+        if let Some(view) = &self.binary {
+            return BinaryStatus::Editable {
+                bits: view.bits(),
+                value: view.value().display_description(),
+                width: view.width,
+                signed: view.signed(),
+            };
+        }
+        let reason = match BinaryView::make(&self.ans(), 32) {
+            Ok(_) => "Compute a value, then open the bit editor.".to_string(),
+            Err(reason) => binary_reason(reason),
+        };
+        BinaryStatus::Unavailable(reason)
+    }
+
+    /// Drop the draft's value into the input line, ready to fold into an
+    /// expression (the SpeedCrunch "Use" action).
+    pub fn use_binary(&mut self) {
+        if let Some(view) = &self.binary {
+            self.input = view.value().display_description();
+            self.history_cursor = None;
+        }
+    }
+
     /// The active sheet's definition cells of one kind (name + address, sorted
     /// later by the caller). Kept private — the gui reads the four groups.
     fn active_definitions(
@@ -681,6 +749,17 @@ fn option_literal(value: &Value) -> String {
 }
 
 /// Clamp a value into `[minimum, maximum]` (exact, `BigDecimal` ordering).
+/// A human explanation of why a value can't be edited as bits.
+fn binary_reason(reason: BinaryViewUnavailable) -> String {
+    match reason {
+        BinaryViewUnavailable::NotAnInteger => "The bit editor needs a whole number.".to_string(),
+        BinaryViewUnavailable::Negative => {
+            "Negative — wrap it in a signed Int type (e.g. Int32).".to_string()
+        }
+        BinaryViewUnavailable::TooWide => "Too wide — over 256 bits.".to_string(),
+    }
+}
+
 /// Sort inspector rows case-insensitively by label (the reading order the
 /// Swift inspector uses).
 fn sort_rows(rows: &mut [InspectorRow]) {

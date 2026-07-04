@@ -116,6 +116,14 @@ point of truth for downloads.
   category, each entry showing signature + summary. A search field filters by
   signature/summary live. No change to the existing crates or the shared
   Gherkin suite.
+- Rust ecosystem, Phase 3b slice ⑤, part 3 (docs/MIGRATION.md): the **binary
+  bit-editor** in `rust/gui`. A "Bits" toggle opens a strip bound to the last
+  result (`ans`): a plain integer edits as an unsigned register, an `Int…`/
+  `UInt…` in two's-complement. Clicking a bit flips it (`BinaryView::flipping_bit`)
+  and "Use in input" drops the current value into the log line to fold into an
+  expression (the SpeedCrunch flow). A decimal / negative / too-wide value shows
+  why it can't be edited. Uses rime's `bit_grid`. This completes slice ⑤. No
+  change to the existing crates or the shared Gherkin suite.
 
 ### Changed
 

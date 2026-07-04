@@ -8,10 +8,11 @@
 //! reference when you click it mid-formula, a control strip drives the
 //! selected cell's slider / stepper / checkbox / dropdown, a format bar sets
 //! its number format, alignment, and colors, a name box names its location
-//! (`'Rate'`), a Names inspector sidebar lists every live name, and a
-//! searchable Reference sidebar documents every function. This file is the iced
-//! shell (state → message → update → view) and the rime-styled rendering;
-//! later slices add the binary editor and workbook save/open.
+//! (`'Rate'`), a Names inspector sidebar lists every live name, a searchable
+//! Reference sidebar documents every function, and a Binary bit-editor strip
+//! edits the last result's bits. This file is the iced shell (state → message
+//! → update → view) and the rime-styled rendering; the last slice adds workbook
+//! save/open.
 
 mod session;
 
@@ -21,10 +22,10 @@ use iced::{
 };
 use rime::theme::{self, ThemeChoice};
 use rime::widgets::{
-    button, card, grid, header_row, section, select, slider, stepper, text_field, toggle,
+    bit_grid, button, card, grid, header_row, section, select, slider, stepper, text_field, toggle,
     CellAlign, GridCell, GridSelection,
 };
-use session::{Outcome, Session, GRID_COLS, GRID_ROWS};
+use session::{BinaryStatus, Outcome, Session, GRID_COLS, GRID_ROWS};
 use soroban_engine::{
     CellAddress, CellAlignment, CellDisplay, CellFormat, NumberFormat, PaletteColor, Value,
 };
@@ -64,6 +65,8 @@ struct App {
     /// Whether the reference (docs) sidebar is showing, and its search query.
     reference_visible: bool,
     reference_query: String,
+    /// Whether the binary bit-editor strip is showing.
+    binary_visible: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -94,13 +97,22 @@ enum Message {
     ToggleInspector,
     ToggleReference,
     ReferenceQueryChanged(String),
+    ToggleBinary,
+    BitToggled(usize),
+    UseBinary,
 }
 
 impl App {
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::InputChanged(text) => self.session.set_input(text),
-            Message::Submit => self.session.submit(),
+            Message::Submit => {
+                self.session.submit();
+                // The bit editor tracks the newest result until you flip a bit.
+                if self.binary_visible {
+                    self.session.refresh_binary();
+                }
+            }
             // ↑/↓ recall history only in the log; the grid owns its own keys.
             Message::HistoryPrevious if self.mode == ViewMode::Log => {
                 self.session.recall_previous()
@@ -189,6 +201,18 @@ impl App {
             Message::ToggleInspector => self.inspector_visible = !self.inspector_visible,
             Message::ToggleReference => self.reference_visible = !self.reference_visible,
             Message::ReferenceQueryChanged(text) => self.reference_query = text,
+            Message::ToggleBinary => {
+                self.binary_visible = !self.binary_visible;
+                if self.binary_visible {
+                    self.session.refresh_binary();
+                }
+            }
+            Message::BitToggled(index) => self.session.flip_binary_bit(index),
+            Message::UseBinary => {
+                self.session.use_binary();
+                // The value lands in the log input; show it.
+                self.mode = ViewMode::Log;
+            }
         }
         Task::none()
     }
@@ -316,6 +340,7 @@ impl App {
             ))
             .width(Length::Fill),
             button::secondary(toggle_label, Message::ToggleView),
+            button::ghost("Bits", Message::ToggleBinary),
             button::ghost("Names", Message::ToggleInspector),
             button::ghost("Reference", Message::ToggleReference),
             button::ghost(theme_label, Message::ToggleTheme),
@@ -333,17 +358,72 @@ impl App {
             .center_x(Length::Fill)
             .height(Length::Fill);
 
-        if !self.inspector_visible && !self.reference_visible {
-            return main.into();
+        // The main area plus any right-side sidebars (inspector / reference).
+        let horizontal: Element<'_, Message> = if self.inspector_visible || self.reference_visible {
+            let mut panels = row![main.width(Length::Fill)].height(Length::Fill);
+            if self.inspector_visible {
+                panels = panels.push(self.inspector_panel(&palette));
+            }
+            if self.reference_visible {
+                panels = panels.push(self.reference_panel(&palette));
+            }
+            panels.into()
+        } else {
+            main.into()
+        };
+
+        // The binary bit-editor rides underneath as a full-width strip.
+        if self.binary_visible {
+            column![
+                container(horizontal).height(Length::Fill),
+                self.binary_panel(&palette)
+            ]
+            .into()
+        } else {
+            horizontal
         }
-        let mut panels = row![main.width(Length::Fill)].height(Length::Fill);
-        if self.inspector_visible {
-            panels = panels.push(self.inspector_panel(&palette));
-        }
-        if self.reference_visible {
-            panels = panels.push(self.reference_panel(&palette));
-        }
-        panels.into()
+    }
+
+    /// The binary bit-editor strip: a clickable bit grid for the last result,
+    /// its value, and a Use button that drops the value into the input.
+    fn binary_panel(&self, palette: &theme::Palette) -> Element<'_, Message> {
+        let content: Element<'_, Message> = match self.session.binary_status() {
+            BinaryStatus::Editable {
+                bits,
+                value,
+                width,
+                signed,
+            } => {
+                let caption = format!(
+                    "{value}   ·   {width}-bit {}",
+                    if signed { "signed" } else { "unsigned" }
+                );
+                column![
+                    row![
+                        text(caption).font(MONO).size(13).color(palette.accent),
+                        container(button::secondary("Use in input", Message::UseBinary))
+                            .width(Length::Fill)
+                            .align_x(iced::alignment::Horizontal::Right),
+                    ]
+                    .align_y(iced::Alignment::Center),
+                    scrollable(bit_grid(bits, Vec::new(), Message::BitToggled)),
+                ]
+                .spacing(12)
+                .into()
+            }
+            BinaryStatus::Unavailable(reason) => text(reason).size(13).color(palette.muted).into(),
+        };
+
+        container(card(
+            column![text("Binary").size(15).color(palette.ink), content].spacing(12),
+        ))
+        .padding(iced::Padding {
+            top: 0.0,
+            right: 20.0,
+            bottom: 20.0,
+            left: 20.0,
+        })
+        .into()
     }
 
     /// The reference window: every function, operator, and constant — the
