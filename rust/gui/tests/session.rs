@@ -7,9 +7,16 @@
 //! `spec/anzan`, run by the engine's gherkin suite.
 
 use cucumber::{given, then, when, World};
-use soroban_engine::CellDisplay;
-use soroban_gui::session::{Outcome, Session};
+use soroban_engine::{CellAddress, CellDisplay};
+use soroban_gui::session::{Outcome, PointClick, Session};
 use std::fmt;
+
+/// A stand-in for the app's open inline cell editor (the App holds this state;
+/// here the World does, so the point-mode steps can drive it headlessly).
+struct Editor {
+    address: CellAddress,
+    draft: String,
+}
 
 #[derive(World)]
 #[world(init = Self::fresh)]
@@ -17,6 +24,8 @@ struct SessionWorld {
     session: Session,
     /// A stand-in system clipboard for the copy/paste steps (TSV text).
     clipboard: String,
+    /// The open inline editor, if any (point-mode steps).
+    editor: Option<Editor>,
 }
 
 impl SessionWorld {
@@ -26,6 +35,7 @@ impl SessionWorld {
         Self {
             session: Session::new(),
             clipboard: String::new(),
+            editor: None,
         }
     }
 }
@@ -159,6 +169,52 @@ fn i_name_cell(world: &mut SessionWorld, key: String, name: String) {
         .session
         .set_cell_name(address(&key), &name)
         .unwrap_or_else(|error| panic!("naming {key} failed: {error}"));
+}
+
+// MARK: Point mode (Excel-style reference insertion while editing)
+
+#[when(regex = r#"^I begin editing cell ([A-Za-z]+:[0-9]+)$"#)]
+fn i_begin_editing(world: &mut SessionWorld, key: String) {
+    let address = address(&key);
+    let draft = world.session.cell_raw(address);
+    world.editor = Some(Editor { address, draft });
+}
+
+#[when(regex = r#"^I type "(.*)" into the editor$"#)]
+fn i_type_into_editor(world: &mut SessionWorld, text: String) {
+    world.editor.as_mut().expect("no editor is open").draft = text;
+}
+
+#[when(regex = r#"^I click cell ([A-Za-z]+:[0-9]+)$"#)]
+fn i_click_cell(world: &mut SessionWorld, key: String) {
+    let editor = world.editor.take().expect("no editor is open to click from");
+    // Exactly what the app's `select_or_point` does with the click.
+    match world.session.point_click(&editor.draft, address(&key)) {
+        PointClick::Inserted(draft) => {
+            world.editor = Some(Editor {
+                address: editor.address,
+                draft,
+            });
+        }
+        PointClick::Commit => {
+            world.session.set_cell_raw(editor.address, &editor.draft);
+            // The editor is now closed (committed) — `world.editor` stays None.
+        }
+    }
+}
+
+#[then(regex = r#"^the editor holds "(.*)"$"#)]
+fn the_editor_holds(world: &mut SessionWorld, expected: String) {
+    let draft = &world.editor.as_ref().expect("the editor has closed").draft;
+    assert_eq!(*draft, expected, "editor holds '{draft}', expected '{expected}'");
+}
+
+#[then("the editor is closed")]
+fn the_editor_is_closed(world: &mut SessionWorld) {
+    assert!(
+        world.editor.is_none(),
+        "expected the click to commit and close the editor, but it is still open"
+    );
 }
 
 // MARK: Undo / redo

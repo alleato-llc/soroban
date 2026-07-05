@@ -66,6 +66,35 @@ Feature: The Rust app session — calculator and sheet, headless
     When I redo
     Then cell A:1 shows "9"
 
+  # ---- Point mode (Excel-style reference insertion while editing) ----
+
+  Scenario: Clicking a cell after an operator inserts its reference
+    When I begin editing cell A:1
+    And I type "=B:1 +" into the editor
+    And I click cell C:1
+    Then the editor holds "=B:1 +C:1"
+
+  Scenario: Clicking a cell right after "=" inserts its reference
+    When I begin editing cell A:1
+    And I type "=" into the editor
+    And I click cell B:2
+    Then the editor holds "=B:2"
+
+  Scenario: Point mode inserts a cell's name, not its address, when it has one
+    When I set cell B:1 to "5"
+    And I name cell B:1 "Rate"
+    And I begin editing cell A:1
+    And I type "=100 * " into the editor
+    And I click cell B:1
+    Then the editor holds "=100 * 'Rate'"
+
+  Scenario: Clicking away from a complete value commits instead of inserting
+    When I begin editing cell A:1
+    And I type "42" into the editor
+    And I click cell C:1
+    Then the editor is closed
+    And cell A:1 shows "42"
+
   # ---- Controls ----
 
   Scenario: Toggling a checkbox rewrites its own cell

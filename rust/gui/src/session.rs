@@ -93,6 +93,17 @@ pub enum Outcome {
     },
 }
 
+/// What a grid click means while a cell editor is open — Excel's point mode.
+#[derive(Debug, PartialEq, Eq)]
+pub enum PointClick {
+    /// The draft ended "expecting an operand", so the clicked cell's reference
+    /// was spliced in; the caller keeps editing with this new draft.
+    Inserted(String),
+    /// The draft was already a complete value — the caller should commit the
+    /// edit and move the selection to the clicked cell (Excel behavior).
+    Commit,
+}
+
 /// One cell's raw content before and after an edit — the unit of undo. An
 /// empty string means the cell was (or becomes) blank.
 #[derive(Clone)]
@@ -344,6 +355,30 @@ impl Session {
     /// rather than committing. Mirrors the Swift `Calculator.expectsOperand`.
     pub fn expects_operand(&self, draft: &str) -> bool {
         Calculator::expects_operand(draft)
+    }
+
+    /// Excel point mode: a click on `address` while editing `draft`. When the
+    /// draft ends expecting an operand (after `=`, an operator, `(`, `,`, `..`,
+    /// …), the clicked cell's reference is spliced onto the draft and editing
+    /// continues ([`PointClick::Inserted`]); otherwise the click means "I'm
+    /// done here" and the caller commits ([`PointClick::Commit`]). The inserted
+    /// reference is the cell's **name** when it has one (`'Rate'`), else its
+    /// `A:1` address — names read more naturally, like Excel's defined names.
+    pub fn point_click(&self, draft: &str, address: CellAddress) -> PointClick {
+        if Calculator::expects_operand(draft) {
+            PointClick::Inserted(format!("{draft}{}", self.reference_text(address)))
+        } else {
+            PointClick::Commit
+        }
+    }
+
+    /// The text a point-mode click inserts for `address`: a quoted name if the
+    /// cell is named on its sheet, else the bare `A:1` address.
+    fn reference_text(&self, address: CellAddress) -> String {
+        match self.cell_name(address) {
+            Some(name) => format!("'{name}'"),
+            None => address.to_string(),
+        }
     }
 
     /// Commit one cell's raw content as an undoable edit, then recalculate.

@@ -26,7 +26,9 @@ use rime::widgets::{
     bit_grid, button, card, grid, menu_bar_with_trailing, section, select, slider, stepper,
     text_field, toggle, CellAlign, GridCell, GridSelection, Menu, MenuItem,
 };
-use soroban_gui::session::{BinaryStatus, Origin, Outcome, Session, GRID_COLS, GRID_ROWS};
+use soroban_gui::session::{
+    BinaryStatus, Origin, Outcome, PointClick, Session, GRID_COLS, GRID_ROWS,
+};
 use soroban_engine::{
     CellAddress, CellAlignment, CellDisplay, CellFormat, NumberFormat, PaletteColor,
 };
@@ -443,18 +445,20 @@ impl App {
     /// the clicked cell's reference and refocus the bar; otherwise commit any
     /// pending edit, then move the selection and load its content.
     fn select_or_point(&mut self, row: usize, col: usize, extend: bool) -> Task<Message> {
-        let point_mode = self.mode == ViewMode::Grid
-            && self.editing
-            && self.session.expects_operand(&self.edit_draft);
-        if point_mode {
-            self.edit_draft
-                .push_str(&CellAddress::new(col, row).to_string());
-            // Focus the inline editor (the in-grid editor is the active one).
-            return operation::focus(grid_editor_id());
-        }
-        if self.editing {
-            // Navigating away commits the in-progress edit (Excel behavior).
-            self.commit_edit();
+        if self.mode == ViewMode::Grid && self.editing {
+            match self
+                .session
+                .point_click(&self.edit_draft, CellAddress::new(col, row))
+            {
+                // Point mode: the clicked cell's reference joins the draft and
+                // the inline editor keeps focus (the in-grid editor is active).
+                PointClick::Inserted(draft) => {
+                    self.edit_draft = draft;
+                    return operation::focus(grid_editor_id());
+                }
+                // Navigating away commits the in-progress edit (Excel behavior).
+                PointClick::Commit => self.commit_edit(),
+            }
         }
         self.grid_selection = Some(match (extend, self.grid_selection) {
             (true, Some(current)) => GridSelection {
