@@ -153,6 +153,8 @@ enum Message {
     SetFontSize(f32),
     /// Pick the calculator language mode (Normal / Programmer / Finance).
     SelectMode(LanguageMode),
+    /// Cycle the language mode from the input-bar affordance.
+    CycleMode,
     /// Edit one token of the custom palette: (token key, new color).
     SetCustomColor(String, Color),
     GridScrolled(Vector),
@@ -308,6 +310,17 @@ impl App {
             }
             Message::SetFontSize(size) => self.font_size = size.clamp(9.0, 28.0),
             Message::SelectMode(mode) => self.session.set_language_mode(mode),
+            Message::CycleMode => {
+                let next = match self.session.language_mode() {
+                    LanguageMode::Normal => LanguageMode::Programmer,
+                    LanguageMode::Programmer => LanguageMode::Finance,
+                    LanguageMode::Finance => LanguageMode::Normal,
+                };
+                self.session.set_language_mode(next);
+                // Keep typing where it was — a toolbar click would otherwise
+                // steal focus from the input.
+                return operation::focus(log_input_id());
+            }
             Message::SetCustomColor(key, color) => {
                 let mut palette = self.custom_palette.unwrap_or_else(|| self.active_palette());
                 palette.set(&key, color);
@@ -1611,8 +1624,14 @@ impl App {
         };
 
         // The input is pinned to the BOTTOM, behind a `>` prompt; Enter submits
-        // (no `=` button — the original has none). The two signature corner
-        // icons (docs / grid) sit at the right, always visible like the original.
+        // (no `=` button — the original has none). A mode affordance (cycles
+        // Normal → Programmer → Finance) sits at the left of the corner icons
+        // (docs / grid), like the AppKit app's input-bar mode control.
+        let mode_label = match self.session.language_mode() {
+            LanguageMode::Normal => "Normal",
+            LanguageMode::Programmer => "Programmer",
+            LanguageMode::Finance => "Finance",
+        };
         let input_bar = row![
             text(">").font(MONO).size(size + 2.0).color(palette.muted),
             text_field("Expression", self.session.input(), Message::InputChanged)
@@ -1620,6 +1639,7 @@ impl App {
                 .on_submit(Message::Submit)
                 .size(size)
                 .font(MONO),
+            button::ghost(mode_label, Message::CycleMode),
             button::icon(glyph::REFERENCE, Message::ToggleReference),
             button::icon(glyph::GRID, Message::ToggleView),
         ]
@@ -1627,11 +1647,18 @@ impl App {
         .align_y(iced::Alignment::Center);
 
         // The popup sits just ABOVE the bottom-anchored input (a REPL wants its
-        // completions rising from the prompt, not dropping off-screen).
-        let bottom = match self.suggestion_popup() {
-            Some(popup) => column![popup, input_bar].spacing(4),
-            None => column![input_bar],
-        };
+        // completions rising from the prompt, not dropping off-screen). The
+        // input bar stays at a FIXED position in the column — a zero-height
+        // placeholder stands in when there's no popup — so the text field never
+        // shifts index and thus never loses focus mid-type (an iced tree-diff
+        // quirk: a widget that changes tree position is rebuilt from scratch).
+        let popup: Element<'_, Message> = self.suggestion_popup().unwrap_or_else(|| {
+            iced::widget::Space::new()
+                .width(Length::Shrink)
+                .height(Length::Fixed(0.0))
+                .into()
+        });
+        let bottom = column![popup, input_bar].spacing(4);
         column![log, bottom].spacing(12).into()
     }
 

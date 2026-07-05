@@ -213,7 +213,12 @@ portable, unsigned Linux / Windows / macOS binaries.
     completion popup (`Calculator::completions` over the trailing identifier):
     ↑/↓ move the highlight, Tab / Enter accept (a function gets its `(`), a click
     accepts a row. The popup rises *above* the bottom-anchored log prompt, on
-    rime's new `suggestion_list`. New `SOROBAN_SHOT_TYPE` shot-harness knob.
+    rime's new `suggestion_list`, and keeps the input at a fixed tree index (a
+    zero-height placeholder stands in for the popup) so the text field never
+    loses focus as completions come and go. New `SOROBAN_SHOT_TYPE` knob.
+  - **Mode affordance.** The log input bar carries a mode button (Normal →
+    Programmer → Finance on click) mirroring the AppKit input-bar control, in
+    sync with the `:mode` command and the Settings picker.
   - **Auto-hiding menu bar.** The in-window File / Edit / View bar (chrome, since
     iced has no system menu bar) now hides so content fills the whole window,
     revealing only while the pointer hugs the top edge or a menu is open — it
