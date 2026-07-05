@@ -1,0 +1,48 @@
+# The Rust/iced Soroban app (docs/MIGRATION.md Phase 3b). Built in vertical
+# slices: ① a log-view calculator, ② a grid over the SheetStore (⌘\), ③ cell
+# editing with undo + point mode, ④ controls + formats + named cells, ⑤ the
+# names inspector + reference window + binary bit-editor, ⑥ the workbook
+# manager (New / Open / Save `.soroban`, dirty tracking).
+[package]
+name = "soroban-gui"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "The Soroban desktop app (Rust/iced) — the log-view calculator over the Anzan engine."
+
+[[bin]]
+name = "soroban-gui"
+path = "src/main.rs"
+
+# The UI-free session model is also a library, so the headless BDD suite
+# (tests/session.rs) can drive it without linking iced.
+[lib]
+name = "soroban_gui"
+path = "src/lib.rs"
+
+[dependencies]
+# The whole engine (soroban-engine re-exports the anzan language).
+soroban-engine = { path = "../engine" }
+# The house component kit + theming. A sibling repo; path dep for local dev.
+# iced is re-exported as rime::iced, but we also depend on it directly for the
+# application entry point — cargo unifies to one 0.14.x across the graph.
+rime = { path = "../../../rime/rime" }
+iced = { version = "0.14", features = ["canvas", "advanced"] }
+# Native Open/Save file dialogs — iced has none. gui-only; the workspace
+# crates stay dependency-free.
+rfd = "0.15"
+# PNG encoder for the built-in review-screenshot harness (see `shot` in
+# main.rs): headless wgpu capture, env-gated by SOROBAN_SHOT, inert otherwise.
+png = "0.17"
+
+[dev-dependencies]
+# The BDD harness for the headless session-scenario suite (tests/session.rs): it
+# drives the UI-free `Session` — no iced, no rendering, a fast `cargo test`. The
+# Rust counterpart to the Swift SorobanSessionTests. Versions match the engine's
+# parity suite (rust/engine); gui is workspace-excluded, so they're pinned here.
+cucumber = "0.21"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+[[test]]
+name = "session"
+harness = false # cucumber owns the runner

@@ -24,7 +24,7 @@ pub use error::EngineError;
 pub use eval::binary_format::{BinaryEditorBits, BinaryEditorPalette, BinaryEditorPresets};
 pub use eval::binary_view::{
     BinaryView, Field as BinaryField, FieldSpec as BinaryFieldSpec, Kind as BinaryViewKind,
-    Unavailable as BinaryViewUnavailable,
+    Unavailable as BinaryViewUnavailable, EDITABLE_WIDTHS as BINARY_EDITABLE_WIDTHS,
 };
 pub use eval::data_type::{DataField, DataFieldType, DataType};
 pub use eval::environment::{EvaluationEnvironment, UserFunction};

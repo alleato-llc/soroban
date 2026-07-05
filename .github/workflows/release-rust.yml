@@ -1,0 +1,174 @@
+name: Release (Rust)
+
+# The RUST ecosystem's release track — independent of the Swift/macOS release
+# (release.yml, salpa). The Rust/iced app (rust/gui) is cross-platform, so this
+# ships portable binaries for Linux, Windows, AND macOS (unsigned — the signed,
+# notarized native macOS app is the Swift DMG; this is the portable build).
+#
+# Versioning is its OWN sequence: rust-v* git tags, patch auto-bumped (#minor/
+# #major in the head commit bumps bigger; an already-tagged HEAD re-releases).
+# The Swift track keeps the plain v* tags via salpa — separate namespaces, no
+# collision. Per-ecosystem changelog: rust/CHANGELOG.md.
+#
+# Trigger: push to main touching rust/** (the ecosystem) or spec/** (shared
+# language behavior — a spec change releases BOTH ecosystems), plus a manual
+# workflow_dispatch. Build steps mirror the PR-tested rust-gui-build.yml.
+#
+# rime is a public sibling repo (rust/gui depends on it by ../../../rime/rime).
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "rust/**"
+      - "spec/**"
+      - ".github/workflows/release-rust.yml"
+
+permissions:
+  contents: write # create the release + upload binaries
+
+concurrency:
+  group: release-rust
+  cancel-in-progress: false
+
+jobs:
+  # Correctness gate (mirrors the Swift track's salpa test jobs). rust-ci.yml
+  # runs the full fmt/clippy/matrix separately; here we just guard the release
+  # on the tests passing.
+  test:
+    name: Rust tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@v5
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - name: Unit tests
+        run: cargo test --workspace --lib
+      - name: Gherkin parity suite (spec/anzan)
+        run: cargo test --test gherkin -p soroban-engine
+
+  # Compute the next rust-v* version and create the (empty) GitHub Release, so
+  # the build matrix can attach to it directly.
+  release-init:
+    name: Version + create release
+    needs: [test]
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.v.outputs.tag }}
+      version: ${{ steps.v.outputs.version }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # rust-v* tags drive the version
+
+      - name: Compute next rust-v* version
+        id: v
+        run: |
+          set -euo pipefail
+          existing=$(git tag -l 'rust-v*' --points-at HEAD | head -n1 || true)
+          if [ -n "$existing" ]; then
+            version="${existing#rust-v}"
+            echo "HEAD already tagged $existing — re-releasing that version"
+          else
+            latest=$(git tag -l 'rust-v*' --sort=-v:refname | head -n1 || true)
+            if [ -z "$latest" ]; then
+              version="0.1.0" # seed: the first Rust release matches the crate version
+            else
+              ver="${latest#rust-v}"
+              MAJ="${ver%%.*}"; rest="${ver#*.}"; MIN="${rest%%.*}"; PAT="${rest#*.}"
+              msg=$(git log -1 --pretty=%B)
+              if printf '%s' "$msg" | grep -q '#major'; then
+                MAJ=$((MAJ + 1)); MIN=0; PAT=0
+              elif printf '%s' "$msg" | grep -q '#minor'; then
+                MIN=$((MIN + 1)); PAT=0
+              else
+                PAT=$((PAT + 1))
+              fi
+              version="$MAJ.$MIN.$PAT"
+            fi
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=rust-v$version" >> "$GITHUB_OUTPUT"
+          echo "Rust release: rust-v$version"
+
+      - name: Create the release (idempotent)
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.v.outputs.tag }}"
+          if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "Release $TAG already exists — build jobs will --clobber into it"
+          else
+            gh release create "$TAG" \
+              --repo "${{ github.repository }}" \
+              --target "$GITHUB_SHA" \
+              --title "Soroban (Rust) ${{ steps.v.outputs.version }}" \
+              --notes "Cross-platform Soroban desktop app (Rust/iced) — portable, unsigned binaries for Linux, Windows, and macOS. The signed/notarized native macOS app is the Swift \`Soroban.dmg\` release. See rust/CHANGELOG.md."
+          fi
+
+  # Build each target and attach it to the release. Six targets: three OSes ×
+  # two arches. macOS builds on Apple Silicon — arm64 native, x86_64 by
+  # cross-compile (the toolchain adds the target).
+  build:
+    name: ${{ matrix.name }}
+    needs: [release-init]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux-x86_64, os: ubuntu-latest, target: x86_64-unknown-linux-gnu }
+          - { name: linux-arm64, os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu }
+          - { name: windows-x86_64, os: windows-latest, target: x86_64-pc-windows-msvc }
+          - { name: windows-arm64, os: windows-11-arm, target: aarch64-pc-windows-msvc }
+          - { name: macos-arm64, os: macos-14, target: aarch64-apple-darwin }
+          - { name: macos-x86_64, os: macos-14, target: x86_64-apple-darwin }
+    runs-on: ${{ matrix.os }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      # Both repos as siblings so rust/gui's ../../../rime/rime path resolves.
+      - name: Check out soroban
+        uses: actions/checkout@v5
+        with:
+          path: soroban
+      - name: Check out rime (sibling)
+        uses: actions/checkout@v5
+        with:
+          repository: alleato-llc/rime # public — the default token can read it
+          path: rime
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: soroban/rust/gui
+          key: rust-release-${{ matrix.target }}
+
+      - name: Linux windowing deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev libwayland-dev libx11-dev
+
+      - name: Build (release)
+        working-directory: soroban/rust/gui
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Attach binary to the release
+        shell: bash
+        working-directory: soroban/rust/gui
+        run: |
+          set -euo pipefail
+          ext=""
+          [ "${{ runner.os }}" = "Windows" ] && ext=".exe"
+          asset="soroban-gui-${{ matrix.name }}${ext}"
+          cp "target/${{ matrix.target }}/release/soroban-gui${ext}" "$asset"
+          gh release upload "${{ needs.release-init.outputs.tag }}" "$asset" \
+            --clobber --repo "${{ github.repository }}"

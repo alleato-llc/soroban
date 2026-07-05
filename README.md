@@ -651,6 +651,12 @@ own font.
   binary) depends on Anzan alone. Everything testable with `swift test`.
 - `swift/App/` — SwiftUI app: calculation log, input bar with autocomplete, the
   grid, workbook open/save, theming + font settings.
+- `rust/` — a second, in-progress implementation on [iced](https://iced.rs)
+  (via **rime**, our component kit): the `anzan` language crate, the
+  `soroban-engine` hosting layer, and the `soroban` CLI are complete and pass
+  the same shared `spec/` Gherkin suite (522/522), and the `gui` desktop app is
+  well underway. Both implementations are held to the one `spec/` — the
+  cross-ecosystem parity oracle. See [docs/MIGRATION.md](docs/MIGRATION.md).
 - `site/` — the landing page (Astro + Preact + TypeScript, static): palettes
   mirror the app's themes, the hero carousels real app screenshots, and it
   deploys to a static host via `deploy-site.yml`. Its own docs live in

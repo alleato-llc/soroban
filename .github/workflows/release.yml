@@ -1,7 +1,10 @@
 name: Release
 
-# Gitflow-style: every push to main IS a release. salpa
-# (github.com/alleato-llc/salpa, pulled from ghcr) owns the lifecycle —
+# The SWIFT/macOS release track — the signed, notarized native app. The Rust
+# ecosystem's cross-platform binaries have their OWN track (release-rust.yml,
+# rust-v* tags); this one keeps the plain v* tags via salpa.
+#
+# salpa (github.com/alleato-llc/salpa, pulled from ghcr) owns the lifecycle —
 # `salpa test <suite>` runs a named test suite, `salpa version` computes the
 # next semver (patch by default; #minor/#major in the head commit bumps
 # bigger), `salpa build` imports the Developer ID cert and produces a SIGNED +
@@ -11,6 +14,11 @@ name: Release
 #
 # The GitHub Release is the point of truth for downloads — no cloud here.
 #
+# Trigger: push to main touching swift/** (the app) or spec/** (shared language
+# behavior — a spec change releases BOTH ecosystems), plus manual dispatch.
+# Docs/site/rust-only pushes no longer cut a macOS release. [skip ci] still
+# works as a per-commit override.
+#
 # Required repository secrets (see docs/RELEASING.md):
 #   BUILD_CERTIFICATE_BASE64    Developer ID Application cert+key (.p12, base64)
 #   P12_PASSWORD                the p12's password
@@ -18,8 +26,13 @@ name: Release
 #   APPLE_ID                    Apple ID email (notarization)
 #   APPLE_APP_SPECIFIC_PASSWORD app-specific password (notarization)
 on:
+  workflow_dispatch:
   push:
     branches: [main]
+    paths:
+      - "swift/**"
+      - "spec/**"
+      - ".github/workflows/release.yml"
 
 permissions:
   contents: write # gh release create (creates the tag) + uploads the dmg
@@ -128,7 +141,7 @@ jobs:
           salpa --version "$VERSION" publish  # gh release (tag) + Soroban-$VERSION.dmg + versionless Soroban.dmg
 
       - name: Upload artifact (run-scoped copy)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Soroban-${{ steps.rel.outputs.version }}.dmg
           path: swift/Soroban-${{ steps.rel.outputs.version }}.dmg

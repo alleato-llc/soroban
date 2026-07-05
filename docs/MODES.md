@@ -311,11 +311,12 @@ table. The part one might fear — tracking switches, persistence, replay fideli
    comparison). Not C/Java.
 2. **Scope** — log-only for v1; workbook-wide later.
 3. **New builtins** — `pow(a,b)` only. No `pct` (percent is the `.percent` node;
-   `* 0.01` fallback in Programmer). No `~` (deferred to fixed-width).
+   `* 0.01` fallback in Programmer). `~` (prefix bitwise-NOT in Programmer mode)
+   shipped later with fixed-width integers — see below.
 4. **`&`** — Programmer-only bitwise AND. Concat stays `+` / `concat()`; the
    reserved-`&`-for-concat plan is dropped.
 
-Related future work: **fixed-width integer types** (`int32`, `uint64`, …) — the
-home for `~`, signed shifts, and checked bounded arithmetic. Orthogonal to modes
-(a value exists in any mode; the mode only affects glyph parsing + radix
+Related work, **now shipped**: **fixed-width integer types** (`Int32`, `UInt64`,
+…) — the home for `~`, signed shifts, and checked bounded arithmetic. Orthogonal
+to modes (a value exists in any mode; the mode only affects glyph parsing + radix
 display). Specified in `docs/FIXED-WIDTH.md`.

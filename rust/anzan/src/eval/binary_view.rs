@@ -54,6 +54,13 @@ impl BinaryView {
         matches!(self.kind, Kind::Fixed { signed: true })
     }
 
+    /// True when the value is locked to its own width — a fixed-width int edits
+    /// only at its declared width, so a host hides the width picker. A plain
+    /// register is free to change width.
+    pub fn width_locked(&self) -> bool {
+        matches!(self.kind, Kind::Fixed { .. })
+    }
+
     /// The narrowest editable width that can hold the current value — the
     /// host grays out smaller picker options (they can't represent it). A
     /// fixed-width value is locked to its own width (its picker is hidden
