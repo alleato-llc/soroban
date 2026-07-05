@@ -14,6 +14,8 @@ portable, unsigned Linux / Windows / macOS binaries.
 
 ## [Unreleased]
 
+## [rust-v0.1.1] - 2026-07-05
+
 ### Added
 
 - **Font-family picker** in Settings → Appearance. Two monospace families
