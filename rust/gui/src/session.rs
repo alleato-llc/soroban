@@ -5,6 +5,7 @@
 //! history. The Rust counterpart to the Swift app's `CalculatorSession`; the
 //! iced `State` in `main.rs` is a thin shell over it.
 
+use serde::{Deserialize, Serialize};
 use soroban_engine::named_cells::NamedCells;
 use soroban_engine::spreadsheet::SheetDefinitionKind;
 use soroban_engine::workbook::{restore_session, SheetPayload, Workbook};
@@ -142,6 +143,7 @@ pub const GRID_ROWS: usize = Spreadsheet::ROW_COUNT;
 pub const GRID_COLS: usize = Spreadsheet::COLUMN_COUNT;
 
 /// One line of the log: what was typed and what it produced.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LogEntry {
     pub input: String,
     pub outcome: Outcome,
@@ -150,7 +152,7 @@ pub struct LogEntry {
 /// The displayable result of one submission — the log renders each kind
 /// differently (a value, a definition, a note, a documentation block, an
 /// error with an optional caret column).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Outcome {
     /// `= 42` — a computed value, at full precision.
     Value(String),
@@ -319,12 +321,29 @@ pub struct Session {
     data_store: Option<Rc<DataStore>>,
     /// This session's working-database file (a per-session temp path).
     working_db: PathBuf,
+    /// Whether the log tape and ↑/↓ input history persist to disk across
+    /// launches. True for the app (`Session::new`), false for tests
+    /// (`Session::ephemeral`) so they never touch the real data-dir files —
+    /// the same discipline as Swift's `LogStore(persists:)`.
+    persists: bool,
 }
 
 impl Session {
+    /// The app session — its log tape and ↑/↓ input history persist to the
+    /// user data dir and are reloaded here, so a relaunch restores them.
     pub fn new() -> Self {
+        Self::build(true)
+    }
+
+    /// A disk-isolated session for tests: nothing is loaded or saved (mirrors
+    /// Swift's `LogStore(persists: false)` and the working-DB temp path).
+    pub fn ephemeral() -> Self {
+        Self::build(false)
+    }
+
+    fn build(persists: bool) -> Self {
         let (calculator, store) = Self::fresh_engine();
-        let session = Self {
+        let mut session = Self {
             calculator,
             store,
             entries: Rc::new(RefCell::new(Vec::new())),
@@ -342,8 +361,12 @@ impl Session {
             point_anchor: None,
             data_store: None,
             working_db: Self::working_db_path(),
+            persists,
         };
         session.install_log_source();
+        if persists {
+            session.load_persisted();
+        }
         session
     }
 
@@ -354,6 +377,67 @@ impl Session {
         static COUNTER: AtomicU64 = AtomicU64::new(0);
         let n = COUNTER.fetch_add(1, Ordering::Relaxed);
         std::env::temp_dir().join(format!("soroban-working-{}-{n}.sqlite", std::process::id()))
+    }
+
+    // MARK: Log + input-history persistence (mirrors the Swift LogStore)
+
+    /// The newest entries kept on disk — matches Swift's `LogStore.limit`.
+    const LOG_LIMIT: usize = 500;
+
+    /// The per-user data directory (`…/Application Support/Soroban` on macOS,
+    /// `%APPDATA%\Soroban` on Windows, `~/.local/share/soroban` on Linux),
+    /// created on demand. `None` if the platform has no data dir. The
+    /// `SOROBAN_DATA_DIR` env var overrides it (an escape hatch, and the seam
+    /// the persistence round-trip test points at a temp dir).
+    fn data_dir() -> Option<PathBuf> {
+        let dir = match std::env::var_os("SOROBAN_DATA_DIR") {
+            Some(custom) => PathBuf::from(custom),
+            None => dirs::data_dir()?.join("Soroban"),
+        };
+        std::fs::create_dir_all(&dir).ok()?;
+        Some(dir)
+    }
+
+    fn log_path() -> Option<PathBuf> {
+        Some(Self::data_dir()?.join("log.json"))
+    }
+
+    fn input_history_path() -> Option<PathBuf> {
+        Some(Self::data_dir()?.join("input_history.json"))
+    }
+
+    /// Reload the tape + ↑/↓ history from disk (best-effort — a missing or
+    /// corrupt file just leaves the vec empty, like `LogStore::load`).
+    fn load_persisted(&mut self) {
+        if let Some(entries) = Self::log_path()
+            .and_then(|path| std::fs::read(path).ok())
+            .and_then(|bytes| serde_json::from_slice::<Vec<LogEntry>>(&bytes).ok())
+        {
+            *self.entries.borrow_mut() = entries;
+        }
+        if let Some(history) = Self::input_history_path()
+            .and_then(|path| std::fs::read(path).ok())
+            .and_then(|bytes| serde_json::from_slice::<Vec<String>>(&bytes).ok())
+        {
+            self.history = history;
+        }
+    }
+
+    /// Snapshot the whole (small) tape + input history to disk, capped to the
+    /// newest [`LOG_LIMIT`](Self::LOG_LIMIT). A no-op for an ephemeral session.
+    fn save_persisted(&self) {
+        if !self.persists {
+            return;
+        }
+        let entries = self.entries.borrow();
+        let tape = &entries[entries.len().saturating_sub(Self::LOG_LIMIT)..];
+        if let (Some(path), Ok(bytes)) = (Self::log_path(), serde_json::to_vec(tape)) {
+            let _ = std::fs::write(path, bytes);
+        }
+        let history = &self.history[self.history.len().saturating_sub(Self::LOG_LIMIT)..];
+        if let (Some(path), Ok(bytes)) = (Self::input_history_path(), serde_json::to_vec(history)) {
+            let _ = std::fs::write(path, bytes);
+        }
     }
 
     // MARK: Data sheets
@@ -610,6 +694,8 @@ impl Session {
         self.history_cursor = None;
         // A log line may define a variable/function/type — mark the doc dirty.
         self.revision += 1;
+        // The tape + recall history survive a relaunch (mirrors LogStore).
+        self.save_persisted();
     }
 
     fn evaluate(&self, line: &str) -> Outcome {
@@ -1882,5 +1968,54 @@ fn clamp(value: BigDecimal, minimum: &BigDecimal, maximum: &BigDecimal) -> BigDe
 impl Default for Session {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A persisting session reloads its log tape and ↑/↓ input history from
+    /// disk on the next launch — the parity fix for the Swift `LogStore`.
+    #[test]
+    fn log_tape_and_input_history_survive_a_relaunch() {
+        // Point persistence at a unique temp dir, never the real data dir.
+        let dir = std::env::temp_dir().join(format!(
+            "soroban-persist-test-{}-{:p}",
+            std::process::id(),
+            &() as *const ()
+        ));
+        std::env::set_var("SOROBAN_DATA_DIR", &dir);
+
+        // First launch: type two lines, which persist on each submit.
+        {
+            let mut session = Session::new();
+            session.set_input("1 + 1".to_string());
+            session.submit();
+            session.set_input("2 + 3".to_string());
+            session.submit();
+        }
+
+        // Second launch: the tape and recall history come back.
+        {
+            let mut session = Session::new();
+            let entries = session.entries();
+            assert_eq!(entries.len(), 2, "the log tape reloaded");
+            assert_eq!(entries[0].input, "1 + 1");
+            assert!(matches!(&entries[1].outcome, Outcome::Value(v) if v == "5"));
+            drop(entries);
+            // ↑ recalls the newest submitted line.
+            session.recall_previous();
+            assert_eq!(session.input(), "2 + 3", "the ↑/↓ history reloaded");
+        }
+
+        // An ephemeral session ignores the same dir entirely.
+        {
+            let session = Session::ephemeral();
+            assert!(session.entries().is_empty(), "ephemeral loads nothing");
+        }
+
+        std::env::remove_var("SOROBAN_DATA_DIR");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -34,6 +34,14 @@ rfd = "0.15"
 # PNG encoder for the built-in review-screenshot harness (see `shot` in
 # main.rs): headless wgpu capture, env-gated by SOROBAN_SHOT, inert otherwise.
 png = "0.17"
+# Log/input-history persistence: the tape + ↑/↓ recall survive a relaunch,
+# mirroring the Swift app's LogStore (log.json) and the CLI's ~/.soroban_history.
+# gui is workspace-excluded, so these are pinned here rather than inherited.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# The Application-Support-equivalent per-user data dir (macOS ~/Library/
+# Application Support, Windows %APPDATA%, Linux ~/.local/share). gui-only.
+dirs = "5"
 
 [dev-dependencies]
 # The BDD harness for the headless session-scenario suite (tests/session.rs): it

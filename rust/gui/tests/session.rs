@@ -33,7 +33,8 @@ impl SessionWorld {
     /// launch. Disk-safe: nothing persists without an explicit save.
     fn fresh() -> Self {
         Self {
-            session: Session::new(),
+            // Ephemeral: never touches the real log.json / input_history.json.
+            session: Session::ephemeral(),
             clipboard: String::new(),
             editor: None,
         }

@@ -30,6 +30,11 @@ DMG.
   `worksheet.isData` reports it. Data sheets round-trip through a `.soroban`
   package's `data.sqlite`, so a workbook authored in either app opens in both.
 
+- **The Rust app remembers your history.** The calculation log and the ↑/↓
+  input-recall list now persist across launches (to `…/Application Support/
+  Soroban/log.json` + `input_history.json`, capped at the newest 500), matching
+  the Swift app's `LogStore`. `SOROBAN_DATA_DIR` overrides the location.
+
 ### Changed
 
 - **The Rust release now runs entirely through salpa** (the house release tool),
