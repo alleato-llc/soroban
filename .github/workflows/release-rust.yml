@@ -109,7 +109,7 @@ jobs:
               --repo "${{ github.repository }}" \
               --target "$GITHUB_SHA" \
               --title "Soroban (Rust) ${{ steps.v.outputs.version }}" \
-              --notes "Cross-platform Soroban desktop app (Rust/iced) — portable, unsigned binaries for Linux, Windows, and macOS. The signed/notarized native macOS app is the Swift \`Soroban.dmg\` release. See rust/CHANGELOG.md."
+              --notes "Cross-platform Soroban desktop app (Rust/iced) — portable, unsigned builds: bare binaries for Linux and Windows, an unsigned \`Soroban.app\` DMG for macOS (first launch: right-click → Open to clear Gatekeeper). The signed/notarized native macOS app is the Swift \`Soroban.dmg\` release. See rust/CHANGELOG.md."
           fi
 
   # Build each target and attach it to the release. Six targets: three OSes ×
@@ -161,7 +161,24 @@ jobs:
         working-directory: soroban/rust/gui
         run: cargo build --release --locked --target ${{ matrix.target }}
 
+      # macOS: wrap the binary in a double-clickable, icon-carrying Soroban.app
+      # inside a drag-to-Applications DMG (unsigned — the signed native app is
+      # the Swift Soroban.dmg). Linux/Windows ship the bare portable binary.
+      - name: Package macOS DMG
+        if: runner.os == 'macOS'
+        working-directory: soroban/rust/gui
+        run: |
+          set -euo pipefail
+          asset="soroban-gui-${{ matrix.name }}.dmg"
+          packaging/make-dmg.sh \
+            "target/${{ matrix.target }}/release/soroban-gui" \
+            "$asset" \
+            "${{ needs.release-init.outputs.version }}"
+          gh release upload "${{ needs.release-init.outputs.tag }}" "$asset" \
+            --clobber --repo "${{ github.repository }}"
+
       - name: Attach binary to the release
+        if: runner.os != 'macOS'
         shell: bash
         working-directory: soroban/rust/gui
         run: |

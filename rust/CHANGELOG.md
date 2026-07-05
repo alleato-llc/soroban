@@ -10,9 +10,22 @@ This track is versioned `rust-vX.Y.Z` (its own sequence, independent of the
 Swift `vX.Y.Z` tags), cut on merge to `main` that touches `rust/**` or `spec/**`
 (patch by default; `#minor` / `#major` in the merge commit bumps that part — see
 [docs/RELEASING.md](../docs/RELEASING.md)). Each `rust-v*` GitHub Release ships
-portable, unsigned Linux / Windows / macOS binaries.
+portable, unsigned builds: Linux / Windows binaries and a macOS `Soroban.app`
+DMG.
 
 ## [Unreleased]
+
+## [rust-v0.1.2] - 2026-07-05
+
+### Added
+
+- **App icon.** The window now carries the Soroban artwork (the Swift app's
+  256×256 icon) in the Linux and Windows taskbars.
+- **macOS DMG.** The macOS release is now a double-clickable `Soroban.app`
+  inside a drag-to-Applications DMG (`soroban-gui-macos-<arch>.dmg`) carrying the
+  app icon — replacing the bare Mach-O binary that dumped bytes to a terminal
+  when opened. Still unsigned (the signed, notarized native app is the Swift
+  `Soroban.dmg`); first launch needs a right-click → Open to clear Gatekeeper.
 
 ## [rust-v0.1.1] - 2026-07-05
 

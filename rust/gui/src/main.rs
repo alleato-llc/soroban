@@ -46,6 +46,27 @@ const MONO: Font = Font::MONOSPACE;
 const JETBRAINS_MONO_BYTES: &[u8] = include_bytes!("assets/fonts/JetBrainsMono-Regular.ttf");
 const SOURCE_CODE_PRO_BYTES: &[u8] = include_bytes!("assets/fonts/SourceCodePro-Regular.ttf");
 
+/// The Soroban app icon (the Swift app's 256×256 artwork), embedded so the
+/// window carries it in the Linux/Windows taskbar. macOS takes its Dock icon
+/// from the packaged `Soroban.app` bundle instead (winit ignores the window
+/// icon there) — see `rust/gui/packaging`.
+const APP_ICON_BYTES: &[u8] = include_bytes!("assets/icon.png");
+
+/// Decode the embedded PNG into an iced window icon. Returns `None` (no icon,
+/// never a crash) if the bytes ever fail to decode — the app still runs.
+fn app_icon() -> Option<iced::window::Icon> {
+    let mut reader = png::Decoder::new(APP_ICON_BYTES).read_info().ok()?;
+    let mut buf = vec![0; reader.output_buffer_size()];
+    let info = reader.next_frame(&mut buf).ok()?;
+    buf.truncate(info.buffer_size());
+    // The bundled asset is 8-bit RGBA; bail on any other shape rather than
+    // hand a mis-sized buffer to `from_rgba` (which would just Err anyway).
+    if info.bit_depth != png::BitDepth::Eight || info.color_type != png::ColorType::Rgba {
+        return None;
+    }
+    iced::window::icon::from_rgba(buf, info.width, info.height).ok()
+}
+
 /// The monospace families offered in Settings: `(display name, resolved Font)`.
 /// "System" is iced's built-in default monospace; the rest are the bundled
 /// fonts, referenced by the family name embedded in their TTF.
@@ -2270,7 +2291,11 @@ fn main() -> iced::Result {
         .font(icons::FONT_BYTES) // the embedded icon font (toolbar/toggle/close glyphs)
         .font(JETBRAINS_MONO_BYTES) // bundled monospace families, selectable in Settings
         .font(SOURCE_CODE_PRO_BYTES)
-        .window_size(iced::Size::new(1040.0, 680.0))
+        .window(iced::window::Settings {
+            size: iced::Size::new(1040.0, 680.0),
+            icon: app_icon(), // taskbar icon on Linux/Windows (macOS uses the .app)
+            ..Default::default()
+        })
         .run()
 }
 
