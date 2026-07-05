@@ -24,7 +24,7 @@ use rime::theme::{self, ThemeChoice};
 use rime::widgets::menu;
 use rime::widgets::{
     bit_grid, button, card, grid, menu_bar_with_trailing, section, select, slider, stepper,
-    text_field, toggle, CellAlign, GridCell, GridSelection, Menu, MenuItem,
+    text_field, toggle, BitBand, CellAlign, GridCell, GridSelection, Menu, MenuItem,
 };
 use soroban_gui::session::{
     BinaryStatus, Origin, Outcome, PointClick, Session, GRID_COLS, GRID_ROWS,
@@ -134,6 +134,11 @@ enum Message {
     ToggleBinary,
     BitToggled(usize),
     UseBinary,
+    /// Change the bit-editor's register width (8…256).
+    SetBinaryWidth(u32),
+    /// Pick a bit-format by name, or `None` (the "None" entry) for a plain
+    /// register.
+    SetBinaryFormat(Option<String>),
     NewWorkbook,
     OpenWorkbook,
     SaveWorkbook,
@@ -298,6 +303,10 @@ impl App {
                 }
             }
             Message::BitToggled(index) => self.session.flip_binary_bit(index),
+            Message::SetBinaryWidth(width) => self.session.set_binary_width(width),
+            Message::SetBinaryFormat(name) => {
+                self.session.apply_binary_format(name.as_deref());
+            }
             Message::UseBinary => {
                 self.session.use_binary();
                 // The value lands in the log input; show it.
@@ -667,32 +676,88 @@ impl App {
         .into()
     }
 
-    /// The binary bit-editor strip: a clickable bit grid for the last result,
-    /// its value, and a Use button that drops the value into the input.
+    /// The binary bit-editor strip: value + hex header, a width picker, a
+    /// bit-format dropdown, and a clickable bit grid tinted by the active
+    /// format's named fields, plus a Use button that drops the value into the
+    /// input.
     fn binary_panel(&self, palette: &theme::Palette) -> Element<'_, Message> {
         let content: Element<'_, Message> = match self.session.binary_status() {
             BinaryStatus::Editable {
                 bits,
                 value,
+                hex,
                 width,
                 signed,
+                // `binary_widths()` is already empty for a locked (fixed-width)
+                // value, so the width picker hides itself; nothing to do here.
+                locked: _,
             } => {
                 let caption = format!(
-                    "{value}   ·   {width}-bit {}",
+                    "{value}   {hex}   ·   {width}-bit {}",
                     if signed { "signed" } else { "unsigned" }
                 );
-                column![
-                    row![
-                        text(caption).font(MONO).size(13).color(palette.accent),
-                        container(button::secondary("Use in input", Message::UseBinary))
-                            .width(Length::Fill)
-                            .align_x(iced::alignment::Horizontal::Right),
-                    ]
-                    .align_y(iced::Alignment::Center),
-                    scrollable(bit_grid(bits, Vec::new(), Message::BitToggled)),
+
+                // The format picker: "None" plus every preset, current selected.
+                let none = "None".to_string();
+                let mut options = vec![none.clone()];
+                options.extend(self.session.binary_preset_names());
+                let current = self.session.binary_format_name().unwrap_or(none.clone());
+                let format_picker = select(options, Some(current), move |chosen: String| {
+                    if chosen == "None" {
+                        Message::SetBinaryFormat(None)
+                    } else {
+                        Message::SetBinaryFormat(Some(chosen))
+                    }
+                });
+
+                let header = row![
+                    text(caption).font(MONO).size(13).color(palette.accent),
+                    container(format_picker)
+                        .width(Length::Fill)
+                        .align_x(iced::alignment::Horizontal::Right),
+                    button::secondary("Use in input", Message::UseBinary),
                 ]
                 .spacing(12)
-                .into()
+                .align_y(iced::Alignment::Center);
+
+                // The width picker (hidden when the value is locked to its
+                // width): one chip per width, disabled below the minimum.
+                let widths = self.session.binary_widths();
+                let mut layout = column![header].spacing(12);
+                if !widths.is_empty() {
+                    let mut chips = row![].spacing(6);
+                    for w in widths {
+                        let mut chip = iced::widget::button(text(w.bits.to_string()).size(12).center())
+                            .padding([4, 10])
+                            .style(width_chip_style(w.active, w.enabled, *palette));
+                        if w.enabled && !w.active {
+                            chip = chip.on_press(Message::SetBinaryWidth(w.bits));
+                        }
+                        chips = chips.push(chip);
+                    }
+                    layout = layout.push(chips);
+                }
+
+                // Decode the active format into named bands for the grid; rime
+                // cycles its palette by position (owner=blue, group=green, …),
+                // matching the AppKit app's field coloring.
+                let bands: Vec<BitBand> = self
+                    .session
+                    .binary_fields()
+                    .into_iter()
+                    .map(|f| {
+                        let label = if f.label.is_empty() {
+                            f.name.clone()
+                        } else {
+                            format!("{} {}", f.name, f.label)
+                        };
+                        BitBand::new(label, f.low_bit as usize, f.width as usize)
+                    })
+                    .collect();
+
+                layout
+                    .push(scrollable(bit_grid(bits, bands, Message::BitToggled)))
+                    .into()
             }
             BinaryStatus::Unavailable(reason) => text(reason).size(13).color(palette.muted).into(),
         };
@@ -1179,6 +1244,34 @@ fn next_selection(current: GridSelection, drow: i32, dcol: i32, extend: bool) ->
     } else {
         let (row, col) = current.anchor;
         GridSelection::cell(clamp(row, drow, GRID_ROWS), clamp(col, dcol, GRID_COLS))
+    }
+}
+
+/// The style for one width-picker chip: filled when `active`, dimmed when
+/// disabled (too small to hold the value/format), a plain outline otherwise.
+fn width_chip_style(
+    active: bool,
+    enabled: bool,
+    palette: theme::Palette,
+) -> impl Fn(&iced::Theme, iced::widget::button::Status) -> iced::widget::button::Style {
+    move |_theme, _status| {
+        let (background, text_color) = if active {
+            (Some(palette.accent.into()), palette.bg)
+        } else if !enabled {
+            (None, palette.hairline)
+        } else {
+            (None, palette.ink)
+        };
+        iced::widget::button::Style {
+            background,
+            text_color,
+            border: iced::Border {
+                color: palette.hairline,
+                width: 1.0,
+                radius: 6.0.into(),
+            },
+            ..iced::widget::button::Style::default()
+        }
     }
 }
 

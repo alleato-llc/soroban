@@ -485,6 +485,136 @@ fn i_use_bit_editor(world: &mut SessionWorld) {
     world.session.use_binary();
 }
 
+/// Assert the LSB-first bit ordering the widget relies on: bit 0 is `bits[0]`.
+/// (This pins the fix for "clicking the first bit flipped the last one".)
+#[then(regex = r#"^bit ([0-9]+) of the editor is (set|clear)$"#)]
+fn bit_of_editor_is(world: &mut SessionWorld, index: String, state: String) {
+    let index: usize = index.parse().expect("bit index must be a number");
+    match world.session.binary_status() {
+        BinaryStatus::Editable { bits, .. } => {
+            let expected = state == "set";
+            assert_eq!(
+                bits[index], expected,
+                "bit {index} is {}, expected {state}",
+                if bits[index] { "set" } else { "clear" }
+            );
+        }
+        BinaryStatus::Unavailable(reason) => panic!("bit editor unavailable: {reason}"),
+    }
+}
+
+#[then(regex = r#"^the bit editor reads hex "(.*)"$"#)]
+fn bit_editor_reads_hex(world: &mut SessionWorld, expected: String) {
+    match world.session.binary_status() {
+        BinaryStatus::Editable { hex, .. } => {
+            assert_eq!(hex, expected, "bit editor hex is '{hex}', expected '{expected}'")
+        }
+        BinaryStatus::Unavailable(reason) => panic!("bit editor unavailable: {reason}"),
+    }
+}
+
+#[then(regex = r#"^the bit editor width is ([0-9]+)$"#)]
+fn bit_editor_width_is(world: &mut SessionWorld, expected: String) {
+    let expected: u32 = expected.parse().expect("width must be a number");
+    match world.session.binary_status() {
+        BinaryStatus::Editable { width, .. } => {
+            assert_eq!(width, expected, "bit editor width is {width}, expected {expected}")
+        }
+        BinaryStatus::Unavailable(reason) => panic!("bit editor unavailable: {reason}"),
+    }
+}
+
+#[when(regex = r#"^I set the bit editor width to ([0-9]+)$"#)]
+fn i_set_bit_editor_width(world: &mut SessionWorld, width: String) {
+    let width: u32 = width.parse().expect("width must be a number");
+    world.session.set_binary_width(width);
+}
+
+#[then(regex = r#"^the width ([0-9]+) is (offered|disabled)$"#)]
+fn width_is_offered(world: &mut SessionWorld, bits: String, state: String) {
+    let bits: u32 = bits.parse().expect("width must be a number");
+    let width = world
+        .session
+        .binary_widths()
+        .into_iter()
+        .find(|w| w.bits == bits)
+        .unwrap_or_else(|| panic!("width {bits} is not in the picker"));
+    let expected_enabled = state == "offered";
+    assert_eq!(
+        width.enabled, expected_enabled,
+        "width {bits} enabled = {}, expected {state}",
+        width.enabled
+    );
+}
+
+#[then(regex = r#"^the bit format picker offers "(.*)"$"#)]
+fn picker_offers(world: &mut SessionWorld, name: String) {
+    assert!(
+        world.session.binary_preset_names().contains(&name),
+        "the format picker does not offer '{name}'"
+    );
+}
+
+#[then("the width picker is empty")]
+fn width_picker_empty(world: &mut SessionWorld) {
+    assert!(
+        world.session.binary_widths().is_empty(),
+        "expected no width choices (a locked value), found some"
+    );
+}
+
+#[when(regex = r#"^I apply the "(.*)" bit format$"#)]
+fn i_apply_bit_format(world: &mut SessionWorld, name: String) {
+    world.session.apply_binary_format(Some(&name));
+}
+
+#[when("I clear the bit format")]
+fn i_clear_bit_format(world: &mut SessionWorld) {
+    world.session.apply_binary_format(None);
+}
+
+#[then(regex = r#"^the active bit format is "(.*)"$"#)]
+fn active_bit_format_is(world: &mut SessionWorld, expected: String) {
+    let name = world.session.binary_format_name().unwrap_or_default();
+    assert_eq!(name, expected, "active format is '{name}', expected '{expected}'");
+}
+
+#[then("there is no active bit format")]
+fn no_active_bit_format(world: &mut SessionWorld) {
+    assert!(
+        world.session.binary_format_name().is_none(),
+        "expected no active format, found {:?}",
+        world.session.binary_format_name()
+    );
+}
+
+#[then(regex = r#"^the bit format has a field "(.*)" reading "(.*)"$"#)]
+fn field_reads(world: &mut SessionWorld, name: String, label: String) {
+    let fields = world.session.binary_fields();
+    let field = fields
+        .iter()
+        .find(|f| f.name == name)
+        .unwrap_or_else(|| panic!("no field named '{name}' (have {fields:?})"));
+    assert_eq!(
+        field.label, label,
+        "field '{name}' reads '{}', expected '{label}'",
+        field.label
+    );
+}
+
+#[then(regex = r#"^the bit format field "(.*)" sits at bit ([0-9]+) for ([0-9]+) bits$"#)]
+fn field_range(world: &mut SessionWorld, name: String, low: String, width: String) {
+    let low: u32 = low.parse().expect("bit index must be a number");
+    let width: u32 = width.parse().expect("width must be a number");
+    let fields = world.session.binary_fields();
+    let field = fields
+        .iter()
+        .find(|f| f.name == name)
+        .unwrap_or_else(|| panic!("no field named '{name}' (have {fields:?})"));
+    assert_eq!(field.low_bit, low, "field '{name}' low bit");
+    assert_eq!(field.width, width, "field '{name}' width");
+}
+
 // MARK: Inspector + reference
 
 #[then(regex = r#"^the inspector lists the variable "(.*)"$"#)]

@@ -11,7 +11,29 @@ point of truth for downloads.
 
 ## [Unreleased]
 
+### Fixed
+- Rust ecosystem, Phase 3b — **the bit editor's grid was reversed**: clicking
+  the first bit flipped the last one. `BinaryView::bits()` returns MSB-first but
+  the rime `bit_grid` (and `flip_binary_bit`) index LSB-first, so the display
+  and click indices ran opposite. `binary_status` now hands the widget
+  LSB-first bits, matching its contract. A headless scenario pins the ordering
+  (bit 0 = LSB for value `5`).
+
 ### Added
+- Rust ecosystem, Phase 3b — **the bit editor gains its bit-format layer**
+  (slice ① toward parity with the AppKit app): a **width picker** (8…256, a
+  fixed-width int stays locked to its own width, widths too small to hold the
+  value are disabled), a **hex readout** (`0x1F4`), and a **format dropdown**
+  over the built-in presets (Unix permissions, TCP flags, the IEEE-754 /
+  network-address / color layouts, …) that decodes the value into **named,
+  colored fields** with their readouts (`owner rwx`, `group rw-`, …) rendered as
+  bands in the grid. Applying a format wide enough bumps the register width to
+  fit. All wired through the UI-free `Session` (`binary_widths`,
+  `set_binary_width`, `binary_preset_names`, `apply_binary_format`,
+  `binary_fields`) with 10 new headless scenarios; `session.rs` stays ~91% line.
+  Field *editing* (enum pickers, typing a field's value) and custom
+  build/save are the next slices. Adds `SOROBAN_SHOT_WIDTH` /
+  `SOROBAN_SHOT_FORMAT` to the screenshot harness.
 
 - Rust ecosystem, Phase 1 (docs/MIGRATION.md): the `rust/` cargo workspace
   with the `anzan` crate — the full language ported from Swift (BigDecimal

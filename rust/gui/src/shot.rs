@@ -90,6 +90,16 @@ pub fn configure(app: &mut App) {
         _ => {}
     }
     app.session.refresh_binary();
+    // Optionally set the bit-editor width and apply a named format, to shoot the
+    // decoded field bands (e.g. `SOROBAN_SHOT_FORMAT="Unix permissions"`).
+    if let Ok(width) = std::env::var("SOROBAN_SHOT_WIDTH") {
+        if let Ok(width) = width.parse() {
+            app.session.set_binary_width(width);
+        }
+    }
+    if let Ok(name) = std::env::var("SOROBAN_SHOT_FORMAT") {
+        app.session.apply_binary_format(Some(&name));
+    }
 
     app.shot = Some(Shot {
         path,

@@ -9,8 +9,9 @@ use soroban_engine::named_cells::NamedCells;
 use soroban_engine::spreadsheet::SheetDefinitionKind;
 use soroban_engine::workbook::{restore_session, SheetPayload, Workbook};
 use soroban_engine::{
-    package, BigDecimal, BinaryView, BinaryViewUnavailable, Calculator, CellAddress, CellDisplay,
-    CellFormat, Control, EvalOutcome, Sheet, SheetStore, Spreadsheet, UserFunction, Value,
+    package, BigDecimal, BinaryEditorPresets, BinaryFieldSpec, BinaryView, BinaryViewUnavailable,
+    Calculator, CellAddress, CellDisplay, CellFormat, Control, EvalOutcome, Sheet, SheetStore,
+    Spreadsheet, UserFunction, Value, BINARY_EDITABLE_WIDTHS,
 };
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -50,14 +51,51 @@ pub struct DocGroup {
 /// or a reason the last result can't be edited (a decimal, a negative, …).
 pub enum BinaryStatus {
     Editable {
-        /// LSB-first (bit 0 is `bits[0]`).
+        /// LSB-first — `bits[0]` is bit 0 (the LSB), matching the rime
+        /// `bit_grid` widget's contract and `flip_binary_bit`'s indexing.
         bits: Vec<bool>,
         /// The value's re-parseable text (`42`, `Int32(255)`).
         value: String,
+        /// The register's bit pattern in hex (`0x1F4`), the header annotation.
+        hex: String,
         width: u32,
         signed: bool,
+        /// A fixed-width int is locked to its own width — the shell hides the
+        /// width picker (a plain register is free to change width).
+        locked: bool,
     },
     Unavailable(String),
+}
+
+/// One selectable register width in the bit-editor's width picker. `enabled`
+/// is false for a width too small to hold the current value (or the active
+/// format); `active` marks the width in use.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BinaryWidth {
+    pub bits: u32,
+    pub enabled: bool,
+    pub active: bool,
+}
+
+/// One decoded field of the active bit-format, flattened for the shell (no
+/// `BigInt` leaks): the named range, its palette color name, and the decoded
+/// readout (`rwx`, an enum label, or the numeric value in its base).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BinaryFieldView {
+    pub name: String,
+    /// 0 = LSB — where the field sits in the register.
+    pub low_bit: u32,
+    pub width: u32,
+    /// The field's palette color NAME (`blue`…`teal`), or `None` for auto —
+    /// the shell maps it to a real, theme-adapting color.
+    pub color: Option<String>,
+    /// The human-readable decode: a flag string (`r-x`), an enum label, or the
+    /// numeric value spelled in its base.
+    pub label: String,
+    /// A locked, must-be-zero gap (display only).
+    pub reserved: bool,
+    /// A don't-care gap (unlabeled but editable).
+    pub unused: bool,
 }
 
 /// The grid's fixed logical size (the engine's sheet bounds).
@@ -170,6 +208,15 @@ pub struct Session {
     /// The binary bit-editor's current draft (a flip stages a new one); `None`
     /// when closed or when `ans` isn't editable.
     binary: Option<BinaryView>,
+    /// The preferred register width the bit editor opens a plain integer at
+    /// (auto-bumped to fit a larger value or format). A fixed-width int ignores
+    /// it — it edits at its own width.
+    binary_width: u32,
+    /// The active bit-format layout (a preset or custom), or `None` for a plain
+    /// register. Paired with `binary_format_name` for the picker label.
+    binary_layout: Option<Vec<BinaryFieldSpec>>,
+    /// The active format's display name (the picker's current selection).
+    binary_format_name: Option<String>,
     /// Bumped on every document mutation; the shell compares it against a saved
     /// baseline for the dirty indicator.
     revision: u64,
@@ -194,6 +241,9 @@ impl Session {
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
             binary: None,
+            binary_width: 32,
+            binary_layout: None,
+            binary_format_name: None,
             revision: 0,
             point_anchor: None,
         }
@@ -840,11 +890,12 @@ impl Session {
         self.calculator.borrow().environment().ans()
     }
 
-    /// (Re)build the bit-editor draft from `ans`. Called when the editor opens
-    /// and after each submit, so it tracks the latest result until you flip a
-    /// bit (which stages a draft of its own).
+    /// (Re)build the bit-editor draft from `ans` at the preferred width. Called
+    /// when the editor opens and after each submit, so it tracks the latest
+    /// result until you flip a bit (which stages a draft of its own). The active
+    /// format layout carries over.
     pub fn refresh_binary(&mut self) {
-        self.binary = BinaryView::make(&self.ans(), 32).ok();
+        self.binary = BinaryView::make(&self.ans(), self.binary_width).ok();
     }
 
     /// Flip bit `index` (0 = LSB) of the draft, staging a new pattern.
@@ -857,21 +908,144 @@ impl Session {
     }
 
     /// The editor's current state: the editable grid, or why `ans` can't be
-    /// edited as bits.
+    /// edited as bits. `bits` is **LSB-first** (`bits[0]` = bit 0), matching the
+    /// widget and `flip_binary_bit` — `BinaryView::bits()` is MSB-first, so we
+    /// reverse it here.
     pub fn binary_status(&self) -> BinaryStatus {
         if let Some(view) = &self.binary {
+            let mut bits = view.bits(); // MSB-first from the engine…
+            bits.reverse(); // …flipped to the widget's LSB-first contract.
             return BinaryStatus::Editable {
-                bits: view.bits(),
+                bits,
                 value: view.value().display_description(),
+                hex: BigDecimal::new(view.pattern.clone(), 0)
+                    .hex_text()
+                    .unwrap_or_default(),
                 width: view.width,
                 signed: view.signed(),
+                locked: view.width_locked(),
             };
         }
-        let reason = match BinaryView::make(&self.ans(), 32) {
+        let reason = match BinaryView::make(&self.ans(), self.binary_width) {
             Ok(_) => "Compute a value, then open the bit editor.".to_string(),
             Err(reason) => binary_reason(reason),
         };
         BinaryStatus::Unavailable(reason)
+    }
+
+    /// The register widths offered in the picker (empty when the editor is
+    /// closed or the value is locked to a fixed width). A width too small to
+    /// hold the current value or the active format is `enabled: false`.
+    pub fn binary_widths(&self) -> Vec<BinaryWidth> {
+        let Some(view) = &self.binary else {
+            return Vec::new();
+        };
+        if view.width_locked() {
+            return Vec::new();
+        }
+        let floor = view.minimum_width().max(self.layout_min_width());
+        BINARY_EDITABLE_WIDTHS
+            .into_iter()
+            .map(|bits| BinaryWidth {
+                bits,
+                enabled: bits >= floor,
+                active: bits == view.width,
+            })
+            .collect()
+    }
+
+    /// Re-open the draft at `width` (keeping the current value and format).
+    /// Ignored when the value can't be represented, or is locked to its width.
+    pub fn set_binary_width(&mut self, width: u32) {
+        let Some(view) = &self.binary else { return };
+        if view.width_locked() || width < view.minimum_width().max(self.layout_min_width()) {
+            return;
+        }
+        if let Ok(rebuilt) = BinaryView::make(&view.value(), width) {
+            self.binary_width = width;
+            self.binary = Some(rebuilt);
+        }
+    }
+
+    /// The names of the built-in format presets, in menu order (always
+    /// available — the picker offers them whenever the editor is open).
+    pub fn binary_preset_names(&self) -> Vec<String> {
+        BinaryEditorPresets::standard()
+            .into_iter()
+            .map(|(name, _)| name.to_string())
+            .collect()
+    }
+
+    /// The active bit-format's name, or `None` for a plain register.
+    pub fn binary_format_name(&self) -> Option<String> {
+        self.binary_format_name.clone()
+    }
+
+    /// Apply a named preset format (or `None` to clear back to a plain
+    /// register). Bumps the register width up if the layout needs more bits.
+    /// An unknown name is a no-op.
+    pub fn apply_binary_format(&mut self, name: Option<&str>) {
+        let Some(name) = name else {
+            self.binary_layout = None;
+            self.binary_format_name = None;
+            return;
+        };
+        let Some((_, value)) = BinaryEditorPresets::standard()
+            .into_iter()
+            .find(|(preset, _)| *preset == name)
+        else {
+            return;
+        };
+        let Some(layout) = BinaryView::layout(&value) else {
+            return;
+        };
+        let needed = BinaryView::layout_width(&layout);
+        self.binary_format_name = Some(name.to_string());
+        self.binary_layout = Some(layout);
+        // Widen the register to fit the format if it's currently too narrow.
+        if let Some(view) = &self.binary {
+            if view.width < needed && !view.width_locked() {
+                if let Some(fit) = BINARY_EDITABLE_WIDTHS.into_iter().find(|&w| w >= needed) {
+                    self.set_binary_width(fit);
+                }
+            }
+        }
+    }
+
+    /// The active format's fields, decoded from the current value (empty for a
+    /// plain register) — named ranges with their color, decoded readout, and
+    /// gap flags, ready for the shell to render as colored bands.
+    pub fn binary_fields(&self) -> Vec<BinaryFieldView> {
+        let (Some(view), Some(layout)) = (&self.binary, &self.binary_layout) else {
+            return Vec::new();
+        };
+        let palette = ["blue", "green", "orange", "purple", "pink", "teal"];
+        layout
+            .iter()
+            .zip(view.fields(layout))
+            .enumerate()
+            .map(|(index, (spec, field))| BinaryFieldView {
+                name: field.name.clone(),
+                low_bit: field.low_bit,
+                width: field.width,
+                color: spec
+                    .color
+                    .clone()
+                    .or_else(|| Some(palette[index % palette.len()].to_string())),
+                label: field.label(),
+                reserved: field.reserved,
+                unused: field.unused,
+            })
+            .collect()
+    }
+
+    /// The active format's total bit width (0 when none) — the register can't
+    /// be narrower than this.
+    fn layout_min_width(&self) -> u32 {
+        self.binary_layout
+            .as_ref()
+            .map(|layout| BinaryView::layout_width(layout))
+            .unwrap_or(0)
     }
 
     /// Drop the draft's value into the input line, ready to fold into an

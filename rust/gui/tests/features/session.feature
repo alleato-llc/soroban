@@ -282,6 +282,90 @@ Feature: The Rust app session — calculator and sheet, headless
     And I open the bit editor
     Then the bit editor is not editable
 
+  Scenario: The bit grid is LSB-first, so flip indices line up with the display
+    When I enter "5"
+    And I open the bit editor
+    # 5 = 0b101 → bit 0 set, bit 1 clear, bit 2 set
+    Then bit 0 of the editor is set
+    And bit 1 of the editor is clear
+    And bit 2 of the editor is set
+    When I flip bit 0
+    Then bit 0 of the editor is clear
+    And the bit editor value is "4"
+
+  Scenario: The bit editor reports the value in hex
+    When I enter "500"
+    And I open the bit editor
+    Then the bit editor reads hex "0x1F4"
+
+  # ---- Width picker ----
+
+  Scenario: A plain integer opens at the default 32-bit width and can be re-widened
+    When I enter "5"
+    And I open the bit editor
+    Then the bit editor width is 32
+    When I set the bit editor width to 8
+    Then the bit editor width is 8
+    When I set the bit editor width to 64
+    Then the bit editor width is 64
+
+  Scenario: A width too small to hold the value is disabled
+    When I enter "5000"
+    And I open the bit editor
+    # 5000 needs 13 bits, so 8 can't hold it but 16 can
+    Then the width 8 is disabled
+    And the width 16 is offered
+
+  Scenario: A fixed-width integer is locked to its own width
+    When I enter "Int8(5)"
+    And I open the bit editor
+    Then the bit editor width is 8
+    # A fixed type edits only at its declared width — no picker.
+    And the width picker is empty
+
+  # ---- Bit-field formats ----
+
+  Scenario: Applying the Unix permissions preset decodes the value into fields
+    When I enter "500"
+    And I open the bit editor
+    And I apply the "Unix permissions" bit format
+    Then the active bit format is "Unix permissions"
+    # 500 = 0o764 → owner rwx, group rw-, other r--
+    And the bit format has a field "owner" reading "rwx"
+    And the bit format has a field "group" reading "rw-"
+    And the bit format has a field "other" reading "r--"
+    And the bit format field "owner" sits at bit 6 for 3 bits
+    And the bit format field "other" sits at bit 0 for 3 bits
+
+  Scenario: The format picker lists the built-in presets
+    When I enter "5"
+    And I open the bit editor
+    Then the bit format picker offers "Unix permissions"
+    And the bit format picker offers "IPv4 address"
+    And the bit format picker offers "IEEE 754 float"
+
+  Scenario: Applying a format wider than the register bumps the width to fit
+    When I enter "5"
+    And I open the bit editor
+    And I set the bit editor width to 8
+    And I apply the "IPv4 address" bit format
+    # IPv4 is 32 bits, so the 8-bit register widens to 32
+    Then the bit editor width is 32
+
+  Scenario: Applying an unknown format leaves the register plain
+    When I enter "5"
+    And I open the bit editor
+    And I apply the "Nonexistent format" bit format
+    Then there is no active bit format
+
+  Scenario: Clearing the format returns to a plain register
+    When I enter "500"
+    And I open the bit editor
+    And I apply the "Unix permissions" bit format
+    Then the active bit format is "Unix permissions"
+    When I clear the bit format
+    Then there is no active bit format
+
   # ---- Named cells ----
 
   Scenario: A named cell reads by name from a formula
