@@ -25,7 +25,8 @@ fn main() {
         "origin = Point(x: 3, y: 4)",
         "myfmt = {hi: 4, lo: 4}",
     ] {
-        calc.evaluate(line).unwrap_or_else(|e| panic!("setup `{line}`: {e:?}"));
+        calc.evaluate(line)
+            .unwrap_or_else(|e| panic!("setup `{line}`: {e:?}"));
     }
 
     // One sheet: a value, a cross-cell formula, a call to the user function, a
@@ -44,8 +45,11 @@ fn main() {
     sheet.names.insert("A:1".to_string(), "Base".to_string());
 
     let environment = calc.environment();
-    let functions: Vec<UserFunction> =
-        environment.all_user_functions().into_iter().cloned().collect();
+    let functions: Vec<UserFunction> = environment
+        .all_user_functions()
+        .into_iter()
+        .cloned()
+        .collect();
     let workbook = Workbook::new(
         vec![sheet],
         Some("Sheet 1".to_string()),
@@ -57,7 +61,10 @@ fn main() {
     );
 
     // examples/ is two levels up from rust/engine.
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../examples/interchange.soroban");
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../examples/interchange.soroban"
+    );
     std::fs::write(path, workbook.encode().expect("encode")).expect("write fixture");
     println!("wrote {path}");
 }

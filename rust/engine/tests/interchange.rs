@@ -35,7 +35,10 @@ fn rust_opens_the_rust_authored_interchange_fixture() {
     );
     let workbook =
         Workbook::decode(&std::fs::read(path).expect("fixture readable")).expect("fixture decodes");
-    assert_eq!(workbook.sheets.iter().map(|s| &s.name).collect::<Vec<_>>(), ["Sheet 1"]);
+    assert_eq!(
+        workbook.sheets.iter().map(|s| &s.name).collect::<Vec<_>>(),
+        ["Sheet 1"]
+    );
 
     // Restore the way the app does — env first (types → functions → variables),
     // then the sheets into a store wired to the same calculator.
