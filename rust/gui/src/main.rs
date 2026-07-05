@@ -15,22 +15,23 @@
 //! save/open.
 
 mod shot;
+mod themes;
 
 use iced::widget::{column, container, mouse_area, operation, row, scrollable, text, Id};
 use iced::{
     event, keyboard, Color, Element, Event, Font, Length, Subscription, Task, Theme, Vector,
 };
 use rime::icons::{self, glyph};
-use rime::theme::{self, ThemeChoice};
+use rime::theme;
 use rime::widgets::menu;
 use rime::widgets::{
-    bit_grid, button, card, grid, menu_bar_with_trailing, section, select, slider, stepper,
-    suggestion_list, text_field, toggle, BitBand, CellAlign, GridCell, GridSelection, Menu,
-    MenuItem, Suggestion,
+    bit_grid, button, caption, card, color_field, grid, menu_bar_with_trailing, section, select,
+    settings, slider, stepper, suggestion_list, text_field, toggle, BitBand, CellAlign, GridCell,
+    GridSelection, Menu, MenuItem, Suggestion,
 };
 use soroban_engine::{
     CellAddress, CellAlignment, CellDisplay, CellFormat, Completion, FormatBuilderFieldKind,
-    NumberFormat, PaletteColor,
+    LanguageMode, NumberFormat, PaletteColor,
 };
 use soroban_gui::session::{
     BinaryFieldKind, BinaryStatus, Origin, Outcome, PointClick, Session, GRID_COLS, GRID_ROWS,
@@ -64,10 +65,31 @@ enum ViewMode {
     Grid,
 }
 
+/// Capitalize the first letter (`"programmer"` → `"Programmer"`) — for the
+/// mode picker's display labels over the engine's lowercase mode names.
+fn title_case(word: &str) -> String {
+    let mut chars = word.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+        None => String::new(),
+    }
+}
+
 #[derive(Default)]
 struct App {
     session: Session,
-    choice: ThemeChoice,
+    /// The selected theme's catalog name, or `"Custom"` when the palette is
+    /// hand-edited (then `custom_palette` holds it). See [`themes`].
+    theme_name: String,
+    /// The hand-edited palette, live only while `theme_name == "Custom"`.
+    custom_palette: Option<theme::Palette>,
+    /// The base font size for the log/grid content (points); the Settings
+    /// window's slider drives it.
+    font_size: f32,
+    /// Whether the Settings window is open, and which section (0 Appearance,
+    /// 1 Calculator).
+    settings_open: bool,
+    settings_section: usize,
     mode: ViewMode,
     grid_offset: Vector,
     grid_selection: Option<GridSelection>,
@@ -120,8 +142,19 @@ enum Message {
     /// An arrow key: (Δrow, Δcol, extend-selection). Routes by view — history
     /// recall in the log, cell-selection movement in the grid.
     ArrowKey(i32, i32, bool),
-    ToggleTheme,
     ToggleView,
+    /// Open / close the Settings window, or switch its section.
+    OpenSettings,
+    CloseSettings,
+    SelectSettingsSection(usize),
+    /// Pick a named theme (or `"Custom"`) from the Settings appearance section.
+    SelectTheme(String),
+    /// Set the base content font size (points).
+    SetFontSize(f32),
+    /// Pick the calculator language mode (Normal / Programmer / Finance).
+    SelectMode(LanguageMode),
+    /// Edit one token of the custom palette: (token key, new color).
+    SetCustomColor(String, Color),
     GridScrolled(Vector),
     GridSelected(usize, usize, bool),
     /// A column-header border was dragged: (column, new width in px).
@@ -259,7 +292,28 @@ impl App {
                     }
                 }
             },
-            Message::ToggleTheme => self.choice = self.choice.toggled(),
+            Message::OpenSettings => {
+                self.settings_open = true;
+                self.menu_open = None;
+            }
+            Message::CloseSettings => self.settings_open = false,
+            Message::SelectSettingsSection(index) => self.settings_section = index,
+            Message::SelectTheme(name) => {
+                // Entering "Custom" seeds the editable palette from the current
+                // theme, so the color rows start where the eye already is.
+                if name == "Custom" && self.custom_palette.is_none() {
+                    self.custom_palette = Some(self.active_palette());
+                }
+                self.theme_name = name;
+            }
+            Message::SetFontSize(size) => self.font_size = size.clamp(9.0, 28.0),
+            Message::SelectMode(mode) => self.session.set_language_mode(mode),
+            Message::SetCustomColor(key, color) => {
+                let mut palette = self.custom_palette.unwrap_or_else(|| self.active_palette());
+                palette.set(&key, color);
+                self.custom_palette = Some(palette);
+                self.theme_name = "Custom".to_string();
+            }
             Message::ToggleView => {
                 self.mode = match self.mode {
                     ViewMode::Log => ViewMode::Grid,
@@ -286,6 +340,11 @@ impl App {
                 self.move_selection(1, 0, false);
             }
             Message::EditCanceled => {
+                // Escape dismisses the Settings window first, if it's open.
+                if self.settings_open {
+                    self.settings_open = false;
+                    return Task::none();
+                }
                 self.editing = false;
                 self.clear_suggestions();
                 self.load_draft();
@@ -313,15 +372,22 @@ impl App {
                     return operation::focus(grid_editor_id());
                 }
             }
+            // Undo/redo are GRID-document operations (the log is history, not
+            // document state), so they're inert in the log — matching copy/cut/
+            // paste, which already gate on the grid view.
             Message::Undo => {
-                self.session.undo();
-                self.editing = false;
-                self.load_draft();
+                if self.mode == ViewMode::Grid {
+                    self.session.undo();
+                    self.editing = false;
+                    self.load_draft();
+                }
             }
             Message::Redo => {
-                self.session.redo();
-                self.editing = false;
-                self.load_draft();
+                if self.mode == ViewMode::Grid {
+                    self.session.redo();
+                    self.editing = false;
+                    self.load_draft();
+                }
             }
             // Inline control interactions rewrite the cell's storage literal (the
             // address rides the message, since many controls are live at once);
@@ -726,7 +792,38 @@ impl App {
     }
 
     fn theme(&self) -> Theme {
-        self.choice.theme()
+        let name = self.theme_display_name();
+        self.active_palette().iced_theme(name)
+    }
+
+    /// The active palette: the hand-edited one under `"Custom"`, else the named
+    /// catalog palette (falling back to the default for an unknown name).
+    fn active_palette(&self) -> theme::Palette {
+        if self.theme_name == "Custom" {
+            return self
+                .custom_palette
+                .unwrap_or_else(|| themes::palette(themes::default_name()));
+        }
+        themes::palette(&self.theme_name)
+    }
+
+    /// The theme's display name — the catalog name, or `"Custom"`, defaulting to
+    /// the first catalog entry when unset (a fresh `App::default`).
+    fn theme_display_name(&self) -> &str {
+        if self.theme_name.is_empty() {
+            themes::default_name()
+        } else {
+            &self.theme_name
+        }
+    }
+
+    /// The effective base font size in points (a fresh `App::default` reads 0).
+    fn base_font_size(&self) -> f32 {
+        if self.font_size <= 0.0 {
+            14.0
+        } else {
+            self.font_size
+        }
     }
 
     /// Arrows navigate (history in the log, cells in the grid); Enter edits the
@@ -764,6 +861,7 @@ impl App {
                         "c" | "C" => Some(Message::Copy),
                         "x" | "X" => Some(Message::Cut),
                         "v" | "V" => Some(Message::Paste),
+                        "," => Some(Message::OpenSettings),
                         _ => None,
                     }
                 }
@@ -810,11 +908,6 @@ impl App {
             ViewMode::Log => "Show Grid",
             ViewMode::Grid => "Show Log",
         };
-        let theme_label = if matches!(self.choice, ThemeChoice::Dark) {
-            "Light Theme"
-        } else {
-            "Dark Theme"
-        };
         vec![
             Menu::new(
                 "File",
@@ -822,6 +915,8 @@ impl App {
                     MenuItem::shortcut("New", "⌘N", Message::NewWorkbook),
                     MenuItem::shortcut("Open…", "⌘O", Message::OpenWorkbook),
                     MenuItem::shortcut("Save", "⌘S", Message::SaveWorkbook),
+                    MenuItem::separator(),
+                    MenuItem::shortcut("Settings…", "⌘,", Message::OpenSettings),
                 ],
             ),
             Menu::new(
@@ -843,15 +938,13 @@ impl App {
                     MenuItem::action("Names", Message::ToggleInspector),
                     MenuItem::action("Reference", Message::ToggleReference),
                     MenuItem::action("Bits", Message::ToggleBinary),
-                    MenuItem::separator(),
-                    MenuItem::action(theme_label, Message::ToggleTheme),
                 ],
             ),
         ]
     }
 
     fn view(&self) -> Element<'_, Message> {
-        let _scope = theme::enter(self.choice.palette());
+        let _scope = theme::enter(self.active_palette());
         let palette = theme::tokens();
 
         let body = match self.mode {
@@ -896,17 +989,140 @@ impl App {
         // Content fills the whole window; when revealed (pointer near the top, or
         // a menu open) the bar overlays the top edge rather than pushing content
         // down — so nothing jumps as it appears.
-        if !(self.menu_revealed || self.menu_open.is_some()) {
-            return content;
+        let base: Element<'_, Message> = if self.menu_revealed || self.menu_open.is_some() {
+            let inspector_icon = button::icon(glyph::NAMES, Message::ToggleInspector);
+            let bar = menu_bar_with_trailing(
+                self.menus(),
+                self.menu_open,
+                Message::ToggleMenu,
+                Some(inspector_icon.into()),
+            );
+            iced::widget::stack![content, bar].into()
+        } else {
+            content
+        };
+
+        // The Settings window, when open, frames itself over everything.
+        if self.settings_open {
+            self.settings_view(base, &palette)
+        } else {
+            base
         }
-        let inspector_icon = button::icon(glyph::NAMES, Message::ToggleInspector);
-        let bar = menu_bar_with_trailing(
-            self.menus(),
-            self.menu_open,
-            Message::ToggleMenu,
-            Some(inspector_icon.into()),
-        );
-        iced::widget::stack![content, bar].into()
+    }
+
+    /// The Settings window: rime's `settings` shell (a dimmed backdrop, a section
+    /// rail, and the active section's body). Appearance = theme + custom colors +
+    /// font size + a live preview; Calculator = the language mode.
+    fn settings_view<'a>(
+        &'a self,
+        base: Element<'a, Message>,
+        palette: &theme::Palette,
+    ) -> Element<'a, Message> {
+        let content = match self.settings_section {
+            1 => self.settings_calculator(palette),
+            _ => self.settings_appearance(palette),
+        };
+        settings(
+            base,
+            &["Appearance", "Calculator"],
+            self.settings_section,
+            Message::SelectSettingsSection,
+            content,
+            None,
+            Message::CloseSettings,
+        )
+    }
+
+    /// The Appearance section: a theme picker (the ten named palettes plus a
+    /// hand-editable "Custom"), the custom color rows when it's active, a font-
+    /// size slider, and a live preview swatch.
+    fn settings_appearance(&self, palette: &theme::Palette) -> Element<'_, Message> {
+        let mut names = themes::names();
+        names.push("Custom".to_string());
+        let current = self.theme_display_name().to_string();
+        let theme_picker = select(names, Some(current.clone()), Message::SelectTheme);
+
+        let mut body = column![caption("Theme"), theme_picker,].spacing(10);
+
+        // The custom color editor — one color_field per token — shows only for
+        // the "Custom" theme, seeded from the live palette.
+        if current == "Custom" {
+            let editable = self.active_palette();
+            let mut rows = column![].spacing(8);
+            for &key in theme::PALETTE_KEYS {
+                if let Some(color) = editable.color(key) {
+                    let owned_key = key.to_string();
+                    rows = rows.push(color_field(key, color, move |c| {
+                        Message::SetCustomColor(owned_key.clone(), c)
+                    }));
+                }
+            }
+            body = body.push(rows);
+        }
+
+        let size = self.base_font_size();
+        body = body.push(caption("Font size"));
+        body = body.push(slider(
+            "",
+            9.0..=28.0,
+            size,
+            format!("{} pt", size.round() as i32),
+            Message::SetFontSize,
+        ));
+
+        body = body.push(caption("Preview"));
+        body = body.push(self.settings_preview(palette));
+        scrollable(body).height(Length::Fill).into()
+    }
+
+    /// A small live preview of the log: an expression echo, a result, an error,
+    /// and a muted note — all in the pending palette and font size, so theme and
+    /// size changes are visible without leaving Settings.
+    fn settings_preview(&self, palette: &theme::Palette) -> Element<'_, Message> {
+        let size = self.base_font_size();
+        let sample = column![
+            text("1024 / 8").font(MONO).size(size).color(palette.accent),
+            text("= 128").font(MONO).size(size).color(palette.ink),
+            text("sqrt(-1)").font(MONO).size(size).color(palette.accent),
+            text("domain error")
+                .font(MONO)
+                .size(size)
+                .color(palette.danger),
+            text("# a note").font(MONO).size(size).color(palette.muted),
+        ]
+        .spacing(6);
+        card(sample)
+    }
+
+    /// The Calculator section: the language mode (input/display dialect).
+    fn settings_calculator(&self, palette: &theme::Palette) -> Element<'_, Message> {
+        let modes = [
+            LanguageMode::Normal,
+            LanguageMode::Programmer,
+            LanguageMode::Finance,
+        ];
+        let labels: Vec<String> = modes.iter().map(|m| title_case(m.name())).collect();
+        let current = title_case(self.session.language_mode().name());
+        let picker = select(labels, Some(current), move |chosen: String| {
+            let mode = modes
+                .iter()
+                .copied()
+                .find(|m| title_case(m.name()) == chosen)
+                .unwrap_or(LanguageMode::Normal);
+            Message::SelectMode(mode)
+        });
+        column![
+            caption("Mode"),
+            picker,
+            text(
+                "Normal is the everyday dialect. Programmer reads ^ & | << >> as \
+                 bitwise operators; Finance tunes the display for money."
+            )
+            .size(12)
+            .color(palette.muted),
+        ]
+        .spacing(10)
+        .into()
     }
 
     /// The binary bit-editor strip: value + hex header, a width picker, a
@@ -1380,13 +1596,14 @@ impl App {
     fn log_view(&self, palette: &theme::Palette) -> Element<'_, Message> {
         // The log fills, oldest→newest, so the freshest result sits just above
         // the input — the terminal/REPL layout of the AppKit original.
+        let size = self.base_font_size();
         let entries = self.session.entries(); // Ref over the shared log tape
         let log: Element<'_, Message> = if entries.is_empty() {
             self.empty_log(palette)
         } else {
             let mut items = column![].spacing(12);
             for entry in entries.iter() {
-                items = items.push(entry_view(&entry.input, &entry.outcome, palette));
+                items = items.push(entry_view(&entry.input, &entry.outcome, palette, size));
             }
             scrollable(items.padding([4, 8]))
                 .height(Length::Fill)
@@ -1397,10 +1614,11 @@ impl App {
         // (no `=` button — the original has none). The two signature corner
         // icons (docs / grid) sit at the right, always visible like the original.
         let input_bar = row![
-            text(">").font(MONO).size(16).color(palette.muted),
+            text(">").font(MONO).size(size + 2.0).color(palette.muted),
             text_field("Expression", self.session.input(), Message::InputChanged)
                 .id(log_input_id())
                 .on_submit(Message::Submit)
+                .size(size)
                 .font(MONO),
             button::icon(glyph::REFERENCE, Message::ToggleReference),
             button::icon(glyph::GRID, Message::ToggleView),
@@ -1866,38 +2084,41 @@ fn entry_view<'a>(
     input: &str,
     outcome: &Outcome,
     palette: &theme::Palette,
+    size: f32,
 ) -> Element<'a, Message> {
+    // Secondary lines (comments, info, error text) read one point smaller.
+    let small = (size - 1.0).max(1.0);
     // Echoed input in accent, no prefix — matching the original, where the
     // expression is the colored line and the result below it is plain ink.
     let echo = text(input.to_string())
         .font(MONO)
-        .size(14)
+        .size(size)
         .color(palette.accent);
 
     let result: Element<'a, Message> = match outcome {
         Outcome::Value(value) => text(format!("= {value}"))
             .font(MONO)
-            .size(14)
+            .size(size)
             .color(palette.ink)
             .into(),
         Outcome::Function(signature) => text(format!("λ {signature}"))
             .font(MONO)
-            .size(14)
+            .size(size)
             .color(palette.ink)
             .into(),
         Outcome::Data(declaration) => text(format!("D {declaration}"))
             .font(MONO)
-            .size(14)
+            .size(size)
             .color(palette.ink)
             .into(),
         Outcome::Comment(note) => text(format!("# {note}"))
             .font(MONO)
-            .size(13)
+            .size(small)
             .color(palette.muted)
             .into(),
         Outcome::Info(block) => text(block.clone())
             .font(MONO)
-            .size(13)
+            .size(small)
             .color(palette.ink)
             .into(),
         Outcome::Error { message, position } => {
@@ -1905,12 +2126,12 @@ fn entry_view<'a>(
             if let Some(position) = position {
                 // No echo prefix now, so the caret aligns directly under column.
                 let caret = format!("{}^", " ".repeat(*position));
-                lines = lines.push(text(caret).font(MONO).size(14).color(palette.danger));
+                lines = lines.push(text(caret).font(MONO).size(size).color(palette.danger));
             }
             lines
                 .push(
                     text(format!("error: {message}"))
-                        .size(13)
+                        .size(small)
                         .color(palette.danger),
                 )
                 .into()
@@ -1924,7 +2145,11 @@ impl App {
     /// The initial state: `App::default`, then the screenshot harness gets a
     /// chance to seed it (a no-op unless `SOROBAN_SHOT` is set — see [`shot`]).
     fn launch() -> Self {
-        let mut app = App::default();
+        let mut app = App {
+            theme_name: themes::default_name().to_string(),
+            font_size: 14.0,
+            ..App::default()
+        };
         shot::configure(&mut app);
         app
     }

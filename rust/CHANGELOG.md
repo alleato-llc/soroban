@@ -221,3 +221,12 @@ portable, unsigned Linux / Windows / macOS binaries.
   - **Panel close buttons.** The Names, Reference, and Binary panels each carry a
     × in their title row that closes them (a shared `panel_header`), matching the
     AppKit app's dismissible panels.
+  - **Settings window** (⌘, or File → Settings…) on rime's `settings` shell:
+    an **Appearance** section with a **theme picker** (all ten Soroban palettes
+    — six from rime, four ported here — plus a hand-editable **Custom** with a
+    per-token RGBA color editor), a **font-size** slider (applied to the log),
+    and a **live preview**; a **Calculator** section with the language-**mode**
+    picker. The View menu's light/dark toggle is gone (superseded); Escape closes
+    the window. New `SOROBAN_SHOT_SETTINGS` / `SOROBAN_SHOT_THEME` harness knobs.
+  - **Undo/redo gated to the grid.** Undo/redo now no-op in the log (the log is
+    history, not document state), matching copy/cut/paste, which already did.

@@ -20,6 +20,9 @@
 //! - `SOROBAN_SHOT_EDIT=1` — open the inline editor on the selected cell.
 //! - `SOROBAN_SHOT_TYPE=<text>` — seed live input (log bar / formula bar) and
 //!   recompute completions, to capture the autocomplete popup.
+//! - `SOROBAN_SHOT_SETTINGS=appearance|calculator` — open the Settings window
+//!   on that section.
+//! - `SOROBAN_SHOT_THEME=<name>` — apply a named theme (e.g. "One Light").
 //! - `SOROBAN_SHOT_PANEL=inspector|reference|bits` — open a side/bottom panel.
 //!
 //! Capture waits three painted frames (so fonts/layout settle) then requests the
@@ -101,6 +104,22 @@ pub fn configure(app: &mut App) {
         Ok("inspector") => app.inspector_visible = true,
         Ok("reference") => app.reference_visible = true,
         Ok("bits") => app.binary_visible = true,
+        _ => {}
+    }
+    // Apply a named theme by its catalog name (e.g. "One Light").
+    if let Ok(name) = std::env::var("SOROBAN_SHOT_THEME") {
+        app.theme_name = name;
+    }
+    // Open the Settings window on a section (`appearance` / `calculator`).
+    match std::env::var("SOROBAN_SHOT_SETTINGS").as_deref() {
+        Ok("appearance") => {
+            app.settings_open = true;
+            app.settings_section = 0;
+        }
+        Ok("calculator") => {
+            app.settings_open = true;
+            app.settings_section = 1;
+        }
         _ => {}
     }
     app.session.refresh_binary();
