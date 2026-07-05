@@ -14,6 +14,12 @@ portable, unsigned Linux / Windows / macOS binaries.
 
 ## [Unreleased]
 
+## [rust-v0.1.0] - 2026-07-05
+
+The first Rust-ecosystem release: the full `anzan` language, `soroban-engine`,
+the `soroban` CLI, and the `rust/gui` iced desktop app at parity with the AppKit
+app. Ships portable, unsigned Linux / Windows / macOS binaries.
+
 ### Added
 
 - Phase 1 (docs/MIGRATION.md): the `rust/` cargo workspace with the `anzan`
