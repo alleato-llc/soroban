@@ -8,7 +8,7 @@
 
 use cucumber::{given, then, when, World};
 use soroban_engine::{CellAddress, CellDisplay, NumberFormat};
-use soroban_gui::session::{BinaryStatus, Outcome, PointClick, Session};
+use soroban_gui::session::{BinaryFieldKind, BinaryStatus, Outcome, PointClick, Session};
 use std::fmt;
 
 /// A stand-in for the app's open inline cell editor (the App holds this state;
@@ -613,6 +613,79 @@ fn field_range(world: &mut SessionWorld, name: String, low: String, width: Strin
         .unwrap_or_else(|| panic!("no field named '{name}' (have {fields:?})"));
     assert_eq!(field.low_bit, low, "field '{name}' low bit");
     assert_eq!(field.width, width, "field '{name}' width");
+}
+
+/// Look up one field of the active format by name, panicking if it's absent.
+fn field_named(world: &mut SessionWorld, name: &str) -> soroban_gui::session::BinaryFieldView {
+    world
+        .session
+        .binary_fields()
+        .into_iter()
+        .find(|f| f.name == name)
+        .unwrap_or_else(|| panic!("no field named '{name}'"))
+}
+
+#[then(regex = r#"^the bit format field "(.*)" has kind (numeric|flags|enum|reserved|unused)$"#)]
+fn field_has_kind(world: &mut SessionWorld, name: String, kind: String) {
+    let expected = match kind.as_str() {
+        "numeric" => BinaryFieldKind::Numeric,
+        "flags" => BinaryFieldKind::Flags,
+        "enum" => BinaryFieldKind::Enum,
+        "reserved" => BinaryFieldKind::Reserved,
+        "unused" => BinaryFieldKind::Unused,
+        other => panic!("unknown kind '{other}'"),
+    };
+    let field = field_named(world, &name);
+    assert_eq!(field.kind, expected, "field '{name}' kind");
+}
+
+#[when(regex = r#"^I set bit format field "(.*)" to "(.*)"$"#)]
+fn i_set_field(world: &mut SessionWorld, name: String, text: String) {
+    assert!(
+        world.session.set_binary_field(&name, &text),
+        "setting field '{name}' to '{text}' failed"
+    );
+}
+
+#[then(regex = r#"^setting bit format field "(.*)" to "(.*)" is rejected$"#)]
+fn setting_field_rejected(world: &mut SessionWorld, name: String, text: String) {
+    assert!(
+        !world.session.set_binary_field(&name, &text),
+        "expected setting field '{name}' to '{text}' to be rejected"
+    );
+}
+
+#[then(regex = r#"^the bit format field "(.*)" offers "(.*)"$"#)]
+fn field_offers(world: &mut SessionWorld, name: String, option: String) {
+    let field = field_named(world, &name);
+    assert!(
+        field.options.contains(&option),
+        "field '{name}' does not offer '{option}' (has {:?})",
+        field.options
+    );
+}
+
+#[then(regex = r#"^the bit format field "(.*)" is selected as index ([0-9]+)$"#)]
+fn field_selected_index(world: &mut SessionWorld, name: String, index: String) {
+    let index: usize = index.parse().expect("index must be a number");
+    let field = field_named(world, &name);
+    assert_eq!(field.selected, Some(index), "field '{name}' selected index");
+}
+
+#[then(regex = r#"^the bit format field "(.*)" flag "(.*)" is (set|clear)$"#)]
+fn field_flag_is(world: &mut SessionWorld, name: String, flag: String, state: String) {
+    let field = field_named(world, &name);
+    let bit = field
+        .flags
+        .iter()
+        .find(|b| b.name == flag)
+        .unwrap_or_else(|| panic!("field '{name}' has no flag '{flag}'"));
+    assert_eq!(
+        bit.set,
+        state == "set",
+        "field '{name}' flag '{flag}' is {}",
+        if bit.set { "set" } else { "clear" }
+    );
 }
 
 // MARK: Inspector + reference

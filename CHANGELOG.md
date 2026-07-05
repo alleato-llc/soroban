@@ -34,6 +34,17 @@ point of truth for downloads.
   Field *editing* (enum pickers, typing a field's value) and custom
   build/save are the next slices. Adds `SOROBAN_SHOT_WIDTH` /
   `SOROBAN_SHOT_FORMAT` to the screenshot harness.
+- Rust ecosystem, Phase 3b — **the bit editor's per-field editors** (slice ②):
+  each field of the active format now renders its own control below the grid —
+  an **enum picker** (DNS `Opcode` → QUERY/IQUERY/STATUS), a **numeric input**
+  that reads and writes in the field's base (a MAC octet as `0xff`), clickable
+  **flag chips** (`r w x`, toggling the underlying bit), and a dimmed
+  **reserved** lock. `Session` gains `set_binary_field` (parse-in-base, clamp,
+  place) and `binary_fields` now carries each field's `kind`, editable
+  `value_text`, enum `options`/`selected`, and per-bit `flags` (name · absolute
+  bit · state). 8 more headless scenarios (field kinds, numeric/hex set, enum
+  pick + select, flag decode, flip-a-flag, out-of-range rejection);
+  `session.rs` ~90% region / 91% line. Custom build/save is the last slice.
 
 - Rust ecosystem, Phase 1 (docs/MIGRATION.md): the `rust/` cargo workspace
   with the `anzan` crate — the full language ported from Swift (BigDecimal

@@ -77,9 +77,35 @@ pub struct BinaryWidth {
     pub active: bool,
 }
 
+/// How a bit-format field is edited — the shell picks its widget from this.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BinaryFieldKind {
+    /// A plain integer field — edited by typing its value (in its base).
+    Numeric,
+    /// Per-bit named flags (`r w x`) — edited by toggling individual bits.
+    Flags,
+    /// An unsigned value indexing a label list — edited with a picker.
+    Enum,
+    /// A locked, must-be-zero gap — not editable.
+    Reserved,
+    /// A don't-care gap — editable bit-by-bit, but unlabeled.
+    Unused,
+}
+
+/// One bit of a flags field, flattened for the shell: its name (`r`), its
+/// absolute register bit (so a click routes to `flip_binary_bit`), and whether
+/// it's set.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BinaryFlagBit {
+    pub name: String,
+    /// Absolute bit index in the register (0 = LSB).
+    pub bit: u32,
+    pub set: bool,
+}
+
 /// One decoded field of the active bit-format, flattened for the shell (no
-/// `BigInt` leaks): the named range, its palette color name, and the decoded
-/// readout (`rwx`, an enum label, or the numeric value in its base).
+/// `BigInt` leaks): the named range, its palette color name, the decoded
+/// readout, and everything the shell needs to render the right editor.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BinaryFieldView {
     pub name: String,
@@ -92,6 +118,18 @@ pub struct BinaryFieldView {
     /// The human-readable decode: a flag string (`r-x`), an enum label, or the
     /// numeric value spelled in its base.
     pub label: String,
+    /// Which editor the field takes.
+    pub kind: BinaryFieldKind,
+    /// The field's numeric value spelled in its display base (`0x1b`, `755`) —
+    /// the editable text for a numeric field.
+    pub value_text: String,
+    /// Enum labels for a picker (empty unless `kind == Enum`).
+    pub options: Vec<String>,
+    /// The selected enum index, when the value is in range (else `None` — an
+    /// out-of-range enum shows its raw number and no selection).
+    pub selected: Option<usize>,
+    /// A flags field's per-bit detail, high→low (empty unless `kind == Flags`).
+    pub flags: Vec<BinaryFlagBit>,
     /// A locked, must-be-zero gap (display only).
     pub reserved: bool,
     /// A don't-care gap (unlabeled but editable).
@@ -1014,7 +1052,8 @@ impl Session {
 
     /// The active format's fields, decoded from the current value (empty for a
     /// plain register) — named ranges with their color, decoded readout, and
-    /// gap flags, ready for the shell to render as colored bands.
+    /// everything the shell needs to render the right editor (a numeric input,
+    /// an enum picker, or per-bit flag cells).
     pub fn binary_fields(&self) -> Vec<BinaryFieldView> {
         let (Some(view), Some(layout)) = (&self.binary, &self.binary_layout) else {
             return Vec::new();
@@ -1024,19 +1063,82 @@ impl Session {
             .iter()
             .zip(view.fields(layout))
             .enumerate()
-            .map(|(index, (spec, field))| BinaryFieldView {
-                name: field.name.clone(),
-                low_bit: field.low_bit,
-                width: field.width,
-                color: spec
-                    .color
-                    .clone()
-                    .or_else(|| Some(palette[index % palette.len()].to_string())),
-                label: field.label(),
-                reserved: field.reserved,
-                unused: field.unused,
+            .map(|(index, (spec, field))| {
+                let kind = if field.reserved {
+                    BinaryFieldKind::Reserved
+                } else if field.unused {
+                    BinaryFieldKind::Unused
+                } else if field.flags.is_some() {
+                    BinaryFieldKind::Flags
+                } else if field.values.is_some() {
+                    BinaryFieldKind::Enum
+                } else {
+                    BinaryFieldKind::Numeric
+                };
+                // Enum selection: the value indexes the labels when in range.
+                let (options, selected) = match &field.values {
+                    Some(values) => {
+                        let index = field.value.to_string().parse::<usize>().ok();
+                        (values.clone(), index.filter(|&i| i < values.len()))
+                    }
+                    None => (Vec::new(), None),
+                };
+                // Flag bits, high→low, each with its absolute register bit.
+                let flags = field
+                    .flags
+                    .as_ref()
+                    .map(|names| {
+                        names
+                            .iter()
+                            .enumerate()
+                            .map(|(i, name)| BinaryFlagBit {
+                                name: name.clone(),
+                                // flag i is the field's high bit minus i.
+                                bit: field.low_bit + field.width - 1 - i as u32,
+                                set: field.is_set_from_top(i),
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                BinaryFieldView {
+                    name: field.name.clone(),
+                    low_bit: field.low_bit,
+                    width: field.width,
+                    color: spec
+                        .color
+                        .clone()
+                        .or_else(|| Some(palette[index % palette.len()].to_string())),
+                    label: field.label(),
+                    kind,
+                    value_text: field.value_text(),
+                    options,
+                    selected,
+                    flags,
+                    reserved: field.reserved,
+                    unused: field.unused,
+                }
             })
             .collect()
+    }
+
+    /// Set the field named `name` to `text`, parsed in the field's display base
+    /// (a numeric field's `0x1b`/`755`, or an enum's selected index as a plain
+    /// number). Clamped to the field's width by the engine. Returns false when
+    /// there's no active format, no such field, or the text won't parse.
+    pub fn set_binary_field(&mut self, name: &str, text: &str) -> bool {
+        let (Some(view), Some(layout)) = (&self.binary, &self.binary_layout) else {
+            return false;
+        };
+        let Some(spec) = layout.iter().find(|f| f.name == name) else {
+            return false;
+        };
+        // Enum/flags carry no base; a numeric field reads in its own.
+        let base = spec.base.unwrap_or(10);
+        let Some(value) = BinaryView::parse(text, base) else {
+            return false;
+        };
+        self.binary = Some(view.setting_field(name, &value, layout));
+        true
     }
 
     /// The active format's total bit width (0 when none) — the register can't

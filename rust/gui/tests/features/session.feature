@@ -366,6 +366,68 @@ Feature: The Rust app session — calculator and sheet, headless
     When I clear the bit format
     Then there is no active bit format
 
+  # ---- Bit-field editing (slice 2) ----
+
+  Scenario: The field kinds are classified for the shell's editors
+    When I enter "0"
+    And I open the bit editor
+    And I apply the "DNS header flags" bit format
+    Then the bit format field "QR" has kind flags
+    And the bit format field "Opcode" has kind enum
+    And the bit format field "Z" has kind reserved
+    And the bit format field "RCODE" has kind enum
+
+  Scenario: Typing a numeric field's value updates the register
+    When I enter "0"
+    And I open the bit editor
+    And I apply the "IPv4 address" bit format
+    And I set bit format field "octet4" to "42"
+    Then the bit format has a field "octet4" reading "42"
+    When I set bit format field "octet1" to "192"
+    Then the bit format has a field "octet1" reading "192"
+    # 192.0.0.42 packs to (192<<24) | 42 = 3221225514
+    And the bit editor value is "3221225514"
+
+  Scenario: A hex numeric field reads and writes in its base
+    When I enter "0"
+    And I open the bit editor
+    And I apply the "MAC address" bit format
+    And I set bit format field "nic3" to "0xff"
+    Then the bit format has a field "nic3" reading "0xff"
+
+  Scenario: Picking an enum field's option selects and decodes it
+    When I enter "0"
+    And I open the bit editor
+    And I apply the "DNS header flags" bit format
+    Then the bit format field "Opcode" offers "IQUERY"
+    When I set bit format field "Opcode" to "1"
+    Then the bit format has a field "Opcode" reading "IQUERY"
+    And the bit format field "Opcode" is selected as index 1
+
+  Scenario: A flags field exposes its bits high-to-low with their state
+    When I enter "500"
+    And I open the bit editor
+    And I apply the "Unix permissions" bit format
+    # group = 6 = rw- → r set, w set, x clear
+    Then the bit format field "group" flag "r" is set
+    And the bit format field "group" flag "w" is set
+    And the bit format field "group" flag "x" is clear
+
+  Scenario: Flipping a flag bit toggles just that flag
+    When I enter "500"
+    And I open the bit editor
+    And I apply the "Unix permissions" bit format
+    Then the bit format field "other" flag "w" is clear
+    # other 'w' is bit 1 (other = bits 2:0, w is the middle)
+    When I flip bit 1
+    Then the bit format field "other" flag "w" is set
+
+  Scenario: A field value out of the format's range is rejected
+    When I enter "0"
+    And I open the bit editor
+    And I apply the "IPv4 address" bit format
+    Then setting bit format field "nope" to "1" is rejected
+
   # ---- Named cells ----
 
   Scenario: A named cell reads by name from a formula

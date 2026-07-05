@@ -27,11 +27,12 @@ use rime::widgets::{
     text_field, toggle, BitBand, CellAlign, GridCell, GridSelection, Menu, MenuItem,
 };
 use soroban_gui::session::{
-    BinaryStatus, Origin, Outcome, PointClick, Session, GRID_COLS, GRID_ROWS,
+    BinaryFieldKind, BinaryStatus, Origin, Outcome, PointClick, Session, GRID_COLS, GRID_ROWS,
 };
 use soroban_engine::{
     CellAddress, CellAlignment, CellDisplay, CellFormat, NumberFormat, PaletteColor,
 };
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 const MONO: Font = Font::MONOSPACE;
@@ -82,6 +83,9 @@ struct App {
     reference_query: String,
     /// Whether the binary bit-editor strip is showing.
     binary_visible: bool,
+    /// Uncommitted text for a numeric bit-field editor, keyed by field name;
+    /// cleared whenever the register changes so it re-syncs to the live value.
+    binary_field_drafts: HashMap<String, String>,
     /// The saved file, if any, and the revision at which it was last saved
     /// (compared against the session's live revision for the dirty indicator).
     file_path: Option<PathBuf>,
@@ -139,6 +143,11 @@ enum Message {
     /// Pick a bit-format by name, or `None` (the "None" entry) for a plain
     /// register.
     SetBinaryFormat(Option<String>),
+    /// Typing in a numeric bit-field's input: (field name, draft text).
+    BinaryFieldInput(String, String),
+    /// Commit a bit-field to a value: (field name, text) — a numeric field's
+    /// submitted draft, or an enum field's picked index.
+    SetBinaryField(String, String),
     NewWorkbook,
     OpenWorkbook,
     SaveWorkbook,
@@ -175,6 +184,7 @@ impl App {
                 // The bit editor tracks the newest result until you flip a bit.
                 if self.binary_visible {
                     self.session.refresh_binary();
+                    self.sync_binary_field_drafts();
                 }
             }
             // Arrows: history recall in the log (↑/↓ only); cell navigation in the
@@ -300,12 +310,27 @@ impl App {
                 self.binary_visible = !self.binary_visible;
                 if self.binary_visible {
                     self.session.refresh_binary();
+                    self.sync_binary_field_drafts();
                 }
             }
-            Message::BitToggled(index) => self.session.flip_binary_bit(index),
-            Message::SetBinaryWidth(width) => self.session.set_binary_width(width),
+            Message::BitToggled(index) => {
+                self.session.flip_binary_bit(index);
+                self.sync_binary_field_drafts();
+            }
+            Message::SetBinaryWidth(width) => {
+                self.session.set_binary_width(width);
+                self.sync_binary_field_drafts();
+            }
             Message::SetBinaryFormat(name) => {
                 self.session.apply_binary_format(name.as_deref());
+                self.sync_binary_field_drafts();
+            }
+            Message::BinaryFieldInput(name, text) => {
+                self.binary_field_drafts.insert(name, text);
+            }
+            Message::SetBinaryField(name, text) => {
+                self.session.set_binary_field(&name, &text);
+                self.sync_binary_field_drafts();
             }
             Message::UseBinary => {
                 self.session.use_binary();
@@ -755,9 +780,13 @@ impl App {
                     })
                     .collect();
 
-                layout
-                    .push(scrollable(bit_grid(bits, bands, Message::BitToggled)))
-                    .into()
+                layout = layout.push(scrollable(bit_grid(bits, bands, Message::BitToggled)));
+                // Per-field editors below the grid (enum pickers, numeric
+                // inputs, flag chips) — empty for a plain register.
+                if let Some(fields) = self.binary_fields_view(palette) {
+                    layout = layout.push(fields);
+                }
+                layout.into()
             }
             BinaryStatus::Unavailable(reason) => text(reason).size(13).color(palette.muted).into(),
         };
@@ -772,6 +801,98 @@ impl App {
             left: 20.0,
         })
         .into()
+    }
+
+    /// Rebuild the numeric-field draft map from the register's current values,
+    /// so a text input can borrow its value from `self` (living as long as the
+    /// view) and re-syncs after any bit/width/format/field change.
+    fn sync_binary_field_drafts(&mut self) {
+        self.binary_field_drafts = self
+            .session
+            .binary_fields()
+            .into_iter()
+            .filter(|f| matches!(f.kind, BinaryFieldKind::Numeric | BinaryFieldKind::Unused))
+            .map(|f| (f.name, f.value_text))
+            .collect();
+    }
+
+    /// The per-field editor strip for the active bit-format: one card per field
+    /// carrying the right control — a picker for an enum, a text input for a
+    /// numeric field, clickable chips for flags, a dimmed lock for a reserved
+    /// gap. `None` when no format is applied.
+    fn binary_fields_view(&self, palette: &theme::Palette) -> Option<Element<'_, Message>> {
+        // Own the palette (it's Copy) so the field-card closures don't borrow it
+        // — the returned Element then borrows only `self`.
+        let palette = *palette;
+        let fields = self.session.binary_fields();
+        if fields.is_empty() {
+            return None;
+        }
+        let mut cards = row![].spacing(10);
+        for f in fields {
+            let name = f.name.clone();
+            let header = text(format!("{} [{}:{}]", f.name, f.low_bit + f.width - 1, f.low_bit))
+                .size(11)
+                .color(palette.muted);
+            let editor: Element<'_, Message> = match f.kind {
+                BinaryFieldKind::Enum => {
+                    let options = f.options.clone();
+                    let selected = f.selected.and_then(|i| options.get(i).cloned());
+                    let lookup = options.clone();
+                    let field_name = name.clone();
+                    select(options, selected, move |chosen: String| {
+                        let index = lookup.iter().position(|o| *o == chosen).unwrap_or(0);
+                        Message::SetBinaryField(field_name.clone(), index.to_string())
+                    })
+                    .into()
+                }
+                BinaryFieldKind::Numeric | BinaryFieldKind::Unused => {
+                    // The value is borrowed from the drafts map (kept in sync
+                    // with the register), so it lives as long as this Element.
+                    let value: &str = self
+                        .binary_field_drafts
+                        .get(&name)
+                        .map(String::as_str)
+                        .unwrap_or("");
+                    let submit_text = value.to_string();
+                    let input_name = name.clone();
+                    let submit_name = name.clone();
+                    text_field("", value, move |text| {
+                        Message::BinaryFieldInput(input_name.clone(), text)
+                    })
+                    .on_submit(Message::SetBinaryField(submit_name, submit_text))
+                    .into()
+                }
+                BinaryFieldKind::Flags => {
+                    let mut chips = row![].spacing(4);
+                    for bit in f.flags {
+                        chips = chips.push(
+                            iced::widget::button(
+                                column![
+                                    text(bit.name).size(10).center(),
+                                    text(if bit.set { "1" } else { "0" }).size(12).center(),
+                                ]
+                                .align_x(iced::Alignment::Center),
+                            )
+                            .padding([2, 6])
+                            .on_press(Message::BitToggled(bit.bit as usize))
+                            .style(width_chip_style(bit.set, true, palette)),
+                        );
+                    }
+                    chips.into()
+                }
+                BinaryFieldKind::Reserved => text(format!("reserved · {}", f.value_text))
+                    .size(12)
+                    .color(palette.muted)
+                    .into(),
+            };
+            cards = cards.push(
+                container(column![header, editor].spacing(4))
+                    .padding(8)
+                    .style(move |_theme| container::background(palette.surface)),
+            );
+        }
+        Some(scrollable(cards).into())
     }
 
     /// The reference window: every function, operator, and constant — the
