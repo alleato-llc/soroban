@@ -104,6 +104,23 @@ pub enum PointClick {
     Commit,
 }
 
+/// Point mode's memory of its last reference splice — the state behind Excel's
+/// re-click-replaces and shift-click-extends-to-a-range. Mirrors the Swift
+/// `SheetModel`'s `pointModeExpectedDraft` / `lastInsertedReference` /
+/// `lastInsertedAddress` trio.
+#[derive(Clone)]
+struct PointAnchor {
+    /// The draft exactly as our last splice left it. If the live draft still
+    /// equals this, the user hasn't typed since — so the next click replaces
+    /// (or, with shift, extends) the reference instead of appending another.
+    draft: String,
+    /// The exact text we last spliced in (`B:1`, `'Rate'`, or a `B:1..B:4`
+    /// range) — what a re-click peels back off before writing the new one.
+    reference: String,
+    /// That reference's cell, so a shift-click can widen it into a range.
+    address: CellAddress,
+}
+
 /// One cell's raw content before and after an edit — the unit of undo. An
 /// empty string means the cell was (or becomes) blank.
 #[derive(Clone)]
@@ -156,6 +173,12 @@ pub struct Session {
     /// Bumped on every document mutation; the shell compares it against a saved
     /// baseline for the dirty indicator.
     revision: u64,
+    /// Point mode's last-splice memory (re-click-replace / shift-extend), or
+    /// `None` when no reference has been inserted into the current edit. The
+    /// shell clears it as an edit begins or ends via [`clear_point_anchor`].
+    ///
+    /// [`clear_point_anchor`]: Session::clear_point_anchor
+    point_anchor: Option<PointAnchor>,
 }
 
 impl Session {
@@ -172,6 +195,7 @@ impl Session {
             redo_stack: Vec::new(),
             binary: None,
             revision: 0,
+            point_anchor: None,
         }
     }
 
@@ -357,19 +381,73 @@ impl Session {
         Calculator::expects_operand(draft)
     }
 
-    /// Excel point mode: a click on `address` while editing `draft`. When the
-    /// draft ends expecting an operand (after `=`, an operator, `(`, `,`, `..`,
-    /// …), the clicked cell's reference is spliced onto the draft and editing
-    /// continues ([`PointClick::Inserted`]); otherwise the click means "I'm
-    /// done here" and the caller commits ([`PointClick::Commit`]). The inserted
-    /// reference is the cell's **name** when it has one (`'Rate'`), else its
-    /// `A:1` address — names read more naturally, like Excel's defined names.
-    pub fn point_click(&self, draft: &str, address: CellAddress) -> PointClick {
-        if Calculator::expects_operand(draft) {
-            PointClick::Inserted(format!("{draft}{}", self.reference_text(address)))
-        } else {
-            PointClick::Commit
+    /// Excel point mode: a click on `address` while editing `draft`, with
+    /// `extend` set for a shift-click. When the draft ends expecting an operand
+    /// (after `=`, an operator, `(`, `,`, `..`, …), the clicked cell's reference
+    /// is spliced onto the draft and editing continues ([`PointClick::Inserted`]);
+    /// otherwise the click means "I'm done here" and the caller commits
+    /// ([`PointClick::Commit`]). The inserted reference is the cell's **name**
+    /// when it has one (`'Rate'`), else its `A:1` address — names read more
+    /// naturally, like Excel's defined names.
+    ///
+    /// Two continuations reuse the last splice (its memory lives in
+    /// `point_anchor`, cleared by [`clear_point_anchor`] as an edit begins or
+    /// ends): if the draft still equals what the last splice left, a plain
+    /// **re-click replaces** that reference and a **shift-click extends** it into
+    /// a `first..this` range (addresses, since ranges don't carry names). Once
+    /// it's already a range, a further shift-click replaces it with the single
+    /// clicked cell — matching the Swift `SheetModel`.
+    ///
+    /// [`clear_point_anchor`]: Session::clear_point_anchor
+    pub fn point_click(&mut self, draft: &str, address: CellAddress, extend: bool) -> PointClick {
+        if !self.wants_reference_insertion(draft) {
+            self.point_anchor = None;
+            return PointClick::Commit;
         }
+        // Reuse the previous splice only when the draft is untouched since it.
+        let anchor = self.point_anchor.as_ref().filter(|a| a.draft == draft).cloned();
+        let (new_draft, reference) = match anchor {
+            Some(anchor) if extend && !anchor.reference.contains("..") => {
+                // Widen the just-inserted reference into a range: B:1 → B:1..B:4.
+                let base = &draft[..draft.len() - anchor.reference.len()];
+                let range = format!("{}..{}", anchor.address, address);
+                (format!("{base}{range}"), range)
+            }
+            Some(anchor) => {
+                // Re-click (or shift-click past a range) replaces the reference.
+                let base = &draft[..draft.len() - anchor.reference.len()];
+                let reference = self.reference_text(address);
+                (format!("{base}{reference}"), reference)
+            }
+            None => {
+                // Fresh insert: append onto the operand-expecting draft.
+                let reference = self.reference_text(address);
+                (format!("{draft}{reference}"), reference)
+            }
+        };
+        self.point_anchor = Some(PointAnchor {
+            draft: new_draft.clone(),
+            reference,
+            address,
+        });
+        PointClick::Inserted(new_draft)
+    }
+
+    /// Should a click insert a reference (vs. commit)? Yes when the draft still
+    /// expects an operand, OR when it's exactly what our last splice left — that
+    /// second case is how a re-click or shift-click keeps editing even though a
+    /// complete `=B:1` no longer "expects an operand". Mirrors the Swift
+    /// `wantsReferenceInsertion`.
+    fn wants_reference_insertion(&self, draft: &str) -> bool {
+        Calculator::expects_operand(draft)
+            || self.point_anchor.as_ref().is_some_and(|a| a.draft == draft)
+    }
+
+    /// Forget the last point-mode splice — the shell calls this as an edit
+    /// begins or ends so a stale anchor can't hijack a later click (the Swift
+    /// `beginEditing`/`endEditing` reset).
+    pub fn clear_point_anchor(&mut self) {
+        self.point_anchor = None;
     }
 
     /// The text a point-mode click inserts for `address`: a quoted name if the

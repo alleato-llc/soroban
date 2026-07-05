@@ -418,8 +418,11 @@ impl App {
         })
     }
 
-    /// Reload the edit bar and name box from the active cell.
+    /// Reload the edit bar and name box from the active cell. Also forgets any
+    /// point-mode anchor — every fresh edit or navigation flows through here, so
+    /// a stale reference-splice can't hijack the next click.
     fn load_draft(&mut self) {
+        self.session.clear_point_anchor();
         match self.active_cell() {
             Some(address) => {
                 self.edit_draft = self.session.cell_raw(address);
@@ -448,7 +451,7 @@ impl App {
         if self.mode == ViewMode::Grid && self.editing {
             match self
                 .session
-                .point_click(&self.edit_draft, CellAddress::new(col, row))
+                .point_click(&self.edit_draft, CellAddress::new(col, row), extend)
             {
                 // Point mode: the clicked cell's reference joins the draft and
                 // the inline editor keeps focus (the in-grid editor is active).

@@ -242,6 +242,17 @@ point of truth for downloads.
   AppKit app; the logic is centralized in a tested `Session::point_click`
   (Excel's "expecting an operand → insert reference, else commit" rule) that the
   grid click handler now calls.
+- Rust ecosystem, Phase 3b — **point mode's re-click-replace and
+  shift-click-extend**, closing the last gap against the AppKit app: while the
+  draft is still exactly what the previous reference-splice left it,
+  re-clicking another cell *replaces* the inserted reference (`=B:1` → `=C:1`)
+  and shift-clicking *extends* it into a range (`=sum(B:1` → `=sum(B:1..B:4`,
+  addresses even when the first corner was named — ranges don't carry names);
+  typing ends the window so the next click appends fresh. `Session::point_click`
+  gains an `extend` flag and a small anchor state (the Swift
+  `pointModeExpectedDraft`/`lastInsertedReference`/`lastInsertedAddress` trio),
+  which the shell clears as an edit begins or ends via `clear_point_anchor`.
+  Four new headless scenarios; `session.rs` coverage ~90% line.
 
 ### Changed
 

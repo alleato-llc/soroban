@@ -168,6 +168,41 @@ Feature: The Rust app session — calculator and sheet, headless
     Then the editor is closed
     And cell A:1 shows "42"
 
+  Scenario: Re-clicking replaces the just-inserted reference
+    When I begin editing cell A:1
+    And I type "=" into the editor
+    And I click cell B:1
+    Then the editor holds "=B:1"
+    When I click cell C:1
+    Then the editor holds "=C:1"
+
+  Scenario: Shift-clicking after an insert extends the reference into a range
+    When I begin editing cell A:1
+    And I type "=sum(" into the editor
+    And I click cell B:1
+    Then the editor holds "=sum(B:1"
+    When I shift-click cell B:4
+    Then the editor holds "=sum(B:1..B:4"
+
+  Scenario: A range extension uses addresses even when the first corner is named
+    When I set cell B:1 to "5"
+    And I name cell B:1 "Rate"
+    And I begin editing cell A:1
+    And I type "=sum(" into the editor
+    And I click cell B:1
+    Then the editor holds "=sum('Rate'"
+    When I shift-click cell B:4
+    Then the editor holds "=sum(B:1..B:4"
+
+  Scenario: Typing after an insert ends the replace window, so the next click appends
+    When I begin editing cell A:1
+    And I type "=" into the editor
+    And I click cell B:1
+    Then the editor holds "=B:1"
+    When I type "=B:1 +" into the editor
+    And I click cell C:1
+    Then the editor holds "=B:1 +C:1"
+
   # ---- Controls ----
 
   Scenario: Toggling a checkbox rewrites its own cell

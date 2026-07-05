@@ -177,6 +177,7 @@ fn i_name_cell(world: &mut SessionWorld, key: String, name: String) {
 fn i_begin_editing(world: &mut SessionWorld, key: String) {
     let address = address(&key);
     let draft = world.session.cell_raw(address);
+    world.session.clear_point_anchor(); // the app resets on beginEditing
     world.editor = Some(Editor { address, draft });
 }
 
@@ -187,9 +188,20 @@ fn i_type_into_editor(world: &mut SessionWorld, text: String) {
 
 #[when(regex = r#"^I click cell ([A-Za-z]+:[0-9]+)$"#)]
 fn i_click_cell(world: &mut SessionWorld, key: String) {
+    point_click(world, &key, false);
+}
+
+#[when(regex = r#"^I shift-click cell ([A-Za-z]+:[0-9]+)$"#)]
+fn i_shift_click_cell(world: &mut SessionWorld, key: String) {
+    point_click(world, &key, true);
+}
+
+/// Drive one point-mode click through the session, exactly as the app's
+/// `select_or_point` does — insert keeps the editor open on the new draft, a
+/// commit writes the cell and closes it.
+fn point_click(world: &mut SessionWorld, key: &str, extend: bool) {
     let editor = world.editor.take().expect("no editor is open to click from");
-    // Exactly what the app's `select_or_point` does with the click.
-    match world.session.point_click(&editor.draft, address(&key)) {
+    match world.session.point_click(&editor.draft, address(key), extend) {
         PointClick::Inserted(draft) => {
             world.editor = Some(Editor {
                 address: editor.address,
