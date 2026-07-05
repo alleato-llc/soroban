@@ -100,6 +100,12 @@ pub fn configure(app: &mut App) {
     if let Ok(name) = std::env::var("SOROBAN_SHOT_FORMAT") {
         app.session.apply_binary_format(Some(&name));
     }
+    // Optionally open the visual format builder (`new` empty, `edit` seeded).
+    match std::env::var("SOROBAN_SHOT_BUILD").as_deref() {
+        Ok("new") => app.session.begin_format_build(false),
+        Ok("edit") => app.session.begin_format_build(true),
+        _ => {}
+    }
 
     app.shot = Some(Shot {
         path,

@@ -428,6 +428,80 @@ Feature: The Rust app session — calculator and sheet, headless
     And I apply the "IPv4 address" bit format
     Then setting bit format field "nope" to "1" is rejected
 
+  # ---- Building & saving custom formats (slice 3) ----
+
+  Scenario: Building a custom format and applying it
+    When I enter "255"
+    And I open the bit editor
+    And I begin building a new bit format
+    And I add a numeric field "hi" of 4 bits
+    And I add a numeric field "lo" of 4 bits
+    Then the builder has 2 fields
+    When I apply the built format
+    Then the active bit format is "Custom"
+    # first-added field takes the high bits (fields pack high→low)
+    And the bit format field "hi" sits at bit 4 for 4 bits
+    And the bit format field "lo" sits at bit 0 for 4 bits
+
+  Scenario: A built format decodes flag and enum fields
+    When I enter "0"
+    And I open the bit editor
+    And I begin building a new bit format
+    And I add a flags field "perms" of 3 bits labelled "r, w, x"
+    And I add an enum field "mode" of 2 bits labelled "idle, run, halt"
+    When I apply the built format
+    Then the bit format field "perms" has kind flags
+    And the bit format field "mode" has kind enum
+    And the bit format field "mode" offers "run"
+
+  Scenario: Saving a custom format lists it and makes it applicable
+    When I enter "0"
+    And I open the bit editor
+    And I begin building a new bit format
+    And I add a numeric field "a" of 8 bits
+    And I save the format as "myfmt"
+    Then the active bit format is "myfmt"
+    And the saved formats include "myfmt"
+    When I clear the bit format
+    And I apply the "myfmt" bit format
+    Then the active bit format is "myfmt"
+    And the bit format field "a" sits at bit 0 for 8 bits
+
+  Scenario: A saved custom format survives save and reopen
+    When I enter "0"
+    And I open the bit editor
+    And I begin building a new bit format
+    And I add a numeric field "octet" of 8 bits labelled ""
+    And I save the format as "mymac"
+    And I save and reopen the workbook
+    Then the saved formats include "mymac"
+    When I open the bit editor
+    And I apply the "mymac" bit format
+    Then the active bit format is "mymac"
+
+  Scenario: Editing the current format seeds the builder from its fields
+    When I enter "500"
+    And I open the bit editor
+    And I apply the "Unix permissions" bit format
+    And I begin editing the current bit format
+    Then the builder has 3 fields
+
+  Scenario: Saving is rejected with no fields built
+    When I enter "0"
+    And I open the bit editor
+    And I begin building a new bit format
+    Then saving the format as "empty" is rejected
+
+  Scenario: Deleting a saved format removes it
+    When I enter "0"
+    And I open the bit editor
+    And I begin building a new bit format
+    And I add a numeric field "a" of 8 bits
+    And I save the format as "tmp"
+    Then the saved formats include "tmp"
+    When I delete the saved format "tmp"
+    Then the saved formats exclude "tmp"
+
   # ---- Named cells ----
 
   Scenario: A named cell reads by name from a formula

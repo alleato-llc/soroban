@@ -45,6 +45,21 @@ point of truth for downloads.
   bit · state). 8 more headless scenarios (field kinds, numeric/hex set, enum
   pick + select, flag decode, flip-a-flag, out-of-range rejection);
   `session.rs` ~90% region / 91% line. Custom build/save is the last slice.
+- Rust ecosystem, Phase 3b — **custom bit-format build & save** (slice ③,
+  completing bit-editor parity with the AppKit app): a **visual builder**
+  (Build new… / Edit current…) — claim a run of the free bits, describe the
+  pending field (name · kind · flag/enum labels · numeric base), add it, drop
+  fields, then **Apply** (transient) or **Save** it as a named format that
+  **rides the workbook** and survives save/reopen. Saved formats join the
+  presets in the picker. `Session` gains the builder seam (`begin_format_build`
+  seeded or empty, `format_builder`/`_mut`, `apply_built_format`, `save_format`,
+  `saved_format_names`, `delete_saved_format`) — persistence is a loose-map
+  `Value` set off-log via `Calculator::set_user_variable`, so it never disturbs
+  `ans` and round-trips through `BinaryView::layout`; `apply_binary_format` now
+  resolves saved formats too. 7 more headless scenarios (build+apply, flag/enum
+  decode, save+list+apply, save/reopen round-trip, Edit-seeds-from-active,
+  empty-save rejection, delete); `session.rs` ~90% region / 92% line. Adds
+  `SOROBAN_SHOT_BUILD` to the screenshot harness.
 
 - Rust ecosystem, Phase 1 (docs/MIGRATION.md): the `rust/` cargo workspace
   with the `anzan` crate — the full language ported from Swift (BigDecimal

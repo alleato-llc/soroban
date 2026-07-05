@@ -7,7 +7,7 @@
 //! `spec/anzan`, run by the engine's gherkin suite.
 
 use cucumber::{given, then, when, World};
-use soroban_engine::{CellAddress, CellDisplay, NumberFormat};
+use soroban_engine::{CellAddress, CellDisplay, FormatBuilderFieldKind, NumberFormat};
 use soroban_gui::session::{BinaryFieldKind, BinaryStatus, Outcome, PointClick, Session};
 use std::fmt;
 
@@ -685,6 +685,98 @@ fn field_flag_is(world: &mut SessionWorld, name: String, flag: String, state: St
         state == "set",
         "field '{name}' flag '{flag}' is {}",
         if bit.set { "set" } else { "clear" }
+    );
+}
+
+// MARK: Format builder (Build / Save custom formats)
+
+#[when("I begin building a new bit format")]
+fn i_begin_new_format(world: &mut SessionWorld) {
+    world.session.begin_format_build(false);
+}
+
+#[when("I begin editing the current bit format")]
+fn i_begin_edit_format(world: &mut SessionWorld) {
+    world.session.begin_format_build(true);
+}
+
+/// Claim `bits`, describe the pending field, and add it — one step so a
+/// scenario reads as "add a field", not five builder pokes.
+#[when(regex = r#"^I add an? (numeric|flags|enum|reserved|unused) field "(.*)" of ([0-9]+) bits(?: labelled "(.*)")?$"#)]
+fn i_add_field(
+    world: &mut SessionWorld,
+    kind: String,
+    name: String,
+    bits: String,
+    labels: String,
+) {
+    let bits: u32 = bits.parse().expect("bits must be a number");
+    let kind = match kind.as_str() {
+        "numeric" => FormatBuilderFieldKind::Numeric,
+        "flags" => FormatBuilderFieldKind::Flags,
+        "enum" => FormatBuilderFieldKind::Enumeration,
+        "reserved" => FormatBuilderFieldKind::Reserved,
+        "unused" => FormatBuilderFieldKind::Unused,
+        other => panic!("unknown builder kind '{other}'"),
+    };
+    let builder = world
+        .session
+        .format_builder_mut()
+        .expect("no builder is open");
+    builder.claim(bits);
+    builder.draft_name = name;
+    builder.draft_kind = kind;
+    builder.draft_labels = labels;
+    builder.add_field();
+}
+
+#[then(regex = r#"^the builder has ([0-9]+) fields$"#)]
+fn builder_has_fields(world: &mut SessionWorld, count: String) {
+    let count: usize = count.parse().expect("count must be a number");
+    let builder = world.session.format_builder().expect("no builder is open");
+    assert_eq!(builder.fields().len(), count, "builder field count");
+}
+
+#[when("I apply the built format")]
+fn i_apply_built(world: &mut SessionWorld) {
+    world.session.apply_built_format();
+}
+
+#[when(regex = r#"^I save the format as "(.*)"$"#)]
+fn i_save_format(world: &mut SessionWorld, name: String) {
+    assert!(
+        world.session.save_format(&name),
+        "saving format '{name}' failed"
+    );
+}
+
+#[then(regex = r#"^saving the format as "(.*)" is rejected$"#)]
+fn saving_format_rejected(world: &mut SessionWorld, name: String) {
+    assert!(
+        !world.session.save_format(&name),
+        "expected saving format '{name}' to be rejected"
+    );
+}
+
+#[when(regex = r#"^I delete the saved format "(.*)"$"#)]
+fn i_delete_saved(world: &mut SessionWorld, name: String) {
+    world.session.delete_saved_format(&name);
+}
+
+#[then(regex = r#"^the saved formats include "(.*)"$"#)]
+fn saved_formats_include(world: &mut SessionWorld, name: String) {
+    assert!(
+        world.session.saved_format_names().contains(&name),
+        "saved formats do not include '{name}' (have {:?})",
+        world.session.saved_format_names()
+    );
+}
+
+#[then(regex = r#"^the saved formats exclude "(.*)"$"#)]
+fn saved_formats_exclude(world: &mut SessionWorld, name: String) {
+    assert!(
+        !world.session.saved_format_names().contains(&name),
+        "saved formats unexpectedly include '{name}'"
     );
 }
 

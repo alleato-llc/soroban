@@ -30,7 +30,8 @@ use soroban_gui::session::{
     BinaryFieldKind, BinaryStatus, Origin, Outcome, PointClick, Session, GRID_COLS, GRID_ROWS,
 };
 use soroban_engine::{
-    CellAddress, CellAlignment, CellDisplay, CellFormat, NumberFormat, PaletteColor,
+    CellAddress, CellAlignment, CellDisplay, CellFormat, FormatBuilderFieldKind, NumberFormat,
+    PaletteColor,
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -86,6 +87,8 @@ struct App {
     /// Uncommitted text for a numeric bit-field editor, keyed by field name;
     /// cleared whenever the register changes so it re-syncs to the live value.
     binary_field_drafts: HashMap<String, String>,
+    /// The name box for saving a custom format (the builder's Save field).
+    builder_save_name: String,
     /// The saved file, if any, and the revision at which it was last saved
     /// (compared against the session's live revision for the dirty indicator).
     file_path: Option<PathBuf>,
@@ -148,6 +151,25 @@ enum Message {
     /// Commit a bit-field to a value: (field name, text) — a numeric field's
     /// submitted draft, or an enum field's picked index.
     SetBinaryField(String, String),
+    /// Open the format builder — `true` seeds it from the active format
+    /// (Edit current…), `false` starts empty (Build new…).
+    BeginBuildFormat(bool),
+    CancelBuildFormat,
+    /// Claim `bits` for the pending field in the builder.
+    BuilderClaim(u32),
+    BuilderDraftName(String),
+    BuilderDraftKind(FormatBuilderFieldKind),
+    BuilderDraftLabels(String),
+    BuilderDraftBase(u32),
+    BuilderAddField,
+    /// Remove the committed builder field with this id.
+    BuilderRemoveField(usize),
+    /// Apply the builder's fields as the active format without saving.
+    ApplyBuiltFormat,
+    /// Typing in the builder's save-name box.
+    BuilderSaveName(String),
+    /// Save the builder's fields as a named custom format.
+    SaveFormat,
     NewWorkbook,
     OpenWorkbook,
     SaveWorkbook,
@@ -331,6 +353,60 @@ impl App {
             Message::SetBinaryField(name, text) => {
                 self.session.set_binary_field(&name, &text);
                 self.sync_binary_field_drafts();
+            }
+            Message::BeginBuildFormat(seed) => {
+                self.session.begin_format_build(seed);
+                self.builder_save_name.clear();
+            }
+            Message::CancelBuildFormat => {
+                self.session.cancel_format_build();
+                self.builder_save_name.clear();
+            }
+            Message::BuilderClaim(bits) => {
+                if let Some(b) = self.session.format_builder_mut() {
+                    b.claim(bits);
+                }
+            }
+            Message::BuilderDraftName(text) => {
+                if let Some(b) = self.session.format_builder_mut() {
+                    b.draft_name = text;
+                }
+            }
+            Message::BuilderDraftKind(kind) => {
+                if let Some(b) = self.session.format_builder_mut() {
+                    b.draft_kind = kind;
+                }
+            }
+            Message::BuilderDraftLabels(text) => {
+                if let Some(b) = self.session.format_builder_mut() {
+                    b.draft_labels = text;
+                }
+            }
+            Message::BuilderDraftBase(base) => {
+                if let Some(b) = self.session.format_builder_mut() {
+                    b.draft_base = base;
+                }
+            }
+            Message::BuilderAddField => {
+                if let Some(b) = self.session.format_builder_mut() {
+                    b.add_field();
+                }
+            }
+            Message::BuilderRemoveField(id) => {
+                if let Some(b) = self.session.format_builder_mut() {
+                    b.remove(id);
+                }
+            }
+            Message::ApplyBuiltFormat => {
+                self.session.apply_built_format();
+                self.sync_binary_field_drafts();
+            }
+            Message::BuilderSaveName(text) => self.builder_save_name = text,
+            Message::SaveFormat => {
+                if self.session.save_format(&self.builder_save_name) {
+                    self.builder_save_name.clear();
+                    self.sync_binary_field_drafts();
+                }
             }
             Message::UseBinary => {
                 self.session.use_binary();
@@ -722,10 +798,11 @@ impl App {
                     if signed { "signed" } else { "unsigned" }
                 );
 
-                // The format picker: "None" plus every preset, current selected.
+                // The format picker: "None", every preset, then saved formats.
                 let none = "None".to_string();
                 let mut options = vec![none.clone()];
                 options.extend(self.session.binary_preset_names());
+                options.extend(self.session.saved_format_names());
                 let current = self.session.binary_format_name().unwrap_or(none.clone());
                 let format_picker = select(options, Some(current), move |chosen: String| {
                     if chosen == "None" {
@@ -734,10 +811,17 @@ impl App {
                         Message::SetBinaryFormat(Some(chosen))
                     }
                 });
+                // "Build" (new) and, when a format is active, "Edit" it.
+                let mut build_actions = row![button::ghost("Build…", Message::BeginBuildFormat(false))]
+                    .spacing(6);
+                if self.session.binary_format_name().is_some() {
+                    build_actions =
+                        build_actions.push(button::ghost("Edit…", Message::BeginBuildFormat(true)));
+                }
 
                 let header = row![
                     text(caption).font(MONO).size(13).color(palette.accent),
-                    container(format_picker)
+                    container(row![build_actions, format_picker].spacing(8))
                         .width(Length::Fill)
                         .align_x(iced::alignment::Horizontal::Right),
                     button::secondary("Use in input", Message::UseBinary),
@@ -785,6 +869,10 @@ impl App {
                 // inputs, flag chips) — empty for a plain register.
                 if let Some(fields) = self.binary_fields_view(palette) {
                     layout = layout.push(fields);
+                }
+                // The visual builder, when Build…/Edit… is open.
+                if let Some(builder) = self.format_builder_view(width, palette) {
+                    layout = layout.push(builder);
                 }
                 layout.into()
             }
@@ -893,6 +981,133 @@ impl App {
             );
         }
         Some(scrollable(cards).into())
+    }
+
+    /// The visual format builder (Build new… / Edit current…): claim a run of
+    /// the free bits, describe the pending field (name / kind / labels / base),
+    /// Add it; the committed fields list with per-row remove, then Apply
+    /// (transient) or Save (named). `None` unless the builder is open.
+    fn format_builder_view(
+        &self,
+        register_width: u32,
+        palette: &theme::Palette,
+    ) -> Option<Element<'_, Message>> {
+        let palette = *palette;
+        let builder = self.session.format_builder()?;
+        let free = builder.free_bits(register_width);
+
+        // Claim buttons: 1..=free bits (capped for a sane row width).
+        let mut claim = row![text("Claim").size(12).color(palette.muted)]
+            .spacing(4)
+            .align_y(iced::Alignment::Center);
+        for bits in 1..=free.min(16) {
+            let active = builder.pending_width() == bits;
+            claim = claim.push(
+                iced::widget::button(text(bits.to_string()).size(12).center())
+                    .padding([2, 8])
+                    .on_press(Message::BuilderClaim(bits))
+                    .style(width_chip_style(active, true, palette)),
+            );
+        }
+
+        // Draft inputs: name (unless a gap), kind picker, labels (flags/enum),
+        // base (numeric), Add.
+        let kinds: Vec<String> = FormatBuilderFieldKind::ALL
+            .iter()
+            .map(|k| k.raw_value().to_string())
+            .collect();
+        let kind_picker = select(
+            kinds,
+            Some(builder.draft_kind.raw_value().to_string()),
+            |chosen: String| {
+                let kind = FormatBuilderFieldKind::ALL
+                    .into_iter()
+                    .find(|k| k.raw_value() == chosen)
+                    .unwrap_or(FormatBuilderFieldKind::Numeric);
+                Message::BuilderDraftKind(kind)
+            },
+        );
+        let mut draft = row![].spacing(6).align_y(iced::Alignment::Center);
+        if !builder.is_gap_kind() {
+            draft = draft.push(
+                text_field("field name", &builder.draft_name, Message::BuilderDraftName)
+                    .width(Length::Fixed(140.0)),
+            );
+        }
+        draft = draft.push(kind_picker);
+        if matches!(
+            builder.draft_kind,
+            FormatBuilderFieldKind::Flags | FormatBuilderFieldKind::Enumeration
+        ) {
+            draft = draft.push(
+                text_field(
+                    "labels, comma-separated",
+                    &builder.draft_labels,
+                    Message::BuilderDraftLabels,
+                )
+                .width(Length::Fixed(220.0)),
+            );
+        }
+        if matches!(builder.draft_kind, FormatBuilderFieldKind::Numeric) {
+            let dec = builder.draft_base == 10;
+            draft = draft
+                .push(
+                    iced::widget::button(text("dec").size(11))
+                        .padding([2, 8])
+                        .on_press(Message::BuilderDraftBase(10))
+                        .style(width_chip_style(dec, true, palette)),
+                )
+                .push(
+                    iced::widget::button(text("hex").size(11))
+                        .padding([2, 8])
+                        .on_press(Message::BuilderDraftBase(16))
+                        .style(width_chip_style(!dec, true, palette)),
+                );
+        }
+        draft = draft.push(button::secondary("Add field", Message::BuilderAddField));
+
+        // Committed fields, each with a remove button.
+        let mut fields = column![].spacing(4);
+        for f in builder.fields() {
+            fields = fields.push(
+                row![
+                    text(format!("{} · {} bits · {}", f.name, f.width, f.kind.raw_value()))
+                        .size(12)
+                        .color(palette.ink),
+                    iced::widget::button(text("✕").size(11))
+                        .padding([1, 6])
+                        .on_press(Message::BuilderRemoveField(f.id)),
+                ]
+                .spacing(8)
+                .align_y(iced::Alignment::Center),
+            );
+        }
+
+        let footer = row![
+            text(format!("{free} free")).size(12).color(palette.muted),
+            button::ghost("Apply", Message::ApplyBuiltFormat),
+            text_field("save as…", &self.builder_save_name, Message::BuilderSaveName)
+                .width(Length::Fixed(120.0)),
+            button::secondary("Save", Message::SaveFormat),
+            button::ghost("Cancel", Message::CancelBuildFormat),
+        ]
+        .spacing(8)
+        .align_y(iced::Alignment::Center);
+
+        let panel = column![
+            text("Build format").size(13).color(palette.ink),
+            claim,
+            draft,
+            fields,
+            footer,
+        ]
+        .spacing(8);
+        Some(
+            container(panel)
+                .padding(10)
+                .style(move |_theme| container::background(palette.surface))
+                .into(),
+        )
     }
 
     /// The reference window: every function, operator, and constant — the

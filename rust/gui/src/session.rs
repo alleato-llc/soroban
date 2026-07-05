@@ -10,8 +10,8 @@ use soroban_engine::spreadsheet::SheetDefinitionKind;
 use soroban_engine::workbook::{restore_session, SheetPayload, Workbook};
 use soroban_engine::{
     package, BigDecimal, BinaryEditorPresets, BinaryFieldSpec, BinaryView, BinaryViewUnavailable,
-    Calculator, CellAddress, CellDisplay, CellFormat, Control, EvalOutcome, Sheet, SheetStore,
-    Spreadsheet, UserFunction, Value, BINARY_EDITABLE_WIDTHS,
+    Calculator, CellAddress, CellDisplay, CellFormat, Control, EvalOutcome, FormatBuilder, Sheet,
+    SheetStore, Spreadsheet, UserFunction, Value, BINARY_EDITABLE_WIDTHS,
 };
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -230,6 +230,10 @@ enum Edit {
 /// only — the log is history, not document state).
 const MAX_UNDO: usize = 100;
 
+/// The bit-field band palette, by name — a host maps each to a real,
+/// theme-adapting color; the builder cycles it for successive fields.
+const BINARY_PALETTE: [&str; 6] = ["blue", "green", "orange", "purple", "pink", "teal"];
+
 pub struct Session {
     calculator: Rc<RefCell<Calculator>>,
     store: SheetStore,
@@ -255,6 +259,9 @@ pub struct Session {
     binary_layout: Option<Vec<BinaryFieldSpec>>,
     /// The active format's display name (the picker's current selection).
     binary_format_name: Option<String>,
+    /// The visual format builder, present only while building/editing a custom
+    /// bit-format (`Build new…` / `Edit current…`).
+    format_builder: Option<FormatBuilder>,
     /// Bumped on every document mutation; the shell compares it against a saved
     /// baseline for the dirty indicator.
     revision: u64,
@@ -282,6 +289,7 @@ impl Session {
             binary_width: 32,
             binary_layout: None,
             binary_format_name: None,
+            format_builder: None,
             revision: 0,
             point_anchor: None,
         }
@@ -1019,28 +1027,38 @@ impl Session {
         self.binary_format_name.clone()
     }
 
-    /// Apply a named preset format (or `None` to clear back to a plain
-    /// register). Bumps the register width up if the layout needs more bits.
-    /// An unknown name is a no-op.
+    /// Apply a named format (or `None` to clear back to a plain register): a
+    /// built-in preset, else a saved custom format (a user variable holding a
+    /// layout-shaped map). Bumps the register width up if the layout needs more
+    /// bits. An unknown name is a no-op.
     pub fn apply_binary_format(&mut self, name: Option<&str>) {
         let Some(name) = name else {
             self.binary_layout = None;
             self.binary_format_name = None;
             return;
         };
-        let Some((_, value)) = BinaryEditorPresets::standard()
+        let layout = BinaryEditorPresets::standard()
             .into_iter()
             .find(|(preset, _)| *preset == name)
-        else {
-            return;
-        };
-        let Some(layout) = BinaryView::layout(&value) else {
-            return;
-        };
+            .and_then(|(_, value)| BinaryView::layout(&value))
+            .or_else(|| {
+                let calc = self.calculator.borrow();
+                calc.environment()
+                    .user_variables()
+                    .get(name)
+                    .and_then(BinaryView::layout)
+            });
+        if let Some(layout) = layout {
+            self.install_layout(name, layout);
+        }
+    }
+
+    /// Make `layout` the active format under `name`, widening the register to
+    /// fit if it's currently too narrow.
+    fn install_layout(&mut self, name: &str, layout: Vec<BinaryFieldSpec>) {
         let needed = BinaryView::layout_width(&layout);
         self.binary_format_name = Some(name.to_string());
         self.binary_layout = Some(layout);
-        // Widen the register to fit the format if it's currently too narrow.
         if let Some(view) = &self.binary {
             if view.width < needed && !view.width_locked() {
                 if let Some(fit) = BINARY_EDITABLE_WIDTHS.into_iter().find(|&w| w >= needed) {
@@ -1048,6 +1066,98 @@ impl Session {
                 }
             }
         }
+    }
+
+    /// The names of saved custom formats — user variables whose value decodes
+    /// as a bit-format layout (the same "any map/record `layout` accepts" rule
+    /// as the AppKit app). Sorted; offered in the picker after the presets.
+    pub fn saved_format_names(&self) -> Vec<String> {
+        let calc = self.calculator.borrow();
+        let mut names: Vec<String> = calc
+            .environment()
+            .user_variables()
+            .iter()
+            .filter(|(_, value)| BinaryView::layout(value).is_some())
+            .map(|(name, _)| name.clone())
+            .collect();
+        names.sort();
+        names
+    }
+
+    // MARK: Format builder (Build new… / Edit current… / Save current…)
+
+    /// Open the visual builder. With `seed_active`, it starts from the fields
+    /// of the current format (Edit current…), else empty (Build new…).
+    pub fn begin_format_build(&mut self, seed_active: bool) {
+        let mut builder = FormatBuilder::new(&BINARY_PALETTE);
+        if seed_active {
+            if let Some(layout) = &self.binary_layout {
+                builder.seed(layout);
+            }
+        }
+        self.format_builder = Some(builder);
+    }
+
+    /// Close the builder without applying.
+    pub fn cancel_format_build(&mut self) {
+        self.format_builder = None;
+    }
+
+    /// The live builder, for the shell to render (fields, drafts, free bits).
+    pub fn format_builder(&self) -> Option<&FormatBuilder> {
+        self.format_builder.as_ref()
+    }
+
+    /// The live builder, for message handlers to drive (claim, add, remove,
+    /// draft inputs).
+    pub fn format_builder_mut(&mut self) -> Option<&mut FormatBuilder> {
+        self.format_builder.as_mut()
+    }
+
+    /// Apply the builder's fields as the active format without saving —
+    /// SpeedCrunch's transient "Apply" (the builder stays open).
+    pub fn apply_built_format(&mut self) {
+        let Some(builder) = &self.format_builder else {
+            return;
+        };
+        if builder.is_empty() {
+            return;
+        }
+        let layout = builder.layout();
+        self.install_layout("Custom", layout);
+    }
+
+    /// Persist the builder's fields as a saved format named `name` (a user
+    /// variable, so it rides the workbook), apply it, and close the builder.
+    /// Returns false when the name is blank or no fields were built.
+    pub fn save_format(&mut self, name: &str) -> bool {
+        let name = name.trim().to_string();
+        let Some(builder) = &self.format_builder else {
+            return false;
+        };
+        if name.is_empty() || builder.is_empty() {
+            return false;
+        }
+        let layout = builder.layout();
+        // A loose-map value round-trips through `layout` and persists as a
+        // workbook variable — set off-log so it never disturbs `ans`.
+        let value = BinaryView::format_value(&layout);
+        self.calculator.borrow_mut().set_user_variable(&name, value);
+        self.format_builder = None;
+        self.install_layout(&name, layout);
+        self.revision += 1;
+        true
+    }
+
+    /// Delete a saved format (removing its backing user variable). Clears the
+    /// active format when it was the one deleted.
+    pub fn delete_saved_format(&mut self, name: &str) {
+        self.calculator.borrow_mut().remove_user_variable(name);
+        if self.binary_format_name.as_deref() == Some(name) {
+            self.binary_layout = None;
+            self.binary_format_name = None;
+        }
+        self.revision += 1;
     }
 
     /// The active format's fields, decoded from the current value (empty for a
@@ -1058,7 +1168,7 @@ impl Session {
         let (Some(view), Some(layout)) = (&self.binary, &self.binary_layout) else {
             return Vec::new();
         };
-        let palette = ["blue", "green", "orange", "purple", "pink", "teal"];
+        let palette = BINARY_PALETTE;
         layout
             .iter()
             .zip(view.fields(layout))
