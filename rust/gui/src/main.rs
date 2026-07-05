@@ -1008,18 +1008,28 @@ impl App {
         // Content fills the whole window; when revealed (pointer near the top, or
         // a menu open) the bar overlays the top edge rather than pushing content
         // down — so nothing jumps as it appears.
-        let base: Element<'_, Message> = if self.menu_revealed || self.menu_open.is_some() {
+        //
+        // CRUCIAL: `content` stays at a FIXED tree position (stack layer 0) whether
+        // or not the bar shows — the bar is a second layer that's either the real
+        // menu or a zero-size placeholder. Re-parenting `content` (wrapping it in a
+        // stack only when revealed) reset the focused text field's widget state, so
+        // the log input lost focus the instant the pointer neared the top edge —
+        // which felt like focus being "stolen while typing".
+        let bar_layer: Element<'_, Message> = if self.menu_revealed || self.menu_open.is_some() {
             let inspector_icon = button::icon(glyph::NAMES, Message::ToggleInspector);
-            let bar = menu_bar_with_trailing(
+            menu_bar_with_trailing(
                 self.menus(),
                 self.menu_open,
                 Message::ToggleMenu,
                 Some(inspector_icon.into()),
-            );
-            iced::widget::stack![content, bar].into()
+            )
         } else {
-            content
+            iced::widget::Space::new()
+                .width(Length::Fixed(0.0))
+                .height(Length::Fixed(0.0))
+                .into()
         };
+        let base: Element<'_, Message> = iced::widget::stack![content, bar_layer].into();
 
         // The Settings window, when open, frames itself over everything.
         if self.settings_open {
@@ -1617,7 +1627,9 @@ impl App {
         // the input — the terminal/REPL layout of the AppKit original.
         let size = self.base_font_size();
         let entries = self.session.entries(); // Ref over the shared log tape
-        let log: Element<'_, Message> = if entries.is_empty() {
+        // Keep this slot a `container` in BOTH states (empty vs. populated) so the
+        // input below it doesn't re-parent — and lose focus — on the first submit.
+        let log_inner: Element<'_, Message> = if entries.is_empty() {
             self.empty_log(palette)
         } else {
             let mut items = column![].spacing(12);
@@ -1628,6 +1640,7 @@ impl App {
                 .height(Length::Fill)
                 .into()
         };
+        let log = container(log_inner).height(Length::Fill);
 
         // The input is pinned to the BOTTOM, behind a `>` prompt; Enter submits
         // (no `=` button — the original has none). A mode affordance (cycles
@@ -1659,10 +1672,9 @@ impl App {
         // shifts index and thus never loses focus mid-type (an iced tree-diff
         // quirk: a widget that changes tree position is rebuilt from scratch).
         let popup: Element<'_, Message> = self.suggestion_popup().unwrap_or_else(|| {
-            iced::widget::Space::new()
-                .width(Length::Shrink)
-                .height(Length::Fixed(0.0))
-                .into()
+            // A zero-height CONTAINER (not a Space) so this slot is always the same
+            // widget type as the real popup — the input below it never re-parents.
+            container(iced::widget::Space::new().height(Length::Fixed(0.0))).into()
         });
         let bottom = column![popup, input_bar].spacing(4);
         column![log, bottom].spacing(12).into()

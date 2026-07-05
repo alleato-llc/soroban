@@ -14,6 +14,17 @@ portable, unsigned Linux / Windows / macOS binaries.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Autocomplete no longer steals the log input's focus while typing.** The
+  auto-hiding menu bar wrapped the whole content subtree in a `stack` only when
+  revealed, so every reveal/hide (driven by cursor position) re-parented the
+  focused text field and reset its state. Content now sits at a fixed tree
+  position (an always-present stack layer, with a zero-size placeholder for the
+  hidden bar); the completion popup slot and the log slot are likewise kept a
+  constant widget type, so the input keeps focus across typing, menu reveal, and
+  the first submit.
+
 ## [rust-v0.1.0] - 2026-07-05
 
 The first Rust-ecosystem release: the full `anzan` language, `soroban-engine`,
