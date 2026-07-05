@@ -25,7 +25,9 @@ struct InspectorView: View {
                     .fill(.clear)
                     .frame(width: 8)
                     .contentShape(Rectangle())
+                    #if os(macOS)
                     .onHover { $0 ? NSCursor.resizeLeftRight.push() : NSCursor.pop() }
+                    #endif
                     .gesture(DragGesture(minimumDistance: 1)
                         .onChanged { drag in
                             // session.inspectorWidth is the stable base — not

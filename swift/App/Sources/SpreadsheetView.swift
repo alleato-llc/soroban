@@ -77,14 +77,17 @@ struct SpreadsheetView: View {
             sheet.deselect()
             return .handled
         }
+        // The Edit-menu copy/cut/paste/delete commands are macOS-only SwiftUI
+        // modifiers; on iPadOS these actions arrive through the toolbar +
+        // hardware-keyboard shortcuts (see the grid toolbar). Copy/cut return []
+        // so SwiftUI doesn't write a second time: a COPY carries the custom
+        // origin type that lets paste adjust relative references; a CUT is plain
+        // TSV (cut-paste keeps refs verbatim).
+        #if os(macOS)
         .onDeleteCommand {
             guard sheet.editing == nil else { return }
             sheet.clearSelection()
         }
-        // Copy/cut/paste write and read the pasteboard through the model
-        // (returning [] so SwiftUI doesn't write a second time): a COPY
-        // carries the custom origin type that lets paste adjust relative
-        // references; a CUT is plain TSV (cut-paste keeps refs verbatim).
         .onCopyCommand {
             guard sheet.selectionTSV() != nil else { return [] }
             sheet.copySelectionToPasteboard()
@@ -99,6 +102,7 @@ struct SpreadsheetView: View {
             guard sheet.selected != nil, sheet.editing == nil else { return }
             sheet.pasteFromPasteboard()
         }
+        #endif
         .onAppear {
             gridFocused = true
             sheet.gridFontSize = themeManager.current.fontSize
@@ -234,10 +238,16 @@ private struct ColumnHeaderMenu: View {
 @MainActor
 private func structuralAlert(_ message: String?) {
     guard let message else { return }
+    #if os(macOS)
     let alert = NSAlert()
     alert.messageText = "Can't Change the Grid"
     alert.informativeText = message
     alert.runModal()
+    #else
+    // iPadOS: the refusal is advisory (the edit simply didn't apply). A
+    // toast/alert surface can carry the reason in a later pass.
+    _ = message
+    #endif
 }
 
 /// Drag the right edge of a column header to resize; double-click to reset.
@@ -253,6 +263,7 @@ private struct ColumnResizeHandle: View {
             .frame(width: 8)
             .frame(maxHeight: .infinity)
             .contentShape(Rectangle())
+            #if os(macOS)
             .onHover { hovering in
                 if hovering {
                     NSCursor.resizeLeftRight.push()
@@ -260,6 +271,7 @@ private struct ColumnResizeHandle: View {
                     NSCursor.pop()
                 }
             }
+            #endif
             .gesture(DragGesture(minimumDistance: 1)
                 .onChanged { value in
                     let base = dragStartWidth ?? session.sheet.width(ofColumn: column)
@@ -293,6 +305,7 @@ private struct RowResizeHandle: View {
             .frame(height: 6)
             .frame(maxWidth: .infinity)
             .contentShape(Rectangle())
+            #if os(macOS)
             .onHover { hovering in
                 if hovering {
                     NSCursor.resizeUpDown.push()
@@ -300,6 +313,7 @@ private struct RowResizeHandle: View {
                     NSCursor.pop()
                 }
             }
+            #endif
             .gesture(DragGesture(minimumDistance: 1)
                 .onChanged { value in
                     let base = dragStartHeight ?? session.sheet.height(ofRow: row)

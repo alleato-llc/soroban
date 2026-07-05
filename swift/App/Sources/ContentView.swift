@@ -25,6 +25,9 @@ struct ContentView: View {
                 .help("Toggle the Environment inspector (⌥⌘0)")
             }
         }
+        // Open / Save / Export dialogs (SwiftUI, both platforms), driven by the
+        // WorkbookManager's intent state.
+        .workbookFileDialogs(session.workbook)
     }
 
     private var main: some View {

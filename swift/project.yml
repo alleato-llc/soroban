@@ -183,6 +183,7 @@ targets:
     platform: macOS
     sources:
       - App/Sources/Session/SheetModel # the model + its per-concern extensions
+      - App/Sources/Session/Platform/Clipboard.swift # the pasteboard seam +Clipboard uses
       - App/Sources/Session/LogStore.swift # the UI-free log model (History reflection)
       - App/Sources/Session/HistoryEntry.swift # a log entry (LogStore's element)
       - path: App/Tests/Session

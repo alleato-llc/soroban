@@ -59,7 +59,9 @@ struct HistoryLogView: View {
             ForEach(session.welcomeExamples, id: \.self) { example in
                 Text("  \(example)")
                     .contentShape(Rectangle())
+                    #if os(macOS)
                     .onHover { $0 ? NSCursor.pointingHand.push() : NSCursor.pop() }
+                    #endif
                     .onTapGesture(count: 2) { session.useExample(example) }
             }
         }

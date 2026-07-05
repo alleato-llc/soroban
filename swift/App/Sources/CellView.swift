@@ -216,6 +216,9 @@ struct CellView: View, Equatable {
     /// new chrome. Re-prompts with the error message on invalid input.
     private func promptForCellName(sheet: SheetModel, address: CellAddress, current: String?) {
         sheet.retargetSelection(toInclude: address)
+        #if os(macOS)
+        // NSAlert with a text field — names are rare enough that a modal beats
+        // new chrome. Re-prompts with the error message on invalid input.
         var message: String? = nil
         while true {
             let alert = NSAlert()
@@ -236,6 +239,9 @@ struct CellView: View, Equatable {
             }
             return
         }
+        #else
+        _ = current // TODO(iPad): a SwiftUI name prompt (deferred in v1).
+        #endif
     }
 
     /// Your delete flow: break references / replace them with the address /
@@ -247,6 +253,7 @@ struct CellView: View, Equatable {
             sheet.removeCellName(at: address, mode: .breakReferences)
             return
         }
+        #if os(macOS)
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = "Remove the name '\(name)'?"
@@ -264,6 +271,11 @@ struct CellView: View, Equatable {
         default:
             break
         }
+        #else
+        // iPad v1: default to the non-destructive "inline addresses" removal.
+        _ = name
+        sheet.removeCellName(at: address, mode: .inlineAddresses)
+        #endif
     }
 
     /// Text/value styling from the cell's format (errors and definitions
@@ -293,14 +305,16 @@ extension PaletteColor {
     /// System colors adapt to light/dark, keeping the palette legible across
     /// the switchable themes (the reason colors are stored semantically).
     var color: Color {
+        // SwiftUI's semantic system colors — cross-platform and light/dark
+        // adaptive (the reason colors are stored semantically).
         switch self {
-        case .red: return Color(nsColor: .systemRed)
-        case .orange: return Color(nsColor: .systemOrange)
-        case .yellow: return Color(nsColor: .systemYellow)
-        case .green: return Color(nsColor: .systemGreen)
-        case .blue: return Color(nsColor: .systemBlue)
-        case .purple: return Color(nsColor: .systemPurple)
-        case .gray: return Color(nsColor: .systemGray)
+        case .red: return .red
+        case .orange: return .orange
+        case .yellow: return .yellow
+        case .green: return .green
+        case .blue: return .blue
+        case .purple: return .purple
+        case .gray: return .gray
         }
     }
 

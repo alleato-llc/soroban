@@ -4,7 +4,12 @@ import SwiftUI
 struct SorobanApp: App {
     @State private var session = CalculatorSession()
     @State private var themeManager = ThemeManager()
+    #if os(macOS)
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    #else
+    // iPadOS has no "quit" — autosave + scene-phase background flush instead.
+    @Environment(\.scenePhase) private var scenePhase
+    #endif
 
     var body: some Scene {
         WindowGroup {
@@ -12,15 +17,24 @@ struct SorobanApp: App {
                 .environment(session)
                 .environment(themeManager)
                 .navigationTitle(session.workbook.title)
+                #if os(macOS)
                 .onAppear {
                     appDelegate.workbook = session.workbook
                     appDelegate.sheet = session.sheet
                 }
-                // Finder double-click / drag onto Dock icon.
+                #else
+                .onChange(of: scenePhase) { _, phase in
+                    // No quit prompt on iOS; flush the debounced scratch autosave
+                    // as the app backgrounds so nothing is lost.
+                    if phase != .active { session.sheet.flushScratchNow() }
+                }
+                #endif
+                // Finder double-click / Files "open with" / drag onto Dock icon.
                 .onOpenURL { url in
                     session.workbook.open(url: url)
                 }
         }
+        #if os(macOS)
         .commands {
             CommandGroup(replacing: .appInfo) {
                 OpenAboutButton()
@@ -170,7 +184,12 @@ struct SorobanApp: App {
                 .keyboardShortcut("[", modifiers: [.command, .option])
             }
         }
+        #endif
 
+        // Settings + the Reference/About auxiliary windows are macOS scene
+        // types; on iPadOS these views are presented as sheets from the grid
+        // toolbar (see ContentView).
+        #if os(macOS)
         Settings {
             SettingsView()
                 .environment(session)
@@ -190,9 +209,11 @@ struct SorobanApp: App {
                 .environment(themeManager)
         }
         .windowResizability(.contentSize)
+        #endif
     }
 }
 
+#if os(macOS)
 /// The About menu item needs `openWindow`, which is only readable from a
 /// View — hence this one-button wrapper inside the command group.
 private struct OpenAboutButton: View {
@@ -238,3 +259,4 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 }
+#endif
