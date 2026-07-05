@@ -15,6 +15,8 @@ DMG.
 
 ## [Unreleased]
 
+## [rust-v0.1.2] - 2026-07-05
+
 ### Added
 
 - **App icon.** The window now carries the Soroban artwork (the Swift app's
