@@ -14,6 +14,13 @@ portable, unsigned Linux / Windows / macOS binaries.
 
 ## [Unreleased]
 
+### Added
+
+- **Font-family picker** in Settings → Appearance. Two monospace families
+  (JetBrains Mono, Source Code Pro) are bundled into the binary — so they render
+  identically on every platform — alongside the system default; the choice
+  applies live to the log and grid content and shows in the preview.
+
 ### Fixed
 
 - **Autocomplete no longer steals the log input's focus while typing.** The
