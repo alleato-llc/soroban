@@ -98,6 +98,10 @@ struct App {
     /// Which top menu (File / Edit / View) is open, if any — the menu bar is
     /// stateless, so the host owns this. See [`Self::menus`].
     menu_open: Option<usize>,
+    /// The menu bar auto-hides (iced has no system menu bar, so the in-window
+    /// one is chrome): shown only while the pointer is near the top edge or a
+    /// menu is open. Tracked from cursor movement.
+    menu_revealed: bool,
     /// Live autocomplete candidates for the focused input (the log bar or the
     /// grid formula bar), recomputed on every keystroke; empty hides the popup.
     suggestions: Vec<Completion>,
@@ -198,6 +202,9 @@ enum Message {
     /// Accept the highlighted autocomplete row, or the first if none is
     /// highlighted (the Tab key); a no-op when the popup is closed.
     AcceptSuggestion,
+    /// The cursor moved to this window-relative Y — reveals/hides the auto-
+    /// hiding menu bar as it nears / leaves the top edge.
+    PointerMoved(f32),
     /// Review-screenshot harness lifecycle (see [`shot`]); inert unless armed.
     Shot(shot::Event),
 }
@@ -528,6 +535,10 @@ impl App {
                     return self.accept_suggestion(index);
                 }
             }
+            // Reveal the menu bar while the pointer hugs the top edge; a small
+            // margin past the bar keeps it steady once revealed (no flicker as
+            // the cursor drifts onto a menu item).
+            Message::PointerMoved(y) => self.menu_revealed = y <= menu::BAR_HEIGHT + 8.0,
             Message::Shot(event) => return shot::handle(self, event),
         }
         Task::none()
@@ -764,6 +775,10 @@ impl App {
                 }
                 _ => None,
             },
+            // Cursor position drives the auto-hiding menu bar (window-relative Y).
+            Event::Mouse(iced::mouse::Event::CursorMoved { position }) => {
+                Some(Message::PointerMoved(position.y))
+            }
             _ => None,
         });
         match shot::subscription(self) {
@@ -876,9 +891,14 @@ impl App {
             horizontal
         };
 
-        // The menu bar overlays the top (File / Edit / View) with a sidebar-
-        // toggle icon pinned to its right — like the AppKit title bar's toolbar
-        // item; the content sits below it, pushed down by the bar's height.
+        // The menu bar AUTO-HIDES: iced has no system menu bar, so the in-window
+        // one is chrome that only earns its space while you're reaching for it.
+        // Content fills the whole window; when revealed (pointer near the top, or
+        // a menu open) the bar overlays the top edge rather than pushing content
+        // down — so nothing jumps as it appears.
+        if !(self.menu_revealed || self.menu_open.is_some()) {
+            return content;
+        }
         let inspector_icon = button::icon(glyph::NAMES, Message::ToggleInspector);
         let bar = menu_bar_with_trailing(
             self.menus(),
@@ -886,14 +906,7 @@ impl App {
             Message::ToggleMenu,
             Some(inspector_icon.into()),
         );
-        iced::widget::stack![
-            column![
-                iced::widget::Space::new().height(Length::Fixed(menu::BAR_HEIGHT)),
-                content,
-            ],
-            bar,
-        ]
-        .into()
+        iced::widget::stack![content, bar].into()
     }
 
     /// The binary bit-editor strip: value + hex header, a width picker, a

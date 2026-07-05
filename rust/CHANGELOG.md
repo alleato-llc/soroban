@@ -214,3 +214,7 @@ portable, unsigned Linux / Windows / macOS binaries.
     ↑/↓ move the highlight, Tab / Enter accept (a function gets its `(`), a click
     accepts a row. The popup rises *above* the bottom-anchored log prompt, on
     rime's new `suggestion_list`. New `SOROBAN_SHOT_TYPE` shot-harness knob.
+  - **Auto-hiding menu bar.** The in-window File / Edit / View bar (chrome, since
+    iced has no system menu bar) now hides so content fills the whole window,
+    revealing only while the pointer hugs the top edge or a menu is open — it
+    overlays the top rather than pushing content down, so nothing jumps.
