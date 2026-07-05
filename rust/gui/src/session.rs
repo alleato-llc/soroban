@@ -10,8 +10,8 @@ use soroban_engine::spreadsheet::SheetDefinitionKind;
 use soroban_engine::workbook::{restore_session, SheetPayload, Workbook};
 use soroban_engine::{
     package, BigDecimal, BinaryEditorPresets, BinaryFieldSpec, BinaryView, BinaryViewUnavailable,
-    Calculator, CellAddress, CellDisplay, CellFormat, Control, EvalOutcome, FormatBuilder, Sheet,
-    SheetStore, Spreadsheet, UserFunction, Value, BINARY_EDITABLE_WIDTHS,
+    Calculator, CellAddress, CellDisplay, CellFormat, Control, EvalOutcome, FormatBuilder,
+    LanguageMode, Sheet, SheetStore, Spreadsheet, UserFunction, Value, BINARY_EDITABLE_WIDTHS,
 };
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -149,7 +149,7 @@ pub struct LogEntry {
 /// The displayable result of one submission — the log renders each kind
 /// differently (a value, a definition, a note, a documentation block, an
 /// error with an optional caret column).
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Outcome {
     /// `= 42` — a computed value, at full precision.
     Value(String),
@@ -167,6 +167,43 @@ pub enum Outcome {
         message: String,
         position: Option<usize>,
     },
+}
+
+/// Feeds the gui's live log tape to the engine's `History` reflection (so a
+/// log-line `last(History).value` / `len(History)` reflects what came before).
+/// Holds the shared tape and converts each [`LogEntry`] to a host-neutral
+/// `LogRecord` on demand — the engine derives `kind`/`referencesCells` from the
+/// input parse itself.
+struct LogTape(Rc<RefCell<Vec<LogEntry>>>);
+
+impl soroban_engine::history_reflection::LogSource for LogTape {
+    fn records(&self) -> Vec<soroban_engine::history_reflection::LogRecord> {
+        self.0.borrow().iter().map(log_record).collect()
+    }
+}
+
+/// Convert one log entry to the engine's host-neutral record. `value` is the
+/// re-parsed typed result for value lines (lossless for numbers/strings, like
+/// the Swift `Value(parsing:)`); the flag trio classifies error/comment/info.
+fn log_record(entry: &LogEntry) -> soroban_engine::history_reflection::LogRecord {
+    use soroban_engine::history_reflection::LogRecord;
+    let (text, value, is_error, is_comment, is_info) = match &entry.outcome {
+        Outcome::Value(s) => (s.clone(), Value::parsing(s), false, false, false),
+        Outcome::Function(sig) => (sig.clone(), None, false, false, false),
+        Outcome::Data(decl) => (decl.clone(), None, false, false, false),
+        Outcome::Comment(note) => (note.clone(), None, false, true, false),
+        Outcome::Info(block) => (block.clone(), None, false, false, true),
+        Outcome::Error { message, .. } => (message.clone(), None, true, false, false),
+    };
+    LogRecord {
+        input: entry.input.clone(),
+        text,
+        value,
+        is_error,
+        is_comment,
+        is_info,
+        note: String::new(),
+    }
 }
 
 /// What a grid click means while a cell editor is open — Excel's point mode.
@@ -237,7 +274,9 @@ const BINARY_PALETTE: [&str; 6] = ["blue", "green", "orange", "purple", "pink", 
 pub struct Session {
     calculator: Rc<RefCell<Calculator>>,
     store: SheetStore,
-    entries: Vec<LogEntry>,
+    /// The log tape, shared so the engine's `History` reflection can read it
+    /// live (via [`LogTape`]); a global running history, never cleared.
+    entries: Rc<RefCell<Vec<LogEntry>>>,
     input: String,
     /// Submitted lines, oldest first — the ↑/↓ recall tape.
     history: Vec<String>,
@@ -276,10 +315,10 @@ pub struct Session {
 impl Session {
     pub fn new() -> Self {
         let (calculator, store) = Self::fresh_engine();
-        Self {
+        let session = Self {
             calculator,
             store,
-            entries: Vec::new(),
+            entries: Rc::new(RefCell::new(Vec::new())),
             input: String::new(),
             history: Vec::new(),
             history_cursor: None,
@@ -292,7 +331,9 @@ impl Session {
             format_builder: None,
             revision: 0,
             point_anchor: None,
-        }
+        };
+        session.install_log_source();
+        session
     }
 
     /// A fresh calculator and a sheet store wired to it. The log and the grid
@@ -304,10 +345,18 @@ impl Session {
         (calculator, store)
     }
 
+    /// Wire the live log tape into the current store so a log-line `History`
+    /// expression reflects it. Re-called whenever the store is replaced
+    /// (New/Open), since the tape (`entries`) outlives the engine.
+    fn install_log_source(&self) {
+        self.store
+            .set_log_source(Rc::new(LogTape(Rc::clone(&self.entries))));
+    }
+
     // MARK: Log
 
-    pub fn entries(&self) -> &[LogEntry] {
-        &self.entries
+    pub fn entries(&self) -> std::cell::Ref<'_, Vec<LogEntry>> {
+        self.entries.borrow()
     }
 
     pub fn input(&self) -> &str {
@@ -322,13 +371,51 @@ impl Session {
 
     /// Evaluate the current line, append it to the log, and record it in the
     /// history tape. A blank line is ignored.
+    /// The active calculator dialect (drives how the LOG parses/renders; cells
+    /// are always Normal). Programmer reads `^ & | << >> ~ %` as bitwise/modulo.
+    pub fn language_mode(&self) -> LanguageMode {
+        self.calculator.borrow().mode
+    }
+
+    /// Switch the log's dialect. Canonical storage is unchanged — only which
+    /// glyphs you type and read differ.
+    pub fn set_language_mode(&mut self, mode: LanguageMode) {
+        self.calculator.borrow_mut().mode = mode;
+        self.revision += 1;
+    }
+
+    /// Intercept the host-level `:mode [name]` command (like the CLI). Returns
+    /// the log outcome to record, or `None` if the line isn't a mode command.
+    fn mode_command(&mut self, line: &str) -> Option<Outcome> {
+        let rest = line.strip_prefix(":mode")?;
+        let arg = rest.trim();
+        if arg.is_empty() {
+            return Some(Outcome::Info(format!(
+                "mode: {}",
+                self.language_mode().name()
+            )));
+        }
+        match LanguageMode::from_name(arg) {
+            Some(mode) => {
+                self.set_language_mode(mode);
+                Some(Outcome::Info(format!("mode: {}", mode.name())))
+            }
+            None => Some(Outcome::Error {
+                message: format!("unknown mode '{arg}' — normal, programmer, or finance"),
+                position: None,
+            }),
+        }
+    }
+
     pub fn submit(&mut self) {
         let line = self.input.trim().to_string();
         if line.is_empty() {
             return;
         }
-        let outcome = self.evaluate(&line);
-        self.entries.push(LogEntry {
+        let outcome = self
+            .mode_command(&line)
+            .unwrap_or_else(|| self.evaluate(&line));
+        self.entries.borrow_mut().push(LogEntry {
             input: line.clone(),
             outcome,
         });
@@ -501,7 +588,11 @@ impl Session {
             return PointClick::Commit;
         }
         // Reuse the previous splice only when the draft is untouched since it.
-        let anchor = self.point_anchor.as_ref().filter(|a| a.draft == draft).cloned();
+        let anchor = self
+            .point_anchor
+            .as_ref()
+            .filter(|a| a.draft == draft)
+            .cloned();
         let (new_draft, reference) = match anchor {
             Some(anchor) if extend && !anchor.reference.contains("..") => {
                 // Widen the just-inserted reference into a range: B:1 → B:1..B:4.
@@ -1351,6 +1442,7 @@ impl Session {
         let (calculator, store) = Self::fresh_engine();
         self.calculator = calculator;
         self.store = store;
+        self.install_log_source(); // the new store needs the tape rewired
         self.reset_document_state();
     }
 
@@ -1386,6 +1478,7 @@ impl Session {
         store.replace_sheets(sheets, first.as_deref());
         self.calculator = calculator;
         self.store = store;
+        self.install_log_source(); // the new store needs the tape rewired
         self.reset_document_state();
     }
 
@@ -1533,7 +1626,7 @@ fn binary_reason(reason: BinaryViewUnavailable) -> String {
 /// Sort inspector rows case-insensitively by label (the reading order the
 /// Swift inspector uses).
 fn sort_rows(rows: &mut [InspectorRow]) {
-    rows.sort_by(|a, b| a.label.to_lowercase().cmp(&b.label.to_lowercase()));
+    rows.sort_by_key(|a| a.label.to_lowercase());
 }
 
 fn clamp(value: BigDecimal, minimum: &BigDecimal, maximum: &BigDecimal) -> BigDecimal {

@@ -28,6 +28,30 @@ Feature: The Rust app session — calculator and sheet, headless
     When I enter "double(21)"
     Then the result is "42"
 
+  Scenario: The :mode command switches the log dialect
+    When I enter "5 ^ 3"
+    Then the result is "125"
+    When I enter ":mode programmer"
+    Then the mode is "programmer"
+    When I enter "5 ^ 3"
+    Then the result is "6"
+    When I enter "17 % 5"
+    Then the result is "2"
+    When I enter ":mode normal"
+    Then the mode is "normal"
+    When I enter "5 ^ 3"
+    Then the result is "125"
+
+  Scenario: History reflects the calculation log from a log-line expression
+    When I enter "10 + 5"
+    And I enter "42"
+    And I enter "len(History)"
+    Then the result is "2"
+    When I enter "first(History).value"
+    Then the result is "15"
+    When I enter "History[1].value"
+    Then the result is "42"
+
   Scenario: A bad expression fails with a message
     When I enter "1 / 0"
     Then the last line fails mentioning "division by zero"

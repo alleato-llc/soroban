@@ -20,18 +20,19 @@ use iced::widget::{column, container, mouse_area, operation, row, scrollable, te
 use iced::{
     event, keyboard, Color, Element, Event, Font, Length, Subscription, Task, Theme, Vector,
 };
+use rime::icons::{self, glyph};
 use rime::theme::{self, ThemeChoice};
 use rime::widgets::menu;
 use rime::widgets::{
     bit_grid, button, card, grid, menu_bar_with_trailing, section, select, slider, stepper,
     text_field, toggle, BitBand, CellAlign, GridCell, GridSelection, Menu, MenuItem,
 };
-use soroban_gui::session::{
-    BinaryFieldKind, BinaryStatus, Origin, Outcome, PointClick, Session, GRID_COLS, GRID_ROWS,
-};
 use soroban_engine::{
     CellAddress, CellAlignment, CellDisplay, CellFormat, FormatBuilderFieldKind, NumberFormat,
     PaletteColor,
+};
+use soroban_gui::session::{
+    BinaryFieldKind, BinaryStatus, Origin, Outcome, PointClick, Session, GRID_COLS, GRID_ROWS,
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -194,8 +195,7 @@ impl App {
         // Any real action closes an open menu (the backdrop only closes on an
         // outside click); the toggle itself opens/switches menus, and the
         // screenshot harness's background frames must leave it be.
-        if self.menu_open.is_some()
-            && !matches!(message, Message::ToggleMenu(_) | Message::Shot(_))
+        if self.menu_open.is_some() && !matches!(message, Message::ToggleMenu(_) | Message::Shot(_))
         {
             self.menu_open = None;
         }
@@ -589,7 +589,9 @@ impl App {
     /// `extend`, the anchor holds and the opposite corner moves (shift-arrow);
     /// otherwise it's a plain single-cell move that reloads the edit draft.
     fn move_selection(&mut self, drow: i32, dcol: i32, extend: bool) {
-        let current = self.grid_selection.unwrap_or_else(|| GridSelection::cell(0, 0));
+        let current = self
+            .grid_selection
+            .unwrap_or_else(|| GridSelection::cell(0, 0));
         self.grid_selection = Some(next_selection(current, drow, dcol, extend));
         if !extend {
             self.load_draft();
@@ -760,7 +762,7 @@ impl App {
         // The menu bar overlays the top (File / Edit / View) with a sidebar-
         // toggle icon pinned to its right — like the AppKit title bar's toolbar
         // item; the content sits below it, pushed down by the bar's height.
-        let inspector_icon = button::ghost("◨", Message::ToggleInspector);
+        let inspector_icon = button::icon(glyph::NAMES, Message::ToggleInspector);
         let bar = menu_bar_with_trailing(
             self.menus(),
             self.menu_open,
@@ -812,8 +814,8 @@ impl App {
                     }
                 });
                 // "Build" (new) and, when a format is active, "Edit" it.
-                let mut build_actions = row![button::ghost("Build…", Message::BeginBuildFormat(false))]
-                    .spacing(6);
+                let mut build_actions =
+                    row![button::ghost("Build…", Message::BeginBuildFormat(false))].spacing(6);
                 if self.session.binary_format_name().is_some() {
                     build_actions =
                         build_actions.push(button::ghost("Edit…", Message::BeginBuildFormat(true)));
@@ -836,9 +838,10 @@ impl App {
                 if !widths.is_empty() {
                     let mut chips = row![].spacing(6);
                     for w in widths {
-                        let mut chip = iced::widget::button(text(w.bits.to_string()).size(12).center())
-                            .padding([4, 10])
-                            .style(width_chip_style(w.active, w.enabled, *palette));
+                        let mut chip =
+                            iced::widget::button(text(w.bits.to_string()).size(12).center())
+                                .padding([4, 10])
+                                .style(width_chip_style(w.active, w.enabled, *palette));
                         if w.enabled && !w.active {
                             chip = chip.on_press(Message::SetBinaryWidth(w.bits));
                         }
@@ -919,9 +922,14 @@ impl App {
         let mut cards = row![].spacing(10);
         for f in fields {
             let name = f.name.clone();
-            let header = text(format!("{} [{}:{}]", f.name, f.low_bit + f.width - 1, f.low_bit))
-                .size(11)
-                .color(palette.muted);
+            let header = text(format!(
+                "{} [{}:{}]",
+                f.name,
+                f.low_bit + f.width - 1,
+                f.low_bit
+            ))
+            .size(11)
+            .color(palette.muted);
             let editor: Element<'_, Message> = match f.kind {
                 BinaryFieldKind::Enum => {
                     let options = f.options.clone();
@@ -1071,10 +1079,15 @@ impl App {
         for f in builder.fields() {
             fields = fields.push(
                 row![
-                    text(format!("{} · {} bits · {}", f.name, f.width, f.kind.raw_value()))
-                        .size(12)
-                        .color(palette.ink),
-                    iced::widget::button(text("✕").size(11))
+                    text(format!(
+                        "{} · {} bits · {}",
+                        f.name,
+                        f.width,
+                        f.kind.raw_value()
+                    ))
+                    .size(12)
+                    .color(palette.ink),
+                    iced::widget::button(icons::icon(glyph::CLOSE).size(11))
                         .padding([1, 6])
                         .on_press(Message::BuilderRemoveField(f.id)),
                 ]
@@ -1086,8 +1099,12 @@ impl App {
         let footer = row![
             text(format!("{free} free")).size(12).color(palette.muted),
             button::ghost("Apply", Message::ApplyBuiltFormat),
-            text_field("save as…", &self.builder_save_name, Message::BuilderSaveName)
-                .width(Length::Fixed(120.0)),
+            text_field(
+                "save as…",
+                &self.builder_save_name,
+                Message::BuilderSaveName
+            )
+            .width(Length::Fixed(120.0)),
             button::secondary("Save", Message::SaveFormat),
             button::ghost("Cancel", Message::CancelBuildFormat),
         ]
@@ -1207,11 +1224,12 @@ impl App {
     fn log_view(&self, palette: &theme::Palette) -> Element<'_, Message> {
         // The log fills, oldest→newest, so the freshest result sits just above
         // the input — the terminal/REPL layout of the AppKit original.
-        let log: Element<'_, Message> = if self.session.entries().is_empty() {
+        let entries = self.session.entries(); // Ref over the shared log tape
+        let log: Element<'_, Message> = if entries.is_empty() {
             self.empty_log(palette)
         } else {
             let mut items = column![].spacing(12);
-            for entry in self.session.entries().iter() {
+            for entry in entries.iter() {
                 items = items.push(entry_view(&entry.input, &entry.outcome, palette));
             }
             scrollable(items.padding([4, 8]))
@@ -1228,8 +1246,8 @@ impl App {
                 .id(log_input_id())
                 .on_submit(Message::Submit)
                 .font(MONO),
-            button::ghost("📖", Message::ToggleReference),
-            button::ghost("▦", Message::ToggleView),
+            button::icon(glyph::REFERENCE, Message::ToggleReference),
+            button::icon(glyph::GRID, Message::ToggleView),
         ]
         .spacing(8)
         .align_y(iced::Alignment::Center);
@@ -1256,10 +1274,7 @@ impl App {
                     .interaction(iced::mouse::Interaction::Pointer),
             );
         }
-        container(column)
-            .padding(12)
-            .height(Length::Fill)
-            .into()
+        container(column).padding(12).height(Length::Fill).into()
     }
 
     fn grid_view(&self, palette: &theme::Palette) -> Element<'_, Message> {
@@ -1358,18 +1373,14 @@ impl App {
             .style(move |_| container::background(palette.surface)),
             text("+").size(15).color(palette.muted),
             container(text("").size(1)).width(Length::Fill),
-            button::ghost("☰", Message::ToggleView),
+            button::icon(glyph::LOG, Message::ToggleView),
         ]
         .spacing(8)
         .align_y(iced::Alignment::Center);
 
-        column![
-            header,
-            container(sheet).height(Length::Fill),
-            sheet_tab,
-        ]
-        .spacing(12)
-        .into()
+        column![header, container(sheet).height(Length::Fill), sheet_tab,]
+            .spacing(12)
+            .into()
     }
 
     /// The format bar for the active cell: number format, alignment, and text /
@@ -1434,6 +1445,15 @@ fn labeled_select<'a>(
 
 /// Render a cell for the grid: the display drives the base text/alignment,
 /// then the cell's format overrides the number rendering, alignment, and
+/// The engine tags sheet-scoped definitions with math-alphanumeric markers
+/// (`𝑫` data, `𝑖` variable) that neither the text nor the icon font renders —
+/// they'd show as tofu. Swap them for plain letters for display (`λ` for
+/// functions renders fine, so it's left alone). Display-only; the engine's
+/// canonical marker is untouched.
+fn renderable_definition(marker: String) -> String {
+    marker.replace('𝑫', "D").replace('𝑖', "i")
+}
+
 /// colors on top.
 fn render_cell(display: CellDisplay, format: &CellFormat, palette: &theme::Palette) -> GridCell {
     let mut cell = base_cell(display, format, palette);
@@ -1460,7 +1480,9 @@ fn base_cell(display: CellDisplay, format: &CellFormat, palette: &theme::Palette
         CellDisplay::Error(_) => GridCell::new("#ERR")
             .align(CellAlign::Center)
             .text_color(palette.danger),
-        CellDisplay::Definition(glyph) => GridCell::new(glyph).text_color(palette.accent),
+        CellDisplay::Definition(marker) => {
+            GridCell::new(renderable_definition(marker)).text_color(palette.accent)
+        }
         CellDisplay::Note(note) => GridCell::new(note).text_color(palette.muted),
         // Controls render as interactive overlay widgets in their cells (see
         // `control_widget`), so the painted cell underneath is left empty.
@@ -1629,11 +1651,9 @@ fn control_widget<'a>(address: CellAddress, display: CellDisplay) -> Option<Elem
             Message::StepperStepped(address, false),
             Message::StepperStepped(address, true),
         )),
-        CellDisplay::Checkbox(info) => Some(toggle(
-            "",
-            info.is_on,
-            Message::CheckboxToggled(address),
-        )),
+        CellDisplay::Checkbox(info) => {
+            Some(toggle("", info.is_on, Message::CheckboxToggled(address)))
+        }
         CellDisplay::Dropdown(info) => {
             let options: Vec<String> = info
                 .options
@@ -1699,7 +1719,7 @@ fn entry_view<'a>(
             .size(14)
             .color(palette.ink)
             .into(),
-        Outcome::Data(declaration) => text(format!("𝑫 {declaration}"))
+        Outcome::Data(declaration) => text(format!("D {declaration}"))
             .font(MONO)
             .size(14)
             .color(palette.ink)
@@ -1749,6 +1769,7 @@ fn main() -> iced::Result {
         .title(App::window_title)
         .theme(App::theme)
         .subscription(App::subscription)
+        .font(icons::FONT_BYTES) // the embedded icon font (toolbar/toggle/close glyphs)
         .window_size(iced::Size::new(1040.0, 680.0))
         .run()
 }

@@ -42,7 +42,11 @@ impl SessionWorld {
 
 impl fmt::Debug for SessionWorld {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "SessionWorld({} log entries)", self.session.entries().len())
+        write!(
+            f,
+            "SessionWorld({} log entries)",
+            self.session.entries().len()
+        )
     }
 }
 
@@ -73,13 +77,14 @@ fn shown(world: &SessionWorld, key: &str) -> String {
 }
 
 /// The most recent log entry's outcome.
-fn last_outcome(world: &SessionWorld) -> &Outcome {
-    &world
+fn last_outcome(world: &SessionWorld) -> Outcome {
+    world
         .session
         .entries()
         .last()
         .expect("no log entry to inspect")
         .outcome
+        .clone()
 }
 
 // MARK: Setup
@@ -99,7 +104,7 @@ fn i_enter(world: &mut SessionWorld, expression: String) {
 
 #[then(regex = r#"^the result is "(.*)"$"#)]
 fn the_result_is(world: &mut SessionWorld, expected: String) {
-    match last_outcome(world) {
+    match &last_outcome(world) {
         Outcome::Value(value) => assert_eq!(
             *value, expected,
             "result is '{value}', expected '{expected}'"
@@ -108,9 +113,19 @@ fn the_result_is(world: &mut SessionWorld, expected: String) {
     }
 }
 
+#[then(regex = r#"^the mode is "(.*)"$"#)]
+fn the_mode_is(world: &mut SessionWorld, expected: String) {
+    assert_eq!(
+        world.session.language_mode().name(),
+        expected,
+        "mode is '{}', expected '{expected}'",
+        world.session.language_mode().name()
+    );
+}
+
 #[then(regex = r#"^the log defines a function "(.*)"$"#)]
 fn the_log_defines_a_function(world: &mut SessionWorld, signature: String) {
-    match last_outcome(world) {
+    match &last_outcome(world) {
         Outcome::Function(actual) => assert!(
             actual.contains(&signature),
             "defined '{actual}', expected a signature containing '{signature}'"
@@ -121,7 +136,7 @@ fn the_log_defines_a_function(world: &mut SessionWorld, signature: String) {
 
 #[then(regex = r#"^the last line fails mentioning "(.*)"$"#)]
 fn the_last_line_fails(world: &mut SessionWorld, fragment: String) {
-    match last_outcome(world) {
+    match &last_outcome(world) {
         Outcome::Error { message, .. } => assert!(
             message.contains(&fragment),
             "failed with '{message}', expected it to mention '{fragment}'"
@@ -132,11 +147,10 @@ fn the_last_line_fails(world: &mut SessionWorld, fragment: String) {
 
 #[then(regex = r#"^the last line is a note "(.*)"$"#)]
 fn the_last_line_is_a_note(world: &mut SessionWorld, expected: String) {
-    match last_outcome(world) {
-        Outcome::Comment(text) => assert_eq!(
-            *text, expected,
-            "note is '{text}', expected '{expected}'"
-        ),
+    match &last_outcome(world) {
+        Outcome::Comment(text) => {
+            assert_eq!(*text, expected, "note is '{text}', expected '{expected}'")
+        }
         other => panic!("expected a note '{expected}', got {other:?}"),
     }
 }
@@ -151,7 +165,10 @@ fn i_set_cell(world: &mut SessionWorld, key: String, raw: String) {
 #[then(regex = r#"^cell ([A-Za-z]+:[0-9]+) shows "(.*)"$"#)]
 fn cell_shows(world: &mut SessionWorld, key: String, expected: String) {
     let shown = shown(world, &key);
-    assert_eq!(shown, expected, "cell {key} shows '{shown}', expected '{expected}'");
+    assert_eq!(
+        shown, expected,
+        "cell {key} shows '{shown}', expected '{expected}'"
+    );
 }
 
 #[then(regex = r#"^cell ([A-Za-z]+:[0-9]+) shows an error mentioning "(.*)"$"#)]
@@ -200,8 +217,14 @@ fn i_shift_click_cell(world: &mut SessionWorld, key: String) {
 /// `select_or_point` does — insert keeps the editor open on the new draft, a
 /// commit writes the cell and closes it.
 fn point_click(world: &mut SessionWorld, key: &str, extend: bool) {
-    let editor = world.editor.take().expect("no editor is open to click from");
-    match world.session.point_click(&editor.draft, address(key), extend) {
+    let editor = world
+        .editor
+        .take()
+        .expect("no editor is open to click from");
+    match world
+        .session
+        .point_click(&editor.draft, address(key), extend)
+    {
         PointClick::Inserted(draft) => {
             world.editor = Some(Editor {
                 address: editor.address,
@@ -218,7 +241,10 @@ fn point_click(world: &mut SessionWorld, key: &str, extend: bool) {
 #[then(regex = r#"^the editor holds "(.*)"$"#)]
 fn the_editor_holds(world: &mut SessionWorld, expected: String) {
     let draft = &world.editor.as_ref().expect("the editor has closed").draft;
-    assert_eq!(*draft, expected, "editor holds '{draft}', expected '{expected}'");
+    assert_eq!(
+        *draft, expected,
+        "editor holds '{draft}', expected '{expected}'"
+    );
 }
 
 #[then("the editor is closed")]
@@ -287,7 +313,10 @@ fn column_width_is(world: &mut SessionWorld, column: String, expected: String) {
         .unwrap_or_else(|| panic!("'{column}' is not a column"));
     let expected: f32 = expected.parse().expect("width must be a number");
     let actual = world.session.column_widths()[col];
-    assert_eq!(actual, expected, "column {column} width is {actual}, expected {expected}");
+    assert_eq!(
+        actual, expected,
+        "column {column} width is {actual}, expected {expected}"
+    );
 }
 
 // MARK: Workbook round trip
@@ -320,7 +349,10 @@ fn i_recall_next(world: &mut SessionWorld) {
 #[then(regex = r#"^the input line holds "(.*)"$"#)]
 fn the_input_line_holds(world: &mut SessionWorld, expected: String) {
     let input = world.session.input();
-    assert_eq!(input, expected, "input holds '{input}', expected '{expected}'");
+    assert_eq!(
+        input, expected,
+        "input holds '{input}', expected '{expected}'"
+    );
 }
 
 // MARK: Cut / clear + raw inspection
@@ -338,7 +370,10 @@ fn i_cut(world: &mut SessionWorld, from: String, to: String) {
 #[then(regex = r#"^cell ([A-Za-z]+:[0-9]+) contains "(.*)"$"#)]
 fn cell_contains(world: &mut SessionWorld, key: String, expected: String) {
     let raw = world.session.cell_raw(address(&key));
-    assert_eq!(raw, expected, "cell {key} contains '{raw}', expected '{expected}'");
+    assert_eq!(
+        raw, expected,
+        "cell {key} contains '{raw}', expected '{expected}'"
+    );
 }
 
 // MARK: Rename a named cell
@@ -362,7 +397,10 @@ fn naming_is_rejected(world: &mut SessionWorld, key: String, name: String) {
 #[then(regex = r#"^the active sheet is named "(.*)"$"#)]
 fn active_sheet_is_named(world: &mut SessionWorld, expected: String) {
     let name = world.session.active_sheet_name();
-    assert_eq!(name, expected, "active sheet is '{name}', expected '{expected}'");
+    assert_eq!(
+        name, expected,
+        "active sheet is '{name}', expected '{expected}'"
+    );
 }
 
 // MARK: Formatting (display-only)
@@ -385,7 +423,10 @@ fn i_format_percent(world: &mut SessionWorld, key: String) {
 
 #[then(regex = r#"^cell ([A-Za-z]+:[0-9]+) is bold$"#)]
 fn cell_is_bold(world: &mut SessionWorld, key: String) {
-    assert!(world.session.cell_format(address(&key)).bold, "cell {key} is not bold");
+    assert!(
+        world.session.cell_format(address(&key)).bold,
+        "cell {key} is not bold"
+    );
 }
 
 #[then(regex = r#"^cell ([A-Za-z]+:[0-9]+) is formatted as percent$"#)]
@@ -399,7 +440,10 @@ fn cell_is_percent(world: &mut SessionWorld, key: String) {
 
 #[then(regex = r#"^cell ([A-Za-z]+:[0-9]+) is not bold$"#)]
 fn cell_is_not_bold(world: &mut SessionWorld, key: String) {
-    assert!(!world.session.cell_format(address(&key)).bold, "cell {key} is still bold");
+    assert!(
+        !world.session.cell_format(address(&key)).bold,
+        "cell {key} is still bold"
+    );
 }
 
 #[then(regex = r#"^cell ([A-Za-z]+:[0-9]+) is not named$"#)]
@@ -474,7 +518,10 @@ fn i_flip_bit(world: &mut SessionWorld, index: String) {
 fn bit_editor_value_is(world: &mut SessionWorld, expected: String) {
     match world.session.binary_status() {
         BinaryStatus::Editable { value, .. } => {
-            assert_eq!(value, expected, "bit editor value is '{value}', expected '{expected}'")
+            assert_eq!(
+                value, expected,
+                "bit editor value is '{value}', expected '{expected}'"
+            )
         }
         BinaryStatus::Unavailable(reason) => panic!("bit editor unavailable: {reason}"),
     }
@@ -494,7 +541,8 @@ fn bit_of_editor_is(world: &mut SessionWorld, index: String, state: String) {
         BinaryStatus::Editable { bits, .. } => {
             let expected = state == "set";
             assert_eq!(
-                bits[index], expected,
+                bits[index],
+                expected,
                 "bit {index} is {}, expected {state}",
                 if bits[index] { "set" } else { "clear" }
             );
@@ -507,7 +555,10 @@ fn bit_of_editor_is(world: &mut SessionWorld, index: String, state: String) {
 fn bit_editor_reads_hex(world: &mut SessionWorld, expected: String) {
     match world.session.binary_status() {
         BinaryStatus::Editable { hex, .. } => {
-            assert_eq!(hex, expected, "bit editor hex is '{hex}', expected '{expected}'")
+            assert_eq!(
+                hex, expected,
+                "bit editor hex is '{hex}', expected '{expected}'"
+            )
         }
         BinaryStatus::Unavailable(reason) => panic!("bit editor unavailable: {reason}"),
     }
@@ -518,7 +569,10 @@ fn bit_editor_width_is(world: &mut SessionWorld, expected: String) {
     let expected: u32 = expected.parse().expect("width must be a number");
     match world.session.binary_status() {
         BinaryStatus::Editable { width, .. } => {
-            assert_eq!(width, expected, "bit editor width is {width}, expected {expected}")
+            assert_eq!(
+                width, expected,
+                "bit editor width is {width}, expected {expected}"
+            )
         }
         BinaryStatus::Unavailable(reason) => panic!("bit editor unavailable: {reason}"),
     }
@@ -576,7 +630,10 @@ fn i_clear_bit_format(world: &mut SessionWorld) {
 #[then(regex = r#"^the active bit format is "(.*)"$"#)]
 fn active_bit_format_is(world: &mut SessionWorld, expected: String) {
     let name = world.session.binary_format_name().unwrap_or_default();
-    assert_eq!(name, expected, "active format is '{name}', expected '{expected}'");
+    assert_eq!(
+        name, expected,
+        "active format is '{name}', expected '{expected}'"
+    );
 }
 
 #[then("there is no active bit format")]
@@ -702,14 +759,10 @@ fn i_begin_edit_format(world: &mut SessionWorld) {
 
 /// Claim `bits`, describe the pending field, and add it — one step so a
 /// scenario reads as "add a field", not five builder pokes.
-#[when(regex = r#"^I add an? (numeric|flags|enum|reserved|unused) field "(.*)" of ([0-9]+) bits(?: labelled "(.*)")?$"#)]
-fn i_add_field(
-    world: &mut SessionWorld,
-    kind: String,
-    name: String,
-    bits: String,
-    labels: String,
-) {
+#[when(
+    regex = r#"^I add an? (numeric|flags|enum|reserved|unused) field "(.*)" of ([0-9]+) bits(?: labelled "(.*)")?$"#
+)]
+fn i_add_field(world: &mut SessionWorld, kind: String, name: String, bits: String, labels: String) {
     let bits: u32 = bits.parse().expect("bits must be a number");
     let kind = match kind.as_str() {
         "numeric" => FormatBuilderFieldKind::Numeric,
@@ -799,7 +852,10 @@ fn inspector_lists_function(world: &mut SessionWorld, signature: String) {
         .inspector_functions()
         .iter()
         .any(|row| row.label.contains(&signature));
-    assert!(found, "the inspector does not list a function '{signature}'");
+    assert!(
+        found,
+        "the inspector does not list a function '{signature}'"
+    );
 }
 
 #[then(regex = r#"^the inspector lists the data type "(.*)"$"#)]
