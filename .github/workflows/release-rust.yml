@@ -182,7 +182,19 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libxkbcommon-dev libwayland-dev libx11-dev
+      # oras publishes NO windows/arm64 CLI, so setup-oras can't bootstrap the
+      # windows-11-arm leg. Windows on ARM runs x64 transparently, so install
+      # the amd64 oras by hand there and let every other leg use the action.
       - uses: oras-project/setup-oras@v1
+        if: matrix.name != 'windows-arm64'
+      - name: Install oras (amd64, emulated) on windows-arm64
+        if: matrix.name == 'windows-arm64'
+        shell: pwsh
+        run: |
+          $ver = "1.2.0"
+          Invoke-WebRequest -Uri "https://github.com/oras-project/oras/releases/download/v$ver/oras_${ver}_windows_amd64.zip" -OutFile oras.zip
+          Expand-Archive -Path oras.zip -DestinationPath "$env:USERPROFILE\oras" -Force
+          "$env:USERPROFILE\oras" | Out-File -FilePath $env:GITHUB_PATH -Append
       - name: salpa build + publish (bare binary)
         shell: bash
         run: |
