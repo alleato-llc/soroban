@@ -1,6 +1,8 @@
 import SwiftUI
-import AppKit
 import SorobanEngine
+#if canImport(AppKit)
+import AppKit // NSWorkspace — the macOS-only "reveal themes folder" button
+#endif
 
 struct SettingsView: View {
     @Environment(ThemeManager.self) private var themeManager
@@ -8,11 +10,7 @@ struct SettingsView: View {
 
     /// Monospaced families only: the log's error-caret column padding and the
     /// grid's number alignment rely on fixed-pitch rendering.
-    private static let monospacedFamilies: [String] = {
-        NSFontManager.shared.availableFontFamilies
-            .filter { NSFont(name: $0, size: 12)?.isFixedPitch == true }
-            .sorted()
-    }()
+    private static let monospacedFamilies: [String] = monospacedFontFamilies()
 
     var body: some View {
         @Bindable var themeManager = themeManager
@@ -73,9 +71,17 @@ struct SettingsView: View {
                 LabeledContent("Custom themes:") {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Drop .json theme files here (restart to load):")
+                        #if os(macOS)
+                        // Reveal-in-Finder has no iPad analogue; the path is
+                        // shown so the folder is still discoverable there.
                         Button("Open Themes Folder") {
                             NSWorkspace.shared.open(directory)
                         }
+                        #else
+                        Text(directory.path)
+                            .font(.caption2)
+                            .textSelection(.enabled)
+                        #endif
                     }
                 }
             }

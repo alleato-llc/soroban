@@ -89,7 +89,7 @@ struct CellView: View, Equatable {
                 // Routes through point mode: while a formula edit expects an
                 // operand, this click inserts the reference instead.
                 session.sheet.handleCellClick(
-                    address, isShiftDown: NSEvent.modifierFlags.contains(.shift))
+                    address, isShiftDown: isShiftKeyDown())
             }
             .simultaneousGesture(TapGesture(count: 2).onEnded {
                 // While another cell's editor is open, the double-click's

@@ -174,7 +174,6 @@ private struct EntryView: View {
     }
 
     private func copyToPasteboard(_ text: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
+        Clipboard.write(string: text)
     }
 }

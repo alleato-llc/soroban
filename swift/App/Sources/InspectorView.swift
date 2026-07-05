@@ -165,8 +165,7 @@ private struct EntryRow: View {
             Button("Insert Name") { insert(insertableName) }
             Button("Insert Value") { insert(entry.detail) }
             Button("Copy Value") {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(entry.detail, forType: .string)
+                Clipboard.write(string: entry.detail)
             }
             if case .cell = entry.provenance {
                 Button("Go to Definition", action: jump)
