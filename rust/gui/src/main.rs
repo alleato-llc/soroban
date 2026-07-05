@@ -41,6 +41,32 @@ use std::path::PathBuf;
 
 const MONO: Font = Font::MONOSPACE;
 
+/// Bundled monospace fonts (embedded so they render identically on every
+/// platform), loaded once at startup and selectable in Settings.
+const JETBRAINS_MONO_BYTES: &[u8] = include_bytes!("assets/fonts/JetBrainsMono-Regular.ttf");
+const SOURCE_CODE_PRO_BYTES: &[u8] = include_bytes!("assets/fonts/SourceCodePro-Regular.ttf");
+
+/// The monospace families offered in Settings: `(display name, resolved Font)`.
+/// "System" is iced's built-in default monospace; the rest are the bundled
+/// fonts, referenced by the family name embedded in their TTF.
+fn font_choices() -> [(&'static str, Font); 3] {
+    [
+        ("System", MONO),
+        ("JetBrains Mono", Font::with_name("JetBrains Mono")),
+        ("Source Code Pro", Font::with_name("Source Code Pro")),
+    ]
+}
+
+/// Resolve a font family display name to its `Font`, falling back to the system
+/// monospace for an unknown / unset name.
+fn font_for(name: &str) -> Font {
+    font_choices()
+        .iter()
+        .find(|(candidate, _)| *candidate == name)
+        .map(|(_, font)| *font)
+        .unwrap_or(MONO)
+}
+
 /// The edit bar's widget id, used to refocus it after a point-mode reference
 /// insertion (a grid click steals focus, so we grab it back).
 fn edit_bar_id() -> Id {
@@ -86,6 +112,9 @@ struct App {
     /// The base font size for the log/grid content (points); the Settings
     /// window's slider drives it.
     font_size: f32,
+    /// The chosen monospace family's display name (see [`font_choices`]); empty
+    /// means the system default.
+    font_name: String,
     /// Whether the Settings window is open, and which section (0 Appearance,
     /// 1 Calculator).
     settings_open: bool,
@@ -151,6 +180,8 @@ enum Message {
     SelectTheme(String),
     /// Set the base content font size (points).
     SetFontSize(f32),
+    /// Pick the monospace font family (by display name).
+    SelectFont(String),
     /// Pick the calculator language mode (Normal / Programmer / Finance).
     SelectMode(LanguageMode),
     /// Cycle the language mode from the input-bar affordance.
@@ -315,6 +346,7 @@ impl App {
                 self.theme_name = name;
             }
             Message::SetFontSize(size) => self.font_size = size.clamp(9.0, 28.0),
+            Message::SelectFont(name) => self.font_name = name,
             Message::SelectMode(mode) => self.session.set_language_mode(mode),
             Message::CycleMode => {
                 let next = match self.session.language_mode() {
@@ -845,6 +877,11 @@ impl App {
         }
     }
 
+    /// The chosen monospace font for log/grid content (system default when unset).
+    fn mono(&self) -> Font {
+        font_for(&self.font_name)
+    }
+
     /// Arrows navigate (history in the log, cells in the grid); Enter edits the
     /// selected cell, a bare character type-to-edits; ⌘\ toggles the view; ⌘Z /
     /// ⇧⌘Z undo & redo; ⌘C/⌘X/⌘V copy/cut/paste; Escape cancels an edit. The
@@ -1008,18 +1045,28 @@ impl App {
         // Content fills the whole window; when revealed (pointer near the top, or
         // a menu open) the bar overlays the top edge rather than pushing content
         // down — so nothing jumps as it appears.
-        let base: Element<'_, Message> = if self.menu_revealed || self.menu_open.is_some() {
+        //
+        // CRUCIAL: `content` stays at a FIXED tree position (stack layer 0) whether
+        // or not the bar shows — the bar is a second layer that's either the real
+        // menu or a zero-size placeholder. Re-parenting `content` (wrapping it in a
+        // stack only when revealed) reset the focused text field's widget state, so
+        // the log input lost focus the instant the pointer neared the top edge —
+        // which felt like focus being "stolen while typing".
+        let bar_layer: Element<'_, Message> = if self.menu_revealed || self.menu_open.is_some() {
             let inspector_icon = button::icon(glyph::NAMES, Message::ToggleInspector);
-            let bar = menu_bar_with_trailing(
+            menu_bar_with_trailing(
                 self.menus(),
                 self.menu_open,
                 Message::ToggleMenu,
                 Some(inspector_icon.into()),
-            );
-            iced::widget::stack![content, bar].into()
+            )
         } else {
-            content
+            iced::widget::Space::new()
+                .width(Length::Fixed(0.0))
+                .height(Length::Fixed(0.0))
+                .into()
         };
+        let base: Element<'_, Message> = iced::widget::stack![content, bar_layer].into();
 
         // The Settings window, when open, frames itself over everything.
         if self.settings_open {
@@ -1079,6 +1126,16 @@ impl App {
             body = body.push(rows);
         }
 
+        // Font family (the bundled monospace choices).
+        let font_names: Vec<String> = font_choices().iter().map(|(n, _)| n.to_string()).collect();
+        let current_font = if self.font_name.is_empty() {
+            font_choices()[0].0.to_string()
+        } else {
+            self.font_name.clone()
+        };
+        body = body.push(caption("Font"));
+        body = body.push(select(font_names, Some(current_font), Message::SelectFont));
+
         let size = self.base_font_size();
         body = body.push(caption("Font size"));
         body = body.push(slider(
@@ -1098,16 +1155,17 @@ impl App {
     /// and a muted note — all in the pending palette and font size, so theme and
     /// size changes are visible without leaving Settings.
     fn settings_preview(&self, palette: &theme::Palette) -> Element<'_, Message> {
+        let font = self.mono();
         let size = self.base_font_size();
         let sample = column![
-            text("1024 / 8").font(MONO).size(size).color(palette.accent),
-            text("= 128").font(MONO).size(size).color(palette.ink),
-            text("sqrt(-1)").font(MONO).size(size).color(palette.accent),
+            text("1024 / 8").font(font).size(size).color(palette.accent),
+            text("= 128").font(font).size(size).color(palette.ink),
+            text("sqrt(-1)").font(font).size(size).color(palette.accent),
             text("domain error")
-                .font(MONO)
+                .font(font)
                 .size(size)
                 .color(palette.danger),
-            text("# a note").font(MONO).size(size).color(palette.muted),
+            text("# a note").font(font).size(size).color(palette.muted),
         ]
         .spacing(6);
         card(sample)
@@ -1149,6 +1207,7 @@ impl App {
     /// format's named fields, plus a Use button that drops the value into the
     /// input.
     fn binary_panel(&self, palette: &theme::Palette) -> Element<'_, Message> {
+        let font = self.mono();
         let content: Element<'_, Message> = match self.session.binary_status() {
             BinaryStatus::Editable {
                 bits,
@@ -1187,7 +1246,7 @@ impl App {
                 }
 
                 let header = row![
-                    text(caption).font(MONO).size(13).color(palette.accent),
+                    text(caption).font(font).size(13).color(palette.accent),
                     container(row![build_actions, format_picker].spacing(8))
                         .width(Length::Fill)
                         .align_x(iced::alignment::Horizontal::Right),
@@ -1516,6 +1575,7 @@ impl App {
     }
 
     fn reference_panel(&self, palette: &theme::Palette) -> Element<'_, Message> {
+        let font = self.mono();
         let search = text_field(
             "Search the reference…",
             &self.reference_query,
@@ -1532,7 +1592,7 @@ impl App {
                 group_column = group_column.push(
                     column![
                         text(entry.signature)
-                            .font(MONO)
+                            .font(font)
                             .size(12)
                             .color(palette.accent),
                         text(entry.summary).size(11).color(palette.muted),
@@ -1562,6 +1622,7 @@ impl App {
     /// the original, each row tagged with its provenance (`log` or a clickable
     /// `B:2 ↗` that jumps to the cell).
     fn inspector_panel(&self, palette: &theme::Palette) -> Element<'_, Message> {
+        let font = self.mono();
         let mut sections = column![Self::panel_header(
             "Environment",
             Message::ToggleInspector,
@@ -1583,15 +1644,15 @@ impl App {
             let mut group = column![text(title).size(11).color(palette.muted)].spacing(8);
             for row in rows {
                 let mut line = column![row![
-                    text(row.label).font(MONO).size(12).color(palette.accent),
-                    container(origin_tag(row.origin, palette))
+                    text(row.label).font(font).size(12).color(palette.accent),
+                    container(origin_tag(row.origin, palette, font))
                         .width(Length::Fill)
                         .align_x(iced::alignment::Horizontal::Right),
                 ]
                 .align_y(iced::Alignment::Center)]
                 .spacing(1);
                 if !row.detail.is_empty() {
-                    line = line.push(text(row.detail).font(MONO).size(11).color(palette.muted));
+                    line = line.push(text(row.detail).font(font).size(11).color(palette.muted));
                 }
                 group = group.push(line);
             }
@@ -1613,21 +1674,31 @@ impl App {
     }
 
     fn log_view(&self, palette: &theme::Palette) -> Element<'_, Message> {
+        let font = self.mono();
         // The log fills, oldest→newest, so the freshest result sits just above
         // the input — the terminal/REPL layout of the AppKit original.
         let size = self.base_font_size();
         let entries = self.session.entries(); // Ref over the shared log tape
-        let log: Element<'_, Message> = if entries.is_empty() {
+                                              // Keep this slot a `container` in BOTH states (empty vs. populated) so the
+                                              // input below it doesn't re-parent — and lose focus — on the first submit.
+        let log_inner: Element<'_, Message> = if entries.is_empty() {
             self.empty_log(palette)
         } else {
             let mut items = column![].spacing(12);
             for entry in entries.iter() {
-                items = items.push(entry_view(&entry.input, &entry.outcome, palette, size));
+                items = items.push(entry_view(
+                    &entry.input,
+                    &entry.outcome,
+                    palette,
+                    size,
+                    font,
+                ));
             }
             scrollable(items.padding([4, 8]))
                 .height(Length::Fill)
                 .into()
         };
+        let log = container(log_inner).height(Length::Fill);
 
         // The input is pinned to the BOTTOM, behind a `>` prompt; Enter submits
         // (no `=` button — the original has none). A mode affordance (cycles
@@ -1639,12 +1710,12 @@ impl App {
             LanguageMode::Finance => "Finance",
         };
         let input_bar = row![
-            text(">").font(MONO).size(size + 2.0).color(palette.muted),
+            text(">").font(font).size(size + 2.0).color(palette.muted),
             text_field("Expression", self.session.input(), Message::InputChanged)
                 .id(log_input_id())
                 .on_submit(Message::Submit)
                 .size(size)
-                .font(MONO),
+                .font(font),
             button::ghost(mode_label, Message::CycleMode),
             button::icon(glyph::REFERENCE, Message::ToggleReference),
             button::icon(glyph::GRID, Message::ToggleView),
@@ -1659,10 +1730,9 @@ impl App {
         // shifts index and thus never loses focus mid-type (an iced tree-diff
         // quirk: a widget that changes tree position is rebuilt from scratch).
         let popup: Element<'_, Message> = self.suggestion_popup().unwrap_or_else(|| {
-            iced::widget::Space::new()
-                .width(Length::Shrink)
-                .height(Length::Fixed(0.0))
-                .into()
+            // A zero-height CONTAINER (not a Space) so this slot is always the same
+            // widget type as the real popup — the input below it never re-parents.
+            container(iced::widget::Space::new().height(Length::Fixed(0.0))).into()
         });
         let bottom = column![popup, input_bar].spacing(4);
         column![log, bottom].spacing(12).into()
@@ -1671,6 +1741,7 @@ impl App {
     /// The empty-state: an invitation plus a few sample expressions that insert
     /// themselves into the input on click (the original's "double-click one").
     fn empty_log(&self, palette: &theme::Palette) -> Element<'_, Message> {
+        let font = self.mono();
         const SAMPLES: [&str; 3] = [
             "map(n -> n * n, filter(x -> x % 2 == 0, seq(1, 20)))",
             "fact(52) / (fact(5) * fact(47))",
@@ -1682,7 +1753,7 @@ impl App {
         .spacing(10);
         for sample in SAMPLES {
             column = column.push(
-                mouse_area(text(sample).font(MONO).size(14).color(palette.accent))
+                mouse_area(text(sample).font(font).size(14).color(palette.accent))
                     .on_press(Message::SampleClicked(sample.to_string()))
                     .interaction(iced::mouse::Interaction::Pointer),
             );
@@ -1691,6 +1762,7 @@ impl App {
     }
 
     fn grid_view(&self, palette: &theme::Palette) -> Element<'_, Message> {
+        let font = self.mono();
         // The formula/edit bar: the active cell's address, then its raw content.
         // Click it (or just start typing) to edit; Enter commits, Esc cancels.
         let address_label = self
@@ -1698,7 +1770,7 @@ impl App {
             .map(|address| address.to_string())
             .unwrap_or_else(|| "—".to_string());
         let edit_bar = row![
-            container(text(address_label).font(MONO).size(13).color(palette.muted))
+            container(text(address_label).font(font).size(13).color(palette.muted))
                 .width(Length::Fixed(48.0))
                 .center_y(Length::Shrink),
             // The name box (Excel-style): name the selected cell's location.
@@ -1714,7 +1786,7 @@ impl App {
             )
             .id(edit_bar_id())
             .on_submit(Message::EditSubmitted)
-            .font(MONO),
+            .font(font),
         ]
         .spacing(8)
         .align_y(iced::Alignment::Center);
@@ -1771,7 +1843,7 @@ impl App {
                     .on_submit(Message::EditSubmitted)
                     .padding(2)
                     .size(13)
-                    .font(MONO);
+                    .font(font);
                 sheet = sheet.editor(row, col, editor);
             }
         }
@@ -1782,7 +1854,7 @@ impl App {
         let sheet_tab = row![
             container(
                 text(self.session.active_sheet_name())
-                    .font(MONO)
+                    .font(font)
                     .size(13)
                     .color(palette.ink)
             )
@@ -2096,12 +2168,12 @@ fn control_widget<'a>(address: CellAddress, display: CellDisplay) -> Option<Elem
 
 /// An inspector row's provenance tag: `log` (muted, inert) or a clickable
 /// `B:2 ↗` (accent) that jumps to the cell.
-fn origin_tag<'a>(origin: Origin, palette: &theme::Palette) -> Element<'a, Message> {
+fn origin_tag<'a>(origin: Origin, palette: &theme::Palette, font: Font) -> Element<'a, Message> {
     match origin {
         Origin::Log => text("log").size(11).color(palette.muted).into(),
         Origin::Cell(address) => mouse_area(
             text(format!("{address} ↗"))
-                .font(MONO)
+                .font(font)
                 .size(11)
                 .color(palette.accent),
         )
@@ -2118,39 +2190,40 @@ fn entry_view<'a>(
     outcome: &Outcome,
     palette: &theme::Palette,
     size: f32,
+    font: Font,
 ) -> Element<'a, Message> {
     // Secondary lines (comments, info, error text) read one point smaller.
     let small = (size - 1.0).max(1.0);
     // Echoed input in accent, no prefix — matching the original, where the
     // expression is the colored line and the result below it is plain ink.
     let echo = text(input.to_string())
-        .font(MONO)
+        .font(font)
         .size(size)
         .color(palette.accent);
 
     let result: Element<'a, Message> = match outcome {
         Outcome::Value(value) => text(format!("= {value}"))
-            .font(MONO)
+            .font(font)
             .size(size)
             .color(palette.ink)
             .into(),
         Outcome::Function(signature) => text(format!("λ {signature}"))
-            .font(MONO)
+            .font(font)
             .size(size)
             .color(palette.ink)
             .into(),
         Outcome::Data(declaration) => text(format!("D {declaration}"))
-            .font(MONO)
+            .font(font)
             .size(size)
             .color(palette.ink)
             .into(),
         Outcome::Comment(note) => text(format!("# {note}"))
-            .font(MONO)
+            .font(font)
             .size(small)
             .color(palette.muted)
             .into(),
         Outcome::Info(block) => text(block.clone())
-            .font(MONO)
+            .font(font)
             .size(small)
             .color(palette.ink)
             .into(),
@@ -2159,7 +2232,7 @@ fn entry_view<'a>(
             if let Some(position) = position {
                 // No echo prefix now, so the caret aligns directly under column.
                 let caret = format!("{}^", " ".repeat(*position));
-                lines = lines.push(text(caret).font(MONO).size(size).color(palette.danger));
+                lines = lines.push(text(caret).font(font).size(size).color(palette.danger));
             }
             lines
                 .push(
@@ -2181,6 +2254,7 @@ impl App {
         let mut app = App {
             theme_name: themes::default_name().to_string(),
             font_size: 14.0,
+            font_name: font_choices()[0].0.to_string(),
             ..App::default()
         };
         shot::configure(&mut app);
@@ -2194,6 +2268,8 @@ fn main() -> iced::Result {
         .theme(App::theme)
         .subscription(App::subscription)
         .font(icons::FONT_BYTES) // the embedded icon font (toolbar/toggle/close glyphs)
+        .font(JETBRAINS_MONO_BYTES) // bundled monospace families, selectable in Settings
+        .font(SOURCE_CODE_PRO_BYTES)
         .window_size(iced::Size::new(1040.0, 680.0))
         .run()
 }

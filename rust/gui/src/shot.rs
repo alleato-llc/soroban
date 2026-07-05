@@ -23,6 +23,7 @@
 //! - `SOROBAN_SHOT_SETTINGS=appearance|calculator` — open the Settings window
 //!   on that section.
 //! - `SOROBAN_SHOT_THEME=<name>` — apply a named theme (e.g. "One Light").
+//! - `SOROBAN_SHOT_FONT=<name>` — apply a bundled font (e.g. "JetBrains Mono").
 //! - `SOROBAN_SHOT_PANEL=inspector|reference|bits` — open a side/bottom panel.
 //!
 //! Capture waits three painted frames (so fonts/layout settle) then requests the
@@ -109,6 +110,10 @@ pub fn configure(app: &mut App) {
     // Apply a named theme by its catalog name (e.g. "One Light").
     if let Ok(name) = std::env::var("SOROBAN_SHOT_THEME") {
         app.theme_name = name;
+    }
+    // Apply a bundled font family by name (e.g. "JetBrains Mono").
+    if let Ok(name) = std::env::var("SOROBAN_SHOT_FONT") {
+        app.font_name = name;
     }
     // Open the Settings window on a section (`appearance` / `calculator`).
     match std::env::var("SOROBAN_SHOT_SETTINGS").as_deref() {
