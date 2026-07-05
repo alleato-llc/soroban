@@ -133,6 +133,15 @@ Feature: The Rust app session — calculator and sheet, headless
     And cell A:1 is formatted as percent
     And cell A:1 shows "0.0825"
 
+  Scenario: Cell formatting persists across save and reopen
+    When I set cell A:1 to "0.0825"
+    And I make cell A:1 bold
+    And I format cell A:1 as percent
+    And I save and reopen the workbook
+    Then cell A:1 is bold
+    And cell A:1 is formatted as percent
+    And cell A:1 shows "0.0825"
+
   Scenario: Renaming a named cell rewrites the formulas that reference it
     When I set cell A:1 to "5"
     And I name cell A:1 "Rate"

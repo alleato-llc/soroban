@@ -1429,6 +1429,12 @@ impl Session {
                     .iter()
                     .map(|(col, width)| (CellAddress::column_name_for(*col), *width))
                     .collect();
+                payload.formats = sheet
+                    .formats
+                    .borrow()
+                    .iter()
+                    .map(|(address, format)| (address.to_string(), format.clone()))
+                    .collect();
                 payload
             })
             .collect();
@@ -1500,6 +1506,13 @@ impl Session {
                 .iter()
                 .filter_map(|(name, width)| {
                     CellAddress::column_index(name).map(|col| (col, *width))
+                })
+                .collect();
+            *sheet.formats.borrow_mut() = payload
+                .formats
+                .iter()
+                .filter_map(|(key, format)| {
+                    CellAddress::from_key(key).map(|address| (address, format.clone()))
                 })
                 .collect();
             sheets.push(sheet);

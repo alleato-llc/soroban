@@ -9,6 +9,7 @@
 //! saved by the Swift app must decode here, and vice versa. Field names,
 //! nesting, and decode defaults mirror Swift's Codable implementation exactly.
 
+use crate::cell_format::CellFormat;
 use anzan::{Calculator, DataType, UserFunction, Value};
 use serde::de::Deserializer;
 use serde::{Deserialize, Serialize};
@@ -44,12 +45,11 @@ pub struct SheetPayload {
     #[serde(default, rename = "rowHeights")]
     pub row_heights: HashMap<String, f64>,
     /// Per-cell presentation, keyed "A:1" — only non-default formats.
-    /// Decodes to empty for files written before formatting existed.
-    /// TODO: type this as `CellFormat` once cell_format.rs lands (being
-    /// ported concurrently); until then a raw-JSON passthrough keeps
-    /// round-trips lossless without depending on the type.
+    /// Decodes to empty for files written before formatting existed. Typed as
+    /// `CellFormat` (its compact codec matches Swift's), so the Rust app both
+    /// reads and *writes* cell formatting interoperably.
     #[serde(default)]
-    pub formats: HashMap<String, serde_json::Value>,
+    pub formats: HashMap<String, CellFormat>,
     /// Named cells, keyed "A:1" → the name ('Projected Rate' syntax).
     #[serde(default)]
     pub names: HashMap<String, String>,
@@ -447,7 +447,9 @@ mod tests {
     }
 
     #[test]
-    fn formats_pass_through_losslessly() {
+    fn formats_round_trip_as_typed_cell_formats() {
+        use crate::cell_format::{CellFormat, NumberFormat};
+        // A Swift-shaped `formats` object decodes into a typed CellFormat…
         let with_formats = br#"{
             "format": "soroban-workbook", "version": 2, "variables": {},
             "sheets": [{"name": "S", "cells": {},
@@ -455,13 +457,29 @@ mod tests {
                                             "decimals": 2, "symbol": "$"}}}]
         }"#;
         let workbook = Workbook::decode(with_formats).expect("decodes");
+        let format = &workbook.sheets[0].formats["A:1"];
+        assert!(format.bold);
+        assert_eq!(
+            format.number_format,
+            NumberFormat::Currency {
+                symbol: "$".into(),
+                decimals: 2
+            }
+        );
+        // …and re-encoding it is lossless (Rust can now *originate* formats).
         let encoded = workbook.encode().expect("encodes");
         let again = Workbook::decode(&encoded).expect("re-decodes");
-        assert_eq!(
-            again.sheets[0].formats["A:1"]["symbol"],
-            serde_json::Value::String("$".into())
-        );
         assert_eq!(workbook, again);
+
+        // The compact codec omits default fields and matches Swift's shape.
+        let plain_bold = CellFormat {
+            bold: true,
+            ..CellFormat::default()
+        };
+        assert_eq!(
+            serde_json::to_value(&plain_bold).unwrap(),
+            serde_json::json!({ "bold": true })
+        );
     }
 
     #[test]

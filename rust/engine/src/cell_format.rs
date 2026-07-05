@@ -4,11 +4,14 @@
 //! is pruned, never stored) and persisted per sheet in workbooks.
 
 use anzan::BigDecimal;
+use serde::ser::SerializeMap;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// Semantic palette colors. Stored by NAME so the app can map them to system
 /// colors that adapt to light/dark — per-cell absolute RGB would fight the
 /// switchable themes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum PaletteColor {
     Red,
     Orange,
@@ -32,7 +35,8 @@ impl PaletteColor {
     ];
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum CellAlignment {
     /// The grid's automatic rule: text left, numbers right, errors centered.
     #[default]
@@ -253,6 +257,113 @@ impl CellFormat {
     /// Default formats are pruned from the sparse per-sheet map.
     pub fn is_default(&self) -> bool {
         *self == Self::default()
+    }
+}
+
+// Compact codec — only non-default fields are written, and `NumberFormat` is
+// flattened into `style`/`decimals`/`symbol`. Byte-for-byte the shape of Swift's
+// `CellFormat: Codable` (Sheet/CellFormat.swift), so a `formats` object round-
+// trips between the two apps. (Workbook JSON is written with sorted keys, so the
+// entry order here doesn't affect the on-disk bytes.)
+impl Serialize for CellFormat {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(None)?;
+        if self.bold {
+            map.serialize_entry("bold", &true)?;
+        }
+        if self.italic {
+            map.serialize_entry("italic", &true)?;
+        }
+        if self.underline {
+            map.serialize_entry("underline", &true)?;
+        }
+        if self.strikethrough {
+            map.serialize_entry("strikethrough", &true)?;
+        }
+        if self.alignment != CellAlignment::Auto {
+            map.serialize_entry("alignment", &self.alignment)?;
+        }
+        if let Some(color) = self.text_color {
+            map.serialize_entry("textColor", &color)?;
+        }
+        if let Some(color) = self.fill_color {
+            map.serialize_entry("fillColor", &color)?;
+        }
+        match &self.number_format {
+            NumberFormat::General => {}
+            NumberFormat::Number { decimals } => {
+                map.serialize_entry("style", "number")?;
+                map.serialize_entry("decimals", decimals)?;
+            }
+            NumberFormat::Currency { symbol, decimals } => {
+                map.serialize_entry("style", "currency")?;
+                map.serialize_entry("symbol", symbol)?;
+                map.serialize_entry("decimals", decimals)?;
+            }
+            NumberFormat::Percent { decimals } => {
+                map.serialize_entry("style", "percent")?;
+                map.serialize_entry("decimals", decimals)?;
+            }
+            NumberFormat::Date => map.serialize_entry("style", "date")?,
+            NumberFormat::Hex => map.serialize_entry("style", "hex")?,
+            NumberFormat::Binary => map.serialize_entry("style", "binary")?,
+        }
+        map.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for CellFormat {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        // Every field optional with a default — a `{}` object decodes to the
+        // default format, and unknown `style` strings from a newer version
+        // degrade to `General` (as Swift does).
+        #[derive(Deserialize)]
+        struct Raw {
+            #[serde(default)]
+            bold: bool,
+            #[serde(default)]
+            italic: bool,
+            #[serde(default)]
+            underline: bool,
+            #[serde(default)]
+            strikethrough: bool,
+            #[serde(default)]
+            alignment: CellAlignment,
+            #[serde(default, rename = "textColor")]
+            text_color: Option<PaletteColor>,
+            #[serde(default, rename = "fillColor")]
+            fill_color: Option<PaletteColor>,
+            #[serde(default)]
+            style: Option<String>,
+            #[serde(default)]
+            decimals: Option<i64>,
+            #[serde(default)]
+            symbol: Option<String>,
+        }
+        let raw = Raw::deserialize(deserializer)?;
+        let decimals = raw.decimals.unwrap_or(2);
+        let number_format = match raw.style.as_deref() {
+            Some("number") => NumberFormat::Number { decimals },
+            Some("currency") => NumberFormat::Currency {
+                symbol: raw.symbol.unwrap_or_else(|| "$".into()),
+                decimals,
+            },
+            Some("percent") => NumberFormat::Percent { decimals },
+            Some("date") => NumberFormat::Date,
+            Some("hex") => NumberFormat::Hex,
+            Some("binary") => NumberFormat::Binary,
+            _ => NumberFormat::General, // unknown/absent styles degrade safely
+        };
+        Ok(CellFormat {
+            bold: raw.bold,
+            italic: raw.italic,
+            underline: raw.underline,
+            strikethrough: raw.strikethrough,
+            alignment: raw.alignment,
+            text_color: raw.text_color,
+            fill_color: raw.fill_color,
+            number_format,
+        })
     }
 }
 
