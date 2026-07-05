@@ -28,7 +28,21 @@ point of truth for downloads.
   sibling repo (rust/gui depends on it by the relative `../../../rime/rime`
   path), builds `--release --locked` per target, and uploads each binary as an
   artifact — proving the port compiles and links on every desktop OS the Rust
-  ecosystem unlocks. (If `rime` is private, set a `RIME_TOKEN` repo secret.)
+  ecosystem unlocks. (`rime` is now a public repo, so the default token reads it;
+  the `RIME_TOKEN` fallback remains for a future private state.)
+- **Releases now ship Linux + Windows desktop binaries alongside the macOS
+  DMG.** `release.yml` gained a `desktop` matrix job (the same four targets) that
+  builds `rust/gui` after the release is cut and attaches each binary to the
+  release tag under a stable, versionless name (`soroban-gui-<target>[.exe]`,
+  `--clobber`) — so `releases/latest/download/soroban-gui-linux-x86_64` is a
+  durable link, mirroring the versionless `Soroban.dmg`. The job is **additive
+  and non-blocking**: the signed DMG release publishes even if a desktop target
+  fails, because `release` does not depend on `desktop`.
+
+### Changed
+- **CI actions bumped to Node 24.** `actions/upload-artifact@v4` (Node 20, which
+  GitHub was force-migrating) → `@v7` (Node 24) across `ci.yml`, `release.yml`,
+  and `rust-gui-build.yml`, clearing the deprecation warning.
 
 ### Fixed
 - Rust ecosystem, Phase 3b — **the bit editor's grid was reversed**: clicking

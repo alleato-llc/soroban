@@ -46,7 +46,7 @@ jobs:
 
       - name: Upload Gherkin HTML report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: gherkin-report-engine
           path: gherkin-report-engine.html
@@ -87,7 +87,7 @@ jobs:
 
       - name: Upload session Gherkin HTML report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: gherkin-report-session
           path: gherkin-report-session.html

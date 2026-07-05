@@ -80,6 +80,8 @@ jobs:
     name: Sign, notarize, publish (salpa)
     needs: [test, session-tests]
     runs-on: macos-26
+    outputs:
+      version: ${{ steps.rel.outputs.version }} # the tag is v$version — desktop jobs attach to it
     env:
       GH_TOKEN: ${{ github.token }} # salpa publish → gh release create
     steps:
@@ -128,7 +130,76 @@ jobs:
           salpa --version "$VERSION" publish  # gh release (tag) + Soroban-$VERSION.dmg + versionless Soroban.dmg
 
       - name: Upload artifact (run-scoped copy)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Soroban-${{ steps.rel.outputs.version }}.dmg
           path: swift/Soroban-${{ steps.rel.outputs.version }}.dmg
+
+  # macOS ships from the signed/notarized DMG above; the Rust/iced app (rust/gui)
+  # gives us Linux + Windows on both arches. These build AFTER the release exists
+  # (needs: release) and attach directly to its tag — versionless names with
+  # --clobber, matching the DMG's stable latest-download convention, so
+  # releases/latest/download/soroban-gui-<name> is a durable link.
+  #
+  # ADDITIVE + non-blocking: `release` does NOT depend on this job, so the DMG
+  # release always publishes even if a desktop target fails to build. Build steps
+  # mirror the PR-tested rust-gui-build.yml — keep the two in sync. rime is a
+  # public sibling repo (rust/gui depends on it by ../../../rime/rime path).
+  desktop:
+    name: Desktop binary — ${{ matrix.name }}
+    needs: [release]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux-x86_64, os: ubuntu-latest, target: x86_64-unknown-linux-gnu }
+          - { name: linux-arm64, os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu }
+          - { name: windows-x86_64, os: windows-latest, target: x86_64-pc-windows-msvc }
+          - { name: windows-arm64, os: windows-11-arm, target: aarch64-pc-windows-msvc }
+    runs-on: ${{ matrix.os }}
+    env:
+      GH_TOKEN: ${{ github.token }} # gh release upload
+    steps:
+      # Both repos as siblings so rust/gui's ../../../rime/rime path resolves.
+      - name: Check out soroban
+        uses: actions/checkout@v5
+        with:
+          path: soroban
+      - name: Check out rime (sibling)
+        uses: actions/checkout@v5
+        with:
+          repository: alleato-llc/rime # public — the default token can read it
+          path: rime
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: soroban/rust/gui
+          key: release-${{ matrix.target }}
+
+      - name: Linux windowing deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev libwayland-dev libx11-dev
+
+      - name: Build (release)
+        working-directory: soroban/rust/gui
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Attach to the GitHub Release
+        shell: bash
+        working-directory: soroban/rust/gui
+        run: |
+          set -euo pipefail
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            asset="soroban-gui-${{ matrix.name }}.exe"
+            cp "target/${{ matrix.target }}/release/soroban-gui.exe" "$asset"
+          else
+            asset="soroban-gui-${{ matrix.name }}"
+            cp "target/${{ matrix.target }}/release/soroban-gui" "$asset"
+          fi
+          gh release upload "v${{ needs.release.outputs.version }}" "$asset" \
+            --clobber --repo "${{ github.repository }}"
