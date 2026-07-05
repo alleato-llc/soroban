@@ -89,7 +89,10 @@ struct SorobanApp: App {
                     themeManager.fontSizeOverride =
                         ThemeManager.clampedFontSize(themeManager.current.fontSize + 1)
                 }
-                .keyboardShortcut("+", modifiers: .command)
+                // Bind "=" (not "+"): "+" is ⇧= on most keyboards, so a plain ⌘+
+                // never fired. ⌘= is the standard zoom-in press (as in browsers);
+                // the menu shows ⌘=, and it works without holding Shift.
+                .keyboardShortcut("=", modifiers: .command)
                 Button("Zoom Out") {
                     themeManager.fontSizeOverride =
                         ThemeManager.clampedFontSize(themeManager.current.fontSize - 1)

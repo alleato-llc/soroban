@@ -45,6 +45,52 @@ const MONO: Font = Font::MONOSPACE;
 /// platform), loaded once at startup and selectable in Settings.
 const JETBRAINS_MONO_BYTES: &[u8] = include_bytes!("assets/fonts/JetBrainsMono-Regular.ttf");
 const SOURCE_CODE_PRO_BYTES: &[u8] = include_bytes!("assets/fonts/SourceCodePro-Regular.ttf");
+const IBM_PLEX_MONO_BYTES: &[u8] = include_bytes!("assets/fonts/IBMPlexMono-Regular.ttf");
+const HACK_BYTES: &[u8] = include_bytes!("assets/fonts/Hack-Regular.ttf");
+const FIRA_MONO_BYTES: &[u8] = include_bytes!("assets/fonts/FiraMono-Regular.ttf");
+
+/// The embedded font blobs, registered with iced at startup, and the family
+/// names (as spelled in each TTF) used to reference them — kept in the same
+/// order. Adding a font is: an `include_bytes!` const, an entry here, and its
+/// family name in `BUNDLED_FAMILIES`.
+const BUNDLED_FONT_BYTES: [&[u8]; 5] = [
+    JETBRAINS_MONO_BYTES,
+    SOURCE_CODE_PRO_BYTES,
+    IBM_PLEX_MONO_BYTES,
+    HACK_BYTES,
+    FIRA_MONO_BYTES,
+];
+const BUNDLED_FAMILIES: [&str; 5] = [
+    "JetBrains Mono",
+    "Source Code Pro",
+    "IBM Plex Mono",
+    "Hack",
+    "Fira Mono",
+];
+
+/// Well-known SYSTEM monospace families offered per-platform. iced's font
+/// database loads the OS's installed fonts at startup, so `Font::with_name`
+/// resolves these when present and falls back to the default monospace when
+/// absent — so we curate a list that can actually exist on each OS rather than
+/// offer names that would silently no-op.
+#[cfg(target_os = "macos")]
+const SYSTEM_FAMILIES: &[&str] = &["Menlo", "SF Mono", "Monaco", "Courier New", "Andale Mono"];
+#[cfg(target_os = "windows")]
+const SYSTEM_FAMILIES: &[&str] = &[
+    "Consolas",
+    "Cascadia Mono",
+    "Cascadia Code",
+    "Courier New",
+    "Lucida Console",
+];
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+const SYSTEM_FAMILIES: &[&str] = &[
+    "DejaVu Sans Mono",
+    "Liberation Mono",
+    "Ubuntu Mono",
+    "Noto Sans Mono",
+    "FreeMono",
+];
 
 /// The Soroban app icon (the Swift app's 256×256 artwork), embedded so the
 /// window carries it in the Linux/Windows taskbar. macOS takes its Dock icon
@@ -68,14 +114,19 @@ fn app_icon() -> Option<iced::window::Icon> {
 }
 
 /// The monospace families offered in Settings: `(display name, resolved Font)`.
-/// "System" is iced's built-in default monospace; the rest are the bundled
-/// fonts, referenced by the family name embedded in their TTF.
-fn font_choices() -> [(&'static str, Font); 3] {
-    [
-        ("System", MONO),
-        ("JetBrains Mono", Font::with_name("JetBrains Mono")),
-        ("Source Code Pro", Font::with_name("Source Code Pro")),
-    ]
+/// "System" is iced's built-in default monospace, then the bundled families
+/// (referenced by the family name embedded in each TTF), then the curated OS
+/// system families. Everything after "System" resolves by name via the font
+/// database, so an absent system family just falls back to the default.
+fn font_choices() -> Vec<(&'static str, Font)> {
+    let mut choices = vec![("System", MONO)];
+    for name in BUNDLED_FAMILIES {
+        choices.push((name, Font::with_name(name)));
+    }
+    for &name in SYSTEM_FAMILIES {
+        choices.push((name, Font::with_name(name)));
+    }
+    choices
 }
 
 /// Resolve a font family display name to its `Font`, falling back to the system
@@ -201,6 +252,10 @@ enum Message {
     SelectTheme(String),
     /// Set the base content font size (points).
     SetFontSize(f32),
+    /// Nudge the font size by ±1 pt (⌘+ / ⌘-), clamped like the slider.
+    ZoomFont(f32),
+    /// Reset the font size to the default (⌘0).
+    ResetFontSize,
     /// Pick the monospace font family (by display name).
     SelectFont(String),
     /// Pick the calculator language mode (Normal / Programmer / Finance).
@@ -367,6 +422,10 @@ impl App {
                 self.theme_name = name;
             }
             Message::SetFontSize(size) => self.font_size = size.clamp(9.0, 28.0),
+            Message::ZoomFont(delta) => {
+                self.font_size = (self.base_font_size() + delta).clamp(9.0, 28.0)
+            }
+            Message::ResetFontSize => self.font_size = 14.0,
             Message::SelectFont(name) => self.font_name = name,
             Message::SelectMode(mode) => self.session.set_language_mode(mode),
             Message::CycleMode => {
@@ -939,6 +998,12 @@ impl App {
                         "x" | "X" => Some(Message::Cut),
                         "v" | "V" => Some(Message::Paste),
                         "," => Some(Message::OpenSettings),
+                        // Font zoom (like the Swift app's View menu): ⌘= / ⌘+
+                        // grow, ⌘- / ⌘_ shrink, ⌘0 resets — so the size is
+                        // adjustable without opening Settings.
+                        "=" | "+" => Some(Message::ZoomFont(1.0)),
+                        "-" | "_" => Some(Message::ZoomFont(-1.0)),
+                        "0" => Some(Message::ResetFontSize),
                         _ => None,
                     }
                 }
@@ -2284,19 +2349,20 @@ impl App {
 }
 
 fn main() -> iced::Result {
-    iced::application(App::launch, App::update, App::view)
+    let mut app = iced::application(App::launch, App::update, App::view)
         .title(App::window_title)
         .theme(App::theme)
         .subscription(App::subscription)
-        .font(icons::FONT_BYTES) // the embedded icon font (toolbar/toggle/close glyphs)
-        .font(JETBRAINS_MONO_BYTES) // bundled monospace families, selectable in Settings
-        .font(SOURCE_CODE_PRO_BYTES)
-        .window(iced::window::Settings {
-            size: iced::Size::new(1040.0, 680.0),
-            icon: app_icon(), // taskbar icon on Linux/Windows (macOS uses the .app)
-            ..Default::default()
-        })
-        .run()
+        .font(icons::FONT_BYTES); // the embedded icon font (toolbar/toggle/close glyphs)
+    for bytes in BUNDLED_FONT_BYTES {
+        app = app.font(bytes); // bundled monospace families, selectable in Settings
+    }
+    app.window(iced::window::Settings {
+        size: iced::Size::new(1040.0, 680.0),
+        icon: app_icon(), // taskbar icon on Linux/Windows (macOS uses the .app)
+        ..Default::default()
+    })
+    .run()
 }
 
 #[cfg(test)]
@@ -2329,5 +2395,52 @@ mod tests {
         let next = next_selection(start, 2, 1, true);
         assert_eq!(next.anchor, (4, 2));
         assert_eq!(next.extent, (6, 3));
+    }
+
+    #[test]
+    fn font_choices_lead_with_system_then_bundled_then_platform() {
+        let names: Vec<&str> = font_choices().iter().map(|(n, _)| *n).collect();
+        assert_eq!(names[0], "System");
+        for family in BUNDLED_FAMILIES {
+            assert!(
+                names.contains(&family),
+                "bundled {family} missing from picker"
+            );
+        }
+        for &family in SYSTEM_FAMILIES {
+            assert!(
+                names.contains(&family),
+                "system {family} missing from picker"
+            );
+        }
+        // System + 5 bundled + the curated per-OS system list.
+        assert_eq!(
+            names.len(),
+            1 + BUNDLED_FAMILIES.len() + SYSTEM_FAMILIES.len()
+        );
+    }
+
+    #[test]
+    fn font_for_resolves_bundled_and_falls_back() {
+        // A bundled family resolves to a named font, an unknown name to MONO.
+        assert_eq!(font_for("Fira Mono"), Font::with_name("Fira Mono"));
+        assert_eq!(font_for("No Such Font 12345"), MONO);
+    }
+
+    #[test]
+    fn zoom_font_is_clamped_to_the_slider_range() {
+        let mut app = App {
+            font_size: 27.0,
+            ..App::default()
+        };
+        let _ = app.update(Message::ZoomFont(1.0)); // 28
+        assert_eq!(app.font_size, 28.0);
+        let _ = app.update(Message::ZoomFont(1.0)); // clamps at 28
+        assert_eq!(app.font_size, 28.0);
+        app.font_size = 9.0;
+        let _ = app.update(Message::ZoomFont(-1.0)); // clamps at 9
+        assert_eq!(app.font_size, 9.0);
+        let _ = app.update(Message::ResetFontSize);
+        assert_eq!(app.font_size, 14.0);
     }
 }
