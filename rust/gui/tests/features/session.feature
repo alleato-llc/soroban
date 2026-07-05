@@ -52,6 +52,22 @@ Feature: The Rust app session — calculator and sheet, headless
     When I enter "History[1].value"
     Then the result is "42"
 
+  Scenario: Autocomplete completes the trailing identifier
+    Then the suggestions for "fac" include "fact"
+    And completing "fac" at "fact" yields "fact("
+    And the suggestions for "2 + sq" include "sqrt"
+    And completing "2 + sq" at "sqrt" yields "2 + sqrt("
+
+  Scenario: Autocomplete offers user variables and constants
+    When I enter "rate = 5"
+    Then the suggestions for "ra" include "rate"
+    And completing "ra" at "rate" yields "rate"
+    And the suggestions for "ta" include "tau"
+
+  Scenario: Autocomplete is silent with nothing to complete
+    Then the suggestions for "2 + " are empty
+    And the suggestions for "" are empty
+
   Scenario: A bad expression fails with a message
     When I enter "1 / 0"
     Then the last line fails mentioning "division by zero"

@@ -123,6 +123,49 @@ fn the_mode_is(world: &mut SessionWorld, expected: String) {
     );
 }
 
+#[then(regex = r#"^the suggestions for "(.*)" include "(.*)"$"#)]
+fn suggestions_include(world: &mut SessionWorld, draft: String, name: String) {
+    let names: Vec<String> = world
+        .session
+        .suggestions(&draft)
+        .into_iter()
+        .map(|completion| completion.name)
+        .collect();
+    assert!(
+        names.iter().any(|candidate| candidate == &name),
+        "suggestions for '{draft}' = {names:?}, expected to include '{name}'"
+    );
+}
+
+#[then(regex = r#"^the suggestions for "(.*)" are empty$"#)]
+fn suggestions_empty(world: &mut SessionWorld, draft: String) {
+    let names: Vec<String> = world
+        .session
+        .suggestions(&draft)
+        .into_iter()
+        .map(|completion| completion.name)
+        .collect();
+    assert!(
+        names.is_empty(),
+        "expected no suggestions for '{draft}', got {names:?}"
+    );
+}
+
+#[then(regex = r#"^completing "(.*)" at "(.*)" yields "(.*)"$"#)]
+fn completing_yields(world: &mut SessionWorld, draft: String, name: String, expected: String) {
+    let completion = world
+        .session
+        .suggestions(&draft)
+        .into_iter()
+        .find(|candidate| candidate.name == name)
+        .unwrap_or_else(|| panic!("no suggestion '{name}' for '{draft}'"));
+    assert_eq!(
+        Session::apply_completion(&draft, &completion),
+        expected,
+        "completing '{draft}' at '{name}'"
+    );
+}
+
 #[then(regex = r#"^the log defines a function "(.*)"$"#)]
 fn the_log_defines_a_function(world: &mut SessionWorld, signature: String) {
     match &last_outcome(world) {

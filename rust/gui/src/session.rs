@@ -10,8 +10,9 @@ use soroban_engine::spreadsheet::SheetDefinitionKind;
 use soroban_engine::workbook::{restore_session, SheetPayload, Workbook};
 use soroban_engine::{
     package, BigDecimal, BinaryEditorPresets, BinaryFieldSpec, BinaryView, BinaryViewUnavailable,
-    Calculator, CellAddress, CellDisplay, CellFormat, Control, EvalOutcome, FormatBuilder,
-    LanguageMode, Sheet, SheetStore, Spreadsheet, UserFunction, Value, BINARY_EDITABLE_WIDTHS,
+    Calculator, CellAddress, CellDisplay, CellFormat, Completion, CompletionKind, Control,
+    EvalOutcome, FormatBuilder, LanguageMode, Sheet, SheetStore, Spreadsheet, UserFunction, Value,
+    BINARY_EDITABLE_WIDTHS,
 };
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -367,6 +368,35 @@ impl Session {
     pub fn set_input(&mut self, text: String) {
         self.input = text;
         self.history_cursor = None;
+    }
+
+    /// Autocomplete candidates for the trailing identifier of `draft` — the
+    /// engine's completion pass over the live environment (user variables and
+    /// functions, constants, every built-in). Empty when the trailing word is
+    /// blank or already a unique full match, so an empty result closes the
+    /// popup for free.
+    pub fn suggestions(&self, draft: &str) -> Vec<Completion> {
+        let prefix = Calculator::trailing_identifier(draft);
+        if prefix.is_empty() {
+            return Vec::new();
+        }
+        self.calculator.borrow().completions(&prefix)
+    }
+
+    /// Splice `completion` over the trailing identifier of `draft`, returning
+    /// the new text (cursor implicitly at the end). A function or type
+    /// constructor also gets its opening `(` — you complete `fac` to `fact(`,
+    /// ready for arguments, matching the CLI and the AppKit original.
+    pub fn apply_completion(draft: &str, completion: &Completion) -> String {
+        let trailing = Calculator::trailing_identifier(draft);
+        // `trailing` is a suffix of `draft`, so the byte split is exact.
+        let head = &draft[..draft.len() - trailing.len()];
+        let mut out = String::from(head);
+        out.push_str(&completion.name);
+        if completion.kind == CompletionKind::Function {
+            out.push('(');
+        }
+        out
     }
 
     /// Evaluate the current line, append it to the log, and record it in the

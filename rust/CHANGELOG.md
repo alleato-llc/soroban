@@ -199,3 +199,18 @@ portable, unsigned Linux / Windows / macOS binaries.
   fully parameterized by environment (`SOROBAN_SHOT_SEED`, `_VIEW`, `_SELECT`,
   `_CHROME`, `_PANEL`, `_WIDTH`, `_FORMAT`, `_BUILD`). Adds a gui-only `png`
   dependency.
+- Phase 3b — **macOS UX pass** closing feature gaps against the AppKit app:
+  - **Real icons.** rime now embeds a tiny Lucide subset (`rime::icons`), so the
+    toolbar / view-toggle / close glyphs render crisply instead of as tofu; the
+    grid's "𝑫" definition marker and hamburger placeholders are gone.
+  - **Calculator modes.** The `:mode [normal|programmer|finance]` command
+    switches the log's input/display dialect (`Calculator::mode`) — `^`/`%`/`&`
+    become bitwise in programmer mode — mirroring the CLI's `:mode`.
+  - **History reflection.** The log tape is shared (`Rc<RefCell>`) into the
+    engine's `History` reflection, so a log-line `len(History)` /
+    `first(History).value` reads the live calculation log.
+  - **Autocomplete.** Typing in the log bar or the grid formula bar shows a
+    completion popup (`Calculator::completions` over the trailing identifier):
+    ↑/↓ move the highlight, Tab / Enter accept (a function gets its `(`), a click
+    accepts a row. The popup rises *above* the bottom-anchored log prompt, on
+    rime's new `suggestion_list`. New `SOROBAN_SHOT_TYPE` shot-harness knob.

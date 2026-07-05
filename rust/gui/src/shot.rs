@@ -18,6 +18,8 @@
 //!   strip / a control's own value).
 //! - `SOROBAN_SHOT_MENU=file|edit|view` — open that top menu's dropdown.
 //! - `SOROBAN_SHOT_EDIT=1` — open the inline editor on the selected cell.
+//! - `SOROBAN_SHOT_TYPE=<text>` — seed live input (log bar / formula bar) and
+//!   recompute completions, to capture the autocomplete popup.
 //! - `SOROBAN_SHOT_PANEL=inspector|reference|bits` — open a side/bottom panel.
 //!
 //! Capture waits three painted frames (so fonts/layout settle) then requests the
@@ -76,6 +78,18 @@ pub fn configure(app: &mut App) {
     app.load_draft();
     if std::env::var("SOROBAN_SHOT_EDIT").is_ok() {
         app.editing = true;
+    }
+    // Seed live (uncommitted) input and recompute completions, to shoot the
+    // autocomplete popup — the log bar in log view, the formula bar in grid.
+    if let Ok(text) = std::env::var("SOROBAN_SHOT_TYPE") {
+        match app.mode {
+            ViewMode::Log => app.session.set_input(text),
+            ViewMode::Grid => {
+                app.edit_draft = text;
+                app.editing = true;
+            }
+        }
+        app.refresh_suggestions();
     }
     match std::env::var("SOROBAN_SHOT_MENU").as_deref() {
         Ok("file") => app.menu_open = Some(0),

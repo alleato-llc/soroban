@@ -25,11 +25,12 @@ use rime::theme::{self, ThemeChoice};
 use rime::widgets::menu;
 use rime::widgets::{
     bit_grid, button, card, grid, menu_bar_with_trailing, section, select, slider, stepper,
-    text_field, toggle, BitBand, CellAlign, GridCell, GridSelection, Menu, MenuItem,
+    suggestion_list, text_field, toggle, BitBand, CellAlign, GridCell, GridSelection, Menu,
+    MenuItem, Suggestion,
 };
 use soroban_engine::{
-    CellAddress, CellAlignment, CellDisplay, CellFormat, FormatBuilderFieldKind, NumberFormat,
-    PaletteColor,
+    CellAddress, CellAlignment, CellDisplay, CellFormat, Completion, FormatBuilderFieldKind,
+    NumberFormat, PaletteColor,
 };
 use soroban_gui::session::{
     BinaryFieldKind, BinaryStatus, Origin, Outcome, PointClick, Session, GRID_COLS, GRID_ROWS,
@@ -97,6 +98,12 @@ struct App {
     /// Which top menu (File / Edit / View) is open, if any — the menu bar is
     /// stateless, so the host owns this. See [`Self::menus`].
     menu_open: Option<usize>,
+    /// Live autocomplete candidates for the focused input (the log bar or the
+    /// grid formula bar), recomputed on every keystroke; empty hides the popup.
+    suggestions: Vec<Completion>,
+    /// Which suggestion row is highlighted (↑/↓ move it, Enter accepts it);
+    /// `None` means no row is selected, so Enter submits rather than completes.
+    suggest_highlight: Option<usize>,
     /// The review-screenshot harness, present only when `SOROBAN_SHOT` is set —
     /// otherwise `None` and the whole thing is inert. See [`shot`].
     shot: Option<shot::Shot>,
@@ -186,6 +193,11 @@ enum Message {
     JumpTo(CellAddress),
     /// Insert a sample expression from the empty-state into the log input.
     SampleClicked(String),
+    /// Accept the autocomplete row at this index (a click on a popup row).
+    SuggestionPicked(usize),
+    /// Accept the highlighted autocomplete row, or the first if none is
+    /// highlighted (the Tab key); a no-op when the popup is closed.
+    AcceptSuggestion,
     /// Review-screenshot harness lifecycle (see [`shot`]); inert unless armed.
     Shot(shot::Event),
 }
@@ -200,17 +212,32 @@ impl App {
             self.menu_open = None;
         }
         match message {
-            Message::InputChanged(text) => self.session.set_input(text),
+            Message::InputChanged(text) => {
+                self.session.set_input(text);
+                self.refresh_suggestions();
+            }
             Message::Submit => {
+                // Enter accepts a highlighted suggestion instead of submitting;
+                // with none highlighted it submits the line (the popup, if any,
+                // clears on the fresh empty input).
+                if let Some(index) = self.suggest_highlight {
+                    return self.accept_suggestion(index);
+                }
                 self.session.submit();
+                self.clear_suggestions();
                 // The bit editor tracks the newest result until you flip a bit.
                 if self.binary_visible {
                     self.session.refresh_binary();
                     self.sync_binary_field_drafts();
                 }
             }
-            // Arrows: history recall in the log (↑/↓ only); cell navigation in the
-            // grid (when not editing — an open editor owns its own arrows).
+            // Arrows: an open autocomplete popup claims ↑/↓ first (move the
+            // highlight — the dual-role the rime widget documents); otherwise
+            // history recall in the log, cell navigation in the grid (when not
+            // editing — an open editor owns its own arrows).
+            Message::ArrowKey(drow, _, _) if drow != 0 && !self.suggestions.is_empty() => {
+                self.move_highlight(drow);
+            }
             Message::ArrowKey(drow, dcol, extend) => match self.mode {
                 ViewMode::Log => {
                     if drow < 0 {
@@ -240,14 +267,20 @@ impl App {
             Message::EditChanged(text) => {
                 self.edit_draft = text;
                 self.editing = true;
+                self.refresh_suggestions();
             }
-            // Enter in the editor: commit, then advance the selection down (Excel).
+            // Enter in the editor: accept a highlighted suggestion, else commit
+            // and advance the selection down (Excel).
             Message::EditSubmitted => {
+                if let Some(index) = self.suggest_highlight {
+                    return self.accept_suggestion(index);
+                }
                 self.commit_edit();
                 self.move_selection(1, 0, false);
             }
             Message::EditCanceled => {
                 self.editing = false;
+                self.clear_suggestions();
                 self.load_draft();
             }
             // Double-click a cell → edit it in place: select it, load its raw,
@@ -486,6 +519,15 @@ impl App {
                 self.session.set_input(sample);
                 return operation::focus(log_input_id());
             }
+            Message::SuggestionPicked(index) => return self.accept_suggestion(index),
+            Message::AcceptSuggestion => {
+                // Tab accepts the highlighted row, or the top one; inert when the
+                // popup is closed so Tab still behaves normally elsewhere.
+                if !self.suggestions.is_empty() {
+                    let index = self.suggest_highlight.unwrap_or(0);
+                    return self.accept_suggestion(index);
+                }
+            }
             Message::Shot(event) => return shot::handle(self, event),
         }
         Task::none()
@@ -533,6 +575,7 @@ impl App {
     /// a stale reference-splice can't hijack the next click.
     fn load_draft(&mut self) {
         self.session.clear_point_anchor();
+        self.clear_suggestions();
         match self.active_cell() {
             Some(address) => {
                 self.edit_draft = self.session.cell_raw(address);
@@ -543,6 +586,79 @@ impl App {
                 self.name_draft.clear();
             }
         }
+    }
+
+    /// Recompute autocomplete candidates for whichever input is focused (the
+    /// log bar in Log view, the formula bar in Grid view) and reset the
+    /// highlight. Called on every keystroke; an empty result hides the popup.
+    fn refresh_suggestions(&mut self) {
+        let draft = match self.mode {
+            ViewMode::Log => self.session.input().to_string(),
+            ViewMode::Grid => self.edit_draft.clone(),
+        };
+        self.suggestions = self.session.suggestions(&draft);
+        self.suggest_highlight = None;
+    }
+
+    /// The autocomplete popup for the focused input, or `None` when there's
+    /// nothing to complete. Each row shows the candidate plus a dim kind badge
+    /// (`ƒ` / `var` / `const`); a click accepts it.
+    fn suggestion_popup(&self) -> Option<Element<'_, Message>> {
+        let rows: Vec<Suggestion> = self
+            .suggestions
+            .iter()
+            .map(|completion| {
+                Suggestion::with_hint(completion.name.clone(), completion.kind.badge())
+            })
+            .collect();
+        suggestion_list(rows, self.suggest_highlight, Message::SuggestionPicked)
+    }
+
+    /// Drop any open autocomplete popup (on submit, cancel, or navigation).
+    fn clear_suggestions(&mut self) {
+        self.suggestions.clear();
+        self.suggest_highlight = None;
+    }
+
+    /// Move the highlighted suggestion row by `delta` (±1). Down from "none"
+    /// lands on the first row; up from the first row returns to "none" (so the
+    /// next Enter submits again); it clamps at the last row.
+    fn move_highlight(&mut self, delta: i32) {
+        let count = self.suggestions.len();
+        if count == 0 {
+            return;
+        }
+        self.suggest_highlight = match self.suggest_highlight {
+            None if delta > 0 => Some(0),
+            None => Some(count - 1),
+            Some(0) if delta < 0 => None,
+            Some(index) => {
+                let next = (index as i32 + delta).clamp(0, count as i32 - 1);
+                Some(next as usize)
+            }
+        };
+    }
+
+    /// Splice the chosen completion into the focused input, then recompute
+    /// (usually emptying the popup) and keep focus on that input.
+    fn accept_suggestion(&mut self, index: usize) -> Task<Message> {
+        let Some(completion) = self.suggestions.get(index).cloned() else {
+            return Task::none();
+        };
+        let focus = match self.mode {
+            ViewMode::Log => {
+                let next = Session::apply_completion(self.session.input(), &completion);
+                self.session.set_input(next);
+                log_input_id()
+            }
+            ViewMode::Grid => {
+                self.edit_draft = Session::apply_completion(&self.edit_draft, &completion);
+                self.editing = true;
+                edit_bar_id()
+            }
+        };
+        self.refresh_suggestions();
+        operation::focus(focus)
     }
 
     /// Write the edit bar back to the active cell as an undoable edit.
@@ -624,6 +740,7 @@ impl App {
                     Some(Message::ArrowKey(0, 1, modifiers.shift()))
                 }
                 keyboard::Key::Named(Named::Enter) => Some(Message::GridEnter),
+                keyboard::Key::Named(Named::Tab) => Some(Message::AcceptSuggestion),
                 keyboard::Key::Named(Named::Escape) => Some(Message::EditCanceled),
                 keyboard::Key::Character(character) if modifiers.command() => {
                     match character.as_str() {
@@ -1252,7 +1369,13 @@ impl App {
         .spacing(8)
         .align_y(iced::Alignment::Center);
 
-        column![log, input_bar].spacing(12).into()
+        // The popup sits just ABOVE the bottom-anchored input (a REPL wants its
+        // completions rising from the prompt, not dropping off-screen).
+        let bottom = match self.suggestion_popup() {
+            Some(popup) => column![popup, input_bar].spacing(4),
+            None => column![input_bar],
+        };
+        column![log, bottom].spacing(12).into()
     }
 
     /// The empty-state: an invitation plus a few sample expressions that insert
@@ -1307,8 +1430,12 @@ impl App {
         .align_y(iced::Alignment::Center);
 
         // Controls now render inline in their cells (below); the header keeps the
-        // formula/name bar and the format bar.
+        // formula/name bar, the autocomplete popup (dropping below the top-
+        // anchored bar), and the format bar.
         let mut header = column![edit_bar].spacing(12);
+        if let Some(popup) = self.suggestion_popup() {
+            header = header.push(popup);
+        }
         if let Some(bar) = self.format_bar() {
             header = header.push(bar);
         }
