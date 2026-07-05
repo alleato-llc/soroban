@@ -17,13 +17,27 @@ DMG.
 
 ### Added
 
+- **Working multi-sheet tabs in the Rust app.** The grid's tab strip now shows
+  every sheet: click a tab to switch, double-click to rename it inline (renames
+  rewrite every `Old!A:1` / `'Old'!A:1` reference across all sheets), and the
+  trailing **+** appends a new sheet and switches to it. A new **Sheet** menu
+  (Add / Rename / Delete / Open CSV) mirrors the actions. Previously the strip
+  showed only the active sheet's name and neither **+** nor a double-click did
+  anything.
+
+- **Right-click cell formatting.** Formatting moved off the always-on format row
+  into a per-cell right-click context menu (like the Swift app): Copy / Cut /
+  Paste / Delete, plus Number Format / Alignment / Text Color / Fill Color
+  categories that drill in place (the current choice is check-marked). Acts on
+  the selected cell.
+
 - **Signed + notarized macOS app.** The macOS release is now a **signed and
   Apple-notarized** universal `Soroban-<version>.dmg` — one download runs on
   both Intel and Apple Silicon, and it opens by double-click with no Gatekeeper
   right-click dance and no quarantine warning. (The bare, unsigned per-arch DMGs
   of rust-v0.1.2 are gone.)
 
-- **Data sheets in the Rust app.** *File → Import CSV…* brings a CSV file in as a
+- **Data sheets in the Rust app.** *File → Open CSV…* brings a CSV file in as a
   SQLite-backed data sheet (names sanitized/uniquified, columns capped at 26),
   matching the Swift app. The sheet is editable, references resolve from formulas
   (`Nums!A:2`, ranges, aggregates over the whole table up to 10,000 rows), and
@@ -37,12 +51,25 @@ DMG.
 
 ### Changed
 
+- **One CSV door: *Open CSV*.** *File → Import CSV…* is now *File → Open CSV…* —
+  the CSV opens as an editable sheet whose edits save into the `.soroban` file;
+  the original `.csv` is never modified. (Cross-ecosystem — the Swift app dropped
+  its separate *Import Data* command for the same single-door behavior.)
+
 - **The Rust release now runs entirely through salpa** (the house release tool),
   the same tool that drives the Swift track. salpa owns version → test → build →
   sign/notarize → publish; each matrix leg pulls its own platform's salpa binary
   from ghcr and builds natively. Linux/Windows still ship portable, unsigned
   `soroban-gui-<os>-<arch>` binaries; macOS ships the signed universal DMG. The
   hand-rolled DMG script and per-leg packaging in the workflow are retired.
+
+### Fixed
+
+- **The menu bar no longer covers the grid's top row.** In grid mode the File /
+  Edit / Sheet / View bar is now a persistent top toolbar with the content
+  reserved below it, instead of the auto-hiding overlay that clipped the
+  address/formula bar and column headers. The log view keeps the auto-hiding
+  REPL layout.
 
 ## [rust-v0.1.2] - 2026-07-05
 

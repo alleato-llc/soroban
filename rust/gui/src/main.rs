@@ -19,15 +19,15 @@ mod themes;
 
 use iced::widget::{column, container, mouse_area, operation, row, scrollable, text, Id};
 use iced::{
-    event, keyboard, Color, Element, Event, Font, Length, Subscription, Task, Theme, Vector,
+    event, keyboard, Color, Element, Event, Font, Length, Point, Subscription, Task, Theme, Vector,
 };
 use rime::icons::{self, glyph};
 use rime::theme;
 use rime::widgets::menu;
 use rime::widgets::{
-    bit_grid, button, caption, card, color_field, grid, menu_bar_with_trailing, section, select,
-    settings, slider, stepper, suggestion_list, text_field, toggle, BitBand, CellAlign, GridCell,
-    GridSelection, Menu, MenuItem, Suggestion,
+    bit_grid, button, caption, card, color_field, context_menu, grid, menu_bar_with_trailing,
+    rename_bar, rename_field_id, section, select, settings, slider, stepper, suggestion_list,
+    text_field, toggle, BitBand, CellAlign, GridCell, GridSelection, Menu, MenuItem, Suggestion,
 };
 use soroban_engine::{
     CellAddress, CellAlignment, CellDisplay, CellFormat, Completion, FormatBuilderFieldKind,
@@ -198,6 +198,18 @@ struct App {
     edit_draft: String,
     /// The name box's contents — the selected cell's name, if any.
     name_draft: String,
+    /// While renaming a sheet from the tab strip: the in-progress draft. `None`
+    /// when no rename is open (the inline `rename_bar` shows iff this is `Some`).
+    sheet_rename_draft: Option<String>,
+    /// The last known cursor position (window coords), tracked from mouse-move
+    /// events — where a right-click anchors the cell context menu.
+    cursor: (f32, f32),
+    /// The open cell context menu's anchor (window coords), or `None` when
+    /// closed. A right-click on a selected grid cell opens it.
+    cell_menu: Option<Point>,
+    /// Which cell-menu submenu (Number Format / Alignment / …) is currently
+    /// flown out, by index; `None` when none is hovered.
+    cell_menu_submenu: Option<usize>,
     /// True while the edit bar holds uncommitted typing — the point-mode gate:
     /// a grid click on an operand-expecting draft inserts a reference instead
     /// of moving the selection.
@@ -327,8 +339,24 @@ enum Message {
     NewWorkbook,
     OpenWorkbook,
     SaveWorkbook,
-    /// Import a CSV file as a new data sheet (SQLite-backed) in the workbook.
-    ImportCsv,
+    /// Open a CSV file as a new, EDITABLE data sheet (SQLite-backed) in the
+    /// workbook. Edits are written to the working copy and saved into the
+    /// `.soroban` file — the original `.csv` is never modified.
+    OpenCsv,
+    /// Append a new auto-named grid sheet and switch to it (the "+" tab button).
+    AddSheet,
+    /// Switch the active sheet to this tab index (a click on a tab).
+    ActivateSheet(usize),
+    /// Begin renaming the tab at this index (a double-click) — activates it and
+    /// opens the inline rename bar seeded with its current name.
+    BeginRenameSheet(usize),
+    /// The inline sheet-rename field changed.
+    SheetRenameChanged(String),
+    /// Commit the inline sheet rename (Enter) — rewrites cross-sheet references.
+    /// (Escape cancels it via `EditCanceled`, which closes the bar first.)
+    SheetRenameCommitted,
+    /// Delete the active sheet (refuses the last one).
+    DeleteSheet,
     /// Open a top-level menu (`Some(i)`) or close any open one (`None`).
     ToggleMenu(Option<usize>),
     /// Copy / cut / paste the selection as TSV via the system clipboard.
@@ -346,9 +374,21 @@ enum Message {
     /// Accept the highlighted autocomplete row, or the first if none is
     /// highlighted (the Tab key); a no-op when the popup is closed.
     AcceptSuggestion,
-    /// The cursor moved to this window-relative Y — reveals/hides the auto-
-    /// hiding menu bar as it nears / leaves the top edge.
-    PointerMoved(f32),
+    /// The cursor moved to this window-relative (x, y) — reveals/hides the auto-
+    /// hiding menu bar as it nears / leaves the top edge, and records where a
+    /// right-click would anchor the cell context menu.
+    PointerMoved(f32, f32),
+    /// A right-click on the grid — open the cell context menu at the cursor
+    /// (formatting + clipboard verbs for the selected cell).
+    OpenCellMenu,
+    /// Dismiss the cell context menu (a backdrop click).
+    CloseCellMenu,
+    /// Drill the cell menu into a category (`Some(i)`) or back to the top
+    /// level (`None`). The rime context menu is a flat panel — no flyouts — so
+    /// categories navigate in place rather than flying out.
+    ExpandCellSubmenu(Option<usize>),
+    /// Clear the selected cells' contents (the context menu's Delete).
+    DeleteSelection,
     /// Review-screenshot harness lifecycle (see [`shot`]); inert unless armed.
     Shot(shot::Event),
 }
@@ -363,7 +403,7 @@ impl App {
         if self.menu_open.is_some()
             && !matches!(
                 message,
-                Message::ToggleMenu(_) | Message::Shot(_) | Message::PointerMoved(_)
+                Message::ToggleMenu(_) | Message::Shot(_) | Message::PointerMoved(_, _)
             )
         {
             self.menu_open = None;
@@ -478,6 +518,11 @@ impl App {
                     self.settings_open = false;
                     return Task::none();
                 }
+                // Then an open sheet-rename bar.
+                if self.sheet_rename_draft.is_some() {
+                    self.sheet_rename_draft = None;
+                    return Task::none();
+                }
                 self.editing = false;
                 self.clear_suggestions();
                 self.load_draft();
@@ -542,18 +587,22 @@ impl App {
                 self.load_draft();
             }
             // Format edits mutate one field of the active cell's format and
-            // commit it (display-only, undoable).
+            // commit it (display-only, undoable), then close the context menu.
             Message::SetNumberFormat(index) => {
                 self.apply_format(|format| format.number_format = number_format_at(index));
+                self.close_cell_menu();
             }
             Message::SetAlignment(index) => {
                 self.apply_format(|format| format.alignment = CellAlignment::ALL[index]);
+                self.close_cell_menu();
             }
             Message::SetTextColor(index) => {
                 self.apply_format(|format| format.text_color = color_choice(index));
+                self.close_cell_menu();
             }
             Message::SetFillColor(index) => {
                 self.apply_format(|format| format.fill_color = color_choice(index));
+                self.close_cell_menu();
             }
             Message::NameChanged(text) => self.name_draft = text,
             Message::NameCommitted => {
@@ -683,20 +732,67 @@ impl App {
                     }
                 }
             }
-            Message::ImportCsv => {
+            Message::OpenCsv => {
                 if let Some(path) = rfd::FileDialog::new()
                     .add_filter("CSV", &["csv"])
                     .pick_file()
                 {
+                    // Opens an editable COPY (a SQLite-backed data sheet); the
+                    // source .csv is never written back — edits land in the
+                    // .soroban file on Save.
                     if self.session.import_csv(&path).is_ok() {
+                        self.mode = ViewMode::Grid;
                         self.load_draft();
                         self.after_document_change();
                     }
                 }
             }
+            // Multi-sheet: append + switch, click-to-switch, double-click rename,
+            // delete. The AppKit app's `SheetTabBar` behavior.
+            Message::AddSheet => {
+                if self.session.add_sheet().is_ok() {
+                    self.mode = ViewMode::Grid;
+                    self.sheet_rename_draft = None;
+                    self.reset_sheet_view();
+                }
+            }
+            Message::ActivateSheet(index) => {
+                self.sheet_rename_draft = None; // a tab click cancels an open rename
+                self.session.activate_sheet(index);
+                self.reset_sheet_view();
+            }
+            Message::BeginRenameSheet(index) => {
+                self.mode = ViewMode::Grid; // the rename bar lives under the grid strip
+                self.session.activate_sheet(index);
+                self.reset_sheet_view();
+                self.sheet_rename_draft = Some(self.session.active_sheet_name());
+                return operation::focus(rename_field_id());
+            }
+            Message::SheetRenameChanged(text) => {
+                if let Some(draft) = self.sheet_rename_draft.as_mut() {
+                    *draft = text;
+                }
+            }
+            Message::SheetRenameCommitted => {
+                if let Some(draft) = self.sheet_rename_draft.clone() {
+                    // On a valid rename, close the bar; on an invalid/duplicate
+                    // name, keep it open so the typed name can be corrected.
+                    if self.session.rename_active_sheet(&draft).is_ok() {
+                        self.sheet_rename_draft = None;
+                        self.load_draft();
+                    }
+                }
+            }
+            Message::DeleteSheet => {
+                if self.session.remove_active_sheet().is_ok() {
+                    self.sheet_rename_draft = None;
+                    self.reset_sheet_view();
+                }
+            }
             // Copy / cut / paste the grid selection as TSV (Excel-interop). Only
             // in the grid — in the log, ⌘C/⌘V fall through to normal text copy.
             Message::Copy => {
+                self.close_cell_menu();
                 if self.mode == ViewMode::Grid {
                     if let Some((r0, r1, c0, c1)) = self.selection_bounds() {
                         return iced::clipboard::write(self.session.selection_tsv(r0, r1, c0, c1));
@@ -704,6 +800,7 @@ impl App {
                 }
             }
             Message::Cut => {
+                self.close_cell_menu();
                 if self.mode == ViewMode::Grid {
                     if let Some((r0, r1, c0, c1)) = self.selection_bounds() {
                         let tsv = self.session.selection_tsv(r0, r1, c0, c1);
@@ -714,6 +811,7 @@ impl App {
                 }
             }
             Message::Paste => {
+                self.close_cell_menu();
                 if self.mode == ViewMode::Grid && !self.editing && self.active_cell().is_some() {
                     return iced::clipboard::read().map(Message::Pasted);
                 }
@@ -747,8 +845,28 @@ impl App {
             }
             // Reveal the menu bar while the pointer hugs the top edge; a small
             // margin past the bar keeps it steady once revealed (no flicker as
-            // the cursor drifts onto a menu item).
-            Message::PointerMoved(y) => self.menu_revealed = y <= menu::BAR_HEIGHT + 8.0,
+            // the cursor drifts onto a menu item). Also record the cursor for the
+            // right-click cell menu.
+            Message::PointerMoved(x, y) => {
+                self.cursor = (x, y);
+                self.menu_revealed = y <= menu::BAR_HEIGHT + 8.0;
+            }
+            // Right-click on a selected grid cell → the cell context menu.
+            Message::OpenCellMenu => {
+                if self.mode == ViewMode::Grid && self.active_cell().is_some() {
+                    self.cell_menu = Some(Point::new(self.cursor.0, self.cursor.1));
+                    self.cell_menu_submenu = None;
+                }
+            }
+            Message::CloseCellMenu => self.close_cell_menu(),
+            Message::ExpandCellSubmenu(which) => self.cell_menu_submenu = which,
+            Message::DeleteSelection => {
+                if let Some((r0, r1, c0, c1)) = self.selection_bounds() {
+                    self.session.clear_range(r0, r1, c0, c1);
+                    self.load_draft();
+                }
+                self.close_cell_menu();
+            }
             Message::Shot(event) => return shot::handle(self, event),
         }
         Task::none()
@@ -761,6 +879,86 @@ impl App {
         self.editing = false;
         self.saved_revision = self.session.revision();
         self.load_draft();
+    }
+
+    /// Reset the grid's view state after the *active sheet* changes (switch /
+    /// add / delete): drop the selection, scroll, and any open editor, and
+    /// reload the edit bar for the now-active sheet. Unlike
+    /// [`after_document_change`](Self::after_document_change) it leaves
+    /// `saved_revision` alone, so an add/delete still reads as dirty.
+    fn reset_sheet_view(&mut self) {
+        self.grid_selection = None;
+        self.grid_offset = Vector::new(0.0, 0.0);
+        self.editing = false;
+        self.clear_suggestions();
+        self.load_draft();
+    }
+
+    /// Close the right-click cell context menu.
+    fn close_cell_menu(&mut self) {
+        self.cell_menu = None;
+        self.cell_menu_submenu = None;
+    }
+
+    /// The right-click cell menu's items for the active cell: clipboard verbs
+    /// and formatting categories (Number Format / Alignment / Text / Fill).
+    /// Mirrors the Swift app's per-cell context menu — the replacement for the
+    /// always-on format row. Since the rime context menu is a flat panel (no
+    /// flyouts), a category drills IN PLACE: picking one replaces the panel with
+    /// that category's options plus a "‹ Back" row.
+    fn cell_menu_items(&self) -> Vec<MenuItem<Message>> {
+        let format = self
+            .active_cell()
+            .map(|address| self.session.cell_format(address))
+            .unwrap_or_default();
+
+        // A category's single-select options, the current one check-marked, led
+        // by a Back row that returns to the top level.
+        let options = |labels: &[&'static str], selected: usize, msg: fn(usize) -> Message| {
+            let mut items = vec![
+                MenuItem::action("‹ Back", Message::ExpandCellSubmenu(None)),
+                MenuItem::separator(),
+            ];
+            items.extend(labels.iter().enumerate().map(|(i, label)| {
+                let mark = if i == selected { "✓ " } else { "   " };
+                MenuItem::action(format!("{mark}{label}"), msg(i))
+            }));
+            items
+        };
+
+        match self.cell_menu_submenu {
+            Some(0) => options(
+                &NUMBER_FORMAT_LABELS,
+                number_format_index(&format.number_format),
+                Message::SetNumberFormat,
+            ),
+            Some(1) => options(
+                &ALIGN_LABELS,
+                align_index(format.alignment),
+                Message::SetAlignment,
+            ),
+            Some(2) => options(
+                &COLOR_LABELS,
+                color_index(format.text_color),
+                Message::SetTextColor,
+            ),
+            Some(3) => options(
+                &COLOR_LABELS,
+                color_index(format.fill_color),
+                Message::SetFillColor,
+            ),
+            _ => vec![
+                MenuItem::shortcut("Copy", "⌘C", Message::Copy),
+                MenuItem::shortcut("Cut", "⌘X", Message::Cut),
+                MenuItem::shortcut("Paste", "⌘V", Message::Paste),
+                MenuItem::action("Delete", Message::DeleteSelection),
+                MenuItem::separator(),
+                MenuItem::shortcut("Number Format", "▸", Message::ExpandCellSubmenu(Some(0))),
+                MenuItem::shortcut("Alignment", "▸", Message::ExpandCellSubmenu(Some(1))),
+                MenuItem::shortcut("Text Color", "▸", Message::ExpandCellSubmenu(Some(2))),
+                MenuItem::shortcut("Fill Color", "▸", Message::ExpandCellSubmenu(Some(3))),
+            ],
+        }
     }
 
     /// True when the document has unsaved changes (the live revision has moved
@@ -1028,9 +1226,10 @@ impl App {
                 }
                 _ => None,
             },
-            // Cursor position drives the auto-hiding menu bar (window-relative Y).
+            // Cursor position drives the auto-hiding menu bar (window-relative Y)
+            // and anchors the right-click cell context menu (X, Y).
             Event::Mouse(iced::mouse::Event::CursorMoved { position }) => {
-                Some(Message::PointerMoved(position.y))
+                Some(Message::PointerMoved(position.x, position.y))
             }
             _ => None,
         });
@@ -1071,7 +1270,7 @@ impl App {
                     MenuItem::shortcut("Open…", "⌘O", Message::OpenWorkbook),
                     MenuItem::shortcut("Save", "⌘S", Message::SaveWorkbook),
                     MenuItem::separator(),
-                    MenuItem::shortcut("Import CSV…", "", Message::ImportCsv),
+                    MenuItem::shortcut("Open CSV…", "", Message::OpenCsv),
                     MenuItem::separator(),
                     MenuItem::shortcut("Settings…", "⌘,", Message::OpenSettings),
                 ],
@@ -1085,6 +1284,19 @@ impl App {
                     MenuItem::shortcut("Copy", "⌘C", Message::Copy),
                     MenuItem::shortcut("Cut", "⌘X", Message::Cut),
                     MenuItem::shortcut("Paste", "⌘V", Message::Paste),
+                ],
+            ),
+            Menu::new(
+                "Sheet",
+                vec![
+                    MenuItem::action("Add Sheet", Message::AddSheet),
+                    MenuItem::action(
+                        "Rename Sheet…",
+                        Message::BeginRenameSheet(self.session.active_sheet_index()),
+                    ),
+                    MenuItem::action("Delete Sheet", Message::DeleteSheet),
+                    MenuItem::separator(),
+                    MenuItem::action("Open CSV…", Message::OpenCsv),
                 ],
             ),
             Menu::new(
@@ -1141,19 +1353,22 @@ impl App {
             horizontal
         };
 
-        // The menu bar AUTO-HIDES: iced has no system menu bar, so the in-window
-        // one is chrome that only earns its space while you're reaching for it.
-        // Content fills the whole window; when revealed (pointer near the top, or
-        // a menu open) the bar overlays the top edge rather than pushing content
-        // down — so nothing jumps as it appears.
+        // The menu bar. In GRID mode it's a PERSISTENT toolbar (rime's intended
+        // layout): always shown, with the content reserved below it so it never
+        // covers the grid's top row (the address/formula bar and column headers).
+        // In LOG mode it AUTO-HIDES and overlays the top edge — the REPL layout,
+        // where content fills the window and nothing jumps as the bar appears.
         //
-        // CRUCIAL: `content` stays at a FIXED tree position (stack layer 0) whether
-        // or not the bar shows — the bar is a second layer that's either the real
-        // menu or a zero-size placeholder. Re-parenting `content` (wrapping it in a
-        // stack only when revealed) reset the focused text field's widget state, so
-        // the log input lost focus the instant the pointer neared the top edge —
-        // which felt like focus being "stolen while typing".
-        let bar_layer: Element<'_, Message> = if self.menu_revealed || self.menu_open.is_some() {
+        // CRUCIAL: in log mode `content` stays at a FIXED tree position (stack
+        // layer 0) whether or not the bar shows — the bar is a second layer that's
+        // either the real menu or a zero-size placeholder. Re-parenting `content`
+        // *on hover* (wrapping it only when revealed) reset the focused text
+        // field's widget state, so the log input lost focus the instant the
+        // pointer neared the top edge. The grid-mode wrapper below is keyed on the
+        // MODE (stable across hovers), so it doesn't trip that.
+        let grid_mode = self.mode == ViewMode::Grid;
+        let show_bar = grid_mode || self.menu_revealed || self.menu_open.is_some();
+        let bar_layer: Element<'_, Message> = if show_bar {
             let inspector_icon = button::icon(glyph::NAMES, Message::ToggleInspector);
             menu_bar_with_trailing(
                 self.menus(),
@@ -1167,7 +1382,28 @@ impl App {
                 .height(Length::Fixed(0.0))
                 .into()
         };
-        let base: Element<'_, Message> = iced::widget::stack![content, bar_layer].into();
+        // Grid mode reserves the bar's height at the top so the persistent
+        // toolbar sits above the content, not over it.
+        let stacked: Element<'_, Message> = if grid_mode {
+            column![
+                iced::widget::Space::new()
+                    .width(Length::Fill)
+                    .height(Length::Fixed(menu::BAR_HEIGHT)),
+                content,
+            ]
+            .into()
+        } else {
+            content
+        };
+        let base: Element<'_, Message> = iced::widget::stack![stacked, bar_layer].into();
+
+        // The right-click cell context menu overlays the grid at the cursor.
+        let base: Element<'_, Message> = if let Some(at) = self.cell_menu {
+            let items = self.cell_menu_items();
+            context_menu(base, &items, at, Message::CloseCellMenu)
+        } else {
+            base
+        };
 
         // The Settings window, when open, frames itself over everything.
         if self.settings_open {
@@ -1893,14 +2129,12 @@ impl App {
         .align_y(iced::Alignment::Center);
 
         // Controls now render inline in their cells (below); the header keeps the
-        // formula/name bar, the autocomplete popup (dropping below the top-
-        // anchored bar), and the format bar.
+        // formula/name bar and the autocomplete popup (dropping below the top-
+        // anchored bar). Formatting moved to the right-click cell context menu
+        // (see `cell_menu_items`) — the AppKit per-cell menu, not a fixed row.
         let mut header = column![edit_bar].spacing(12);
         if let Some(popup) = self.suggestion_popup() {
             header = header.push(popup);
-        }
-        if let Some(bar) = self.format_bar() {
-            header = header.push(bar);
         }
 
         let palette = *palette;
@@ -1955,86 +2189,55 @@ impl App {
 
         // A sheet-tab strip at the bottom-left, like the original's `Mortgage +`,
         // with a log/grid view-toggle icon pinned bottom-right (the AppKit app's
-        // corner affordance).
+        // corner affordance). One tab per sheet: click switches, double-click
+        // renames (inline bar), and the trailing "+" appends a new sheet.
+        let active_index = self.session.active_sheet_index();
+        let mut tabs_row = row![].spacing(2).align_y(iced::Alignment::Center);
+        for (i, name) in self.session.sheet_names().into_iter().enumerate() {
+            let color = if i == active_index {
+                palette.accent
+            } else {
+                palette.muted
+            };
+            let tab = container(text(name).font(font).size(13).color(color)).padding([4, 10]);
+            tabs_row = tabs_row.push(
+                mouse_area(tab)
+                    .on_press(Message::ActivateSheet(i))
+                    .on_double_click(Message::BeginRenameSheet(i)),
+            );
+        }
+        tabs_row = tabs_row.push(button::ghost("+", Message::AddSheet));
+
         let sheet_tab = row![
-            container(
-                text(self.session.active_sheet_name())
-                    .font(font)
-                    .size(13)
-                    .color(palette.ink)
-            )
-            .padding([4, 12])
-            .style(move |_| container::background(palette.surface)),
-            text("+").size(15).color(palette.muted),
+            container(tabs_row).style(move |_| container::background(palette.surface)),
             container(text("").size(1)).width(Length::Fill),
             button::icon(glyph::LOG, Message::ToggleView),
         ]
         .spacing(8)
         .align_y(iced::Alignment::Center);
 
-        column![header, container(sheet).height(Length::Fill), sheet_tab,]
-            .spacing(12)
-            .into()
-    }
+        // While renaming, an inline field rides above the strip (Enter commits,
+        // Escape cancels — see `EditCanceled`).
+        let mut bottom = column![].spacing(4);
+        if let Some(draft) = &self.sheet_rename_draft {
+            bottom = bottom.push(rename_bar(
+                "Rename sheet",
+                "Sheet name",
+                draft,
+                Message::SheetRenameChanged,
+                Message::SheetRenameCommitted,
+            ));
+        }
+        bottom = bottom.push(sheet_tab);
 
-    /// The format bar for the active cell: number format, alignment, and text /
-    /// fill color. Each change commits an undoable, display-only format edit.
-    fn format_bar(&self) -> Option<Element<'_, Message>> {
-        let address = self.active_cell()?;
-        let format = self.session.cell_format(address);
-        Some(
-            row![
-                labeled_select(
-                    "Format",
-                    &NUMBER_FORMAT_LABELS,
-                    number_format_index(&format.number_format),
-                    Message::SetNumberFormat,
-                ),
-                labeled_select(
-                    "Align",
-                    &ALIGN_LABELS,
-                    align_index(format.alignment),
-                    Message::SetAlignment,
-                ),
-                labeled_select(
-                    "Text",
-                    &COLOR_LABELS,
-                    color_index(format.text_color),
-                    Message::SetTextColor,
-                ),
-                labeled_select(
-                    "Fill",
-                    &COLOR_LABELS,
-                    color_index(format.fill_color),
-                    Message::SetFillColor,
-                ),
-            ]
-            .spacing(12)
-            .align_y(iced::Alignment::Center)
-            .into(),
-        )
-    }
-}
+        // A right-click anywhere on the grid opens the cell context menu (the
+        // grid itself only consumes the LEFT button, so the secondary press
+        // bubbles to this wrapper).
+        let grid_area =
+            mouse_area(container(sheet).height(Length::Fill)).on_right_press(Message::OpenCellMenu);
 
-/// A small `label [ picker ]` cluster: a dropdown over `options` showing the
-/// one at `selected`, emitting `message(index)` on a pick.
-fn labeled_select<'a>(
-    label: &'a str,
-    options: &[&'static str],
-    selected: usize,
-    message: impl Fn(usize) -> Message + 'a,
-) -> Element<'a, Message> {
-    let options: Vec<String> = options.iter().map(|option| option.to_string()).collect();
-    let current = options.get(selected).cloned();
-    let lookup = options.clone();
-    let picker = select(options, current, move |chosen: String| {
-        let index = lookup.iter().position(|o| *o == chosen).unwrap_or(0);
-        message(index)
-    });
-    row![text(label).size(12), picker]
-        .spacing(6)
-        .align_y(iced::Alignment::Center)
-        .into()
+        column![header, grid_area, bottom].spacing(12).into()
+    }
 }
 
 /// Render a cell for the grid: the display drives the base text/alignment,

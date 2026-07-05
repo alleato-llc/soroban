@@ -760,6 +760,75 @@ impl Session {
         self.store.active_sheet().name()
     }
 
+    // MARK: Worksheets
+
+    /// Every sheet's name, in tab order.
+    pub fn sheet_names(&self) -> Vec<String> {
+        self.store
+            .sheets()
+            .iter()
+            .map(|sheet| sheet.name())
+            .collect()
+    }
+
+    /// The index of the active sheet.
+    pub fn active_sheet_index(&self) -> usize {
+        self.store.active_index()
+    }
+
+    /// The number of open sheets.
+    pub fn sheet_count(&self) -> usize {
+        self.store.sheet_count()
+    }
+
+    /// True when a sheet can be removed (a workbook needs at least one).
+    pub fn can_remove_sheet(&self) -> bool {
+        self.store.sheet_count() > 1
+    }
+
+    /// Switch the active sheet to `index` (clamped; a no-op past the end).
+    /// A view change, not a document mutation — it doesn't bump `revision`
+    /// (switching tabs shouldn't mark the workbook dirty).
+    pub fn activate_sheet(&mut self, index: usize) {
+        if index < self.store.sheet_count() {
+            self.store.set_active_index(index);
+        }
+    }
+
+    /// Append a new, auto-named grid sheet and make it active. Returns its
+    /// name, or an error message (e.g. the 256-sheet cap). Mirrors Swift's
+    /// `SheetModel.addSheet` + activate.
+    pub fn add_sheet(&mut self) -> Result<String, String> {
+        let sheet = self.store.add_sheet().map_err(|error| error.to_string())?;
+        let name = sheet.name();
+        self.store.set_active_index(self.store.sheet_count() - 1);
+        self.revision += 1;
+        Ok(name)
+    }
+
+    /// Rename the active sheet, rewriting every cross-sheet reference to match
+    /// (`Old!A:1` → `New!A:1`). Returns an error message on an invalid or
+    /// duplicate name. Mirrors Swift's `SheetModel.renameActiveSheet`.
+    pub fn rename_active_sheet(&mut self, new_name: &str) -> Result<(), String> {
+        let index = self.store.active_index();
+        self.store
+            .rename_worksheet(index, new_name)
+            .map_err(|error| error.to_string())?;
+        self.revision += 1;
+        Ok(())
+    }
+
+    /// Remove the active sheet (refuses the last one). Formulas that referenced
+    /// it fall to "unknown sheet" errors, exactly as in the AppKit app.
+    pub fn remove_active_sheet(&mut self) -> Result<(), String> {
+        let index = self.store.active_index();
+        self.store
+            .remove_sheet(index)
+            .map_err(|error| error.to_string())?;
+        self.revision += 1;
+        Ok(())
+    }
+
     /// How one cell computes right now. Reads route through the ordinary
     /// dependency-tracked path, so this reflects the live values. Uses
     /// interior mutability, hence `&self`.
@@ -2017,5 +2086,68 @@ mod tests {
 
         std::env::remove_var("SOROBAN_DATA_DIR");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Add appends a new sheet and switches to it; switching tabs is a view
+    /// change (no dirtying), but add/rename/delete are document mutations.
+    #[test]
+    fn add_switch_and_delete_sheets() {
+        let mut session = Session::ephemeral();
+        assert_eq!(session.sheet_count(), 1);
+        assert!(!session.can_remove_sheet());
+
+        let before = session.revision();
+        let name = session.add_sheet().unwrap();
+        assert_eq!(session.sheet_count(), 2);
+        assert_eq!(session.active_sheet_index(), 1, "the new sheet is active");
+        assert_eq!(session.active_sheet_name(), name);
+        assert!(
+            session.revision() > before,
+            "adding a sheet dirties the doc"
+        );
+        assert!(session.can_remove_sheet());
+
+        // Switching back is a pure view change — the revision doesn't move.
+        let at_two = session.revision();
+        session.activate_sheet(0);
+        assert_eq!(session.active_sheet_index(), 0);
+        assert_eq!(
+            session.revision(),
+            at_two,
+            "switching tabs isn't a mutation"
+        );
+
+        // Delete refuses the last sheet.
+        session.remove_active_sheet().unwrap();
+        assert_eq!(session.sheet_count(), 1);
+        assert!(
+            session.remove_active_sheet().is_err(),
+            "can't remove the last"
+        );
+    }
+
+    /// Renaming a sheet rewrites every cross-sheet reference to match, and a
+    /// duplicate/invalid name is refused.
+    #[test]
+    fn rename_rewrites_cross_sheet_references() {
+        let mut session = Session::ephemeral();
+        let first = session.sheet_names()[0].clone();
+        session.add_sheet().unwrap(); // "Sheet 2", now active (index 1)
+        session.rename_active_sheet("Numbers").unwrap();
+        assert_eq!(session.active_sheet_name(), "Numbers");
+
+        // A duplicate name (case-insensitive) is refused.
+        assert!(session.rename_active_sheet(&first).is_err());
+
+        // Put a value on Numbers, and a formula referencing it on the first sheet.
+        session.set_cell_raw(CellAddress::new(0, 0), "41");
+        session.activate_sheet(0);
+        session.set_cell_raw(CellAddress::new(0, 0), "=Numbers!A:1 + 1");
+
+        // Rename Numbers → Nums; the first sheet's formula is respelled.
+        session.activate_sheet(1);
+        session.rename_active_sheet("Nums").unwrap();
+        session.activate_sheet(0);
+        assert_eq!(session.cell_raw(CellAddress::new(0, 0)), "=Nums!A:1 + 1");
     }
 }

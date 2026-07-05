@@ -361,6 +361,15 @@ impl StoreInner {
         let Value::String(new_name) = &arguments[1] else {
             return Err(EngineError::domain("renameWorksheet()'s new name is text"));
         };
+        self.rename_worksheet(index, new_name)?;
+        Ok(self.worksheet_handle(index))
+    }
+
+    /// Renames the sheet at `index` AND rewrites every `Old!A:1` / `'Old'!A:1`
+    /// qualifier across all grid sheets — the same auto-rewrite the UI rename
+    /// performs (references are by name; that's why you rename). Shared by the
+    /// `renameWorksheet` mutation command and the GUI's tab rename.
+    pub(crate) fn rename_worksheet(&self, index: usize, new_name: &str) -> Result<(), EngineError> {
         let old_name = self.sheets.borrow()[index].name();
         self.rename(index, new_name)?; // validates + recalculates
         let resolved = self.sheets.borrow()[index].name();
@@ -376,7 +385,7 @@ impl StoreInner {
             }
             self.recalculate();
         }
-        Ok(self.worksheet_handle(index))
+        Ok(())
     }
 
     /// Removes a worksheet (refuses the last one) and returns the new
@@ -693,6 +702,17 @@ impl SheetStore {
             .set(index.min(count.saturating_sub(1)));
     }
 
+    /// The index of the currently active sheet (clamped into range).
+    pub fn active_index(&self) -> usize {
+        let count = self.inner.sheets.borrow().len();
+        self.inner.active_index.get().min(count.saturating_sub(1))
+    }
+
+    /// The number of open sheets.
+    pub fn sheet_count(&self) -> usize {
+        self.inner.sheets.borrow().len()
+    }
+
     pub fn sheet_named(&self, name: &str) -> Option<Rc<Sheet>> {
         self.inner.sheet_named(name)
     }
@@ -718,6 +738,12 @@ impl SheetStore {
 
     pub fn rename(&self, index: usize, new_name: &str) -> Result<(), EngineError> {
         self.inner.rename(index, new_name)
+    }
+
+    /// Renames the sheet at `index` and rewrites every cross-sheet reference
+    /// (`Old!A:1` / `'Old'!A:1`) to match — the UI tab-rename path.
+    pub fn rename_worksheet(&self, index: usize, new_name: &str) -> Result<(), EngineError> {
+        self.inner.rename_worksheet(index, new_name)
     }
 
     /// Drops every sheet's memo — a log variable changed, a sheet was
