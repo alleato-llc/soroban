@@ -49,7 +49,14 @@ cd rust && cargo test -p soroban-engine --test gherkin
 # on the sibling rime kit by a relative PATH (../../../rime/rime) plus iced/wgpu,
 # so it builds/tests standalone, not via --workspace. Phase 4 folds it back in.
 cd rust/gui && cargo build          # or: cargo test / cargo clippy
-# Env-gated screenshot harness (permanent, src/shot.rs) — never re-add/remove it:
+# The UI-free `Session` (src/session.rs) is exercised by a Rust-only headless
+# cucumber suite (tests/session.feature) — the fast counterpart to Swift's
+# SorobanSessionTests; NOT a cross-ecosystem oracle (that's spec/anzan):
+cd rust/gui && cargo test --test session
+# Env-gated screenshot harness (permanent, src/shot.rs) — never re-add/remove it;
+# extend with new SOROBAN_SHOT_* vars for new views. Bit-editor knobs:
+# SOROBAN_SHOT_PANEL=bits, SOROBAN_SHOT_WIDTH=<n>, SOROBAN_SHOT_FORMAT="<preset>",
+# SOROBAN_SHOT_BUILD=new|edit (open the format builder).
 cd rust/gui && SOROBAN_SHOT=/tmp/out.png SOROBAN_SHOT_VIEW=grid cargo run -q
 
 # Engine coverage (kept ≥ ~92% regions; add tests for new error branches —

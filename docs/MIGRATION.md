@@ -32,8 +32,17 @@ reads as future tense, cross-check against this section.
 - **3b — `gui` slices ①–⑥**: all landed, each demoed. Beyond the slice plan the
   gui also gained inline cell editing, in-cell controls, keyboard navigation
   (arrows / shift-arrows / Enter / type-to-edit / Esc), copy·cut·paste as TSV,
-  column-width resize, and a File/Edit/View **menu bar** with corner icons
-  (replacing an earlier auto-hiding button strip).
+  column-width resize, a File/Edit/View **menu bar** with corner icons
+  (replacing an earlier auto-hiding button strip), full **point mode** (Excel
+  reference insertion incl. re-click-replace and shift-click-extend-to-range),
+  and the **binary bit-editor at parity with the AppKit app** — a width picker,
+  the preset catalog, per-field editors (enum pickers, base-aware numeric
+  inputs, flag chips, reserved/unused gaps), and a visual **Build / Edit / Save**
+  for custom formats that persist in the workbook. The bit-editor and session
+  behavior are pinned by a **Rust-only headless cucumber suite** driving the
+  UI-free `Session` (`rust/gui/tests/session.feature`, ~90% `session.rs`
+  coverage) — the fast counterpart to Swift's `SorobanSessionTests`; it's not a
+  cross-ecosystem oracle (that stays `spec/anzan`), just the port's own net.
 
 **Remaining `rust/gui` gaps** (fidelity, not blockers): multiple sheets (the `+`
 tab is decorative), row-height resize, structural edits (insert/delete rows &
@@ -186,10 +195,14 @@ hold no state, know nothing of the domain). Soroban needs, roughly in order:
    (suggestions when open, history otherwise) + programmatic-write suppression.
    Generalizes rime's `text_field`; fed/tty want this too.
 3. **`bit_grid`** — the macOS-Calculator-style bit editor (labeled bit buttons,
-   field bands, enum pickers). This is also **Tama's** core. *(As built: the bit
-   editor lives directly in `rust/gui` on rime's `bit_grid`; the once-planned
-   `rust/kit` model crate mirroring `swift/Kit` was not split out. If Rust Tama
-   happens, extract it then.)*
+   field bands with owned labels). This is also **Tama's** core. *(As built: the
+   bit editor lives directly in `rust/gui` on rime's `bit_grid`; the per-field
+   editors — enum pickers, numeric inputs, flag chips — and the visual format
+   builder are gui/`Session` code, not rime widgets. `bit_grid` draws the bit
+   register + colored `BitBand`s (labels are owned `String`s, so a host can pass
+   a per-render decode like `owner rwx`). The once-planned `rust/kit` model crate
+   mirroring `swift/Kit` was not split out; if Rust Tama happens, extract it
+   then.)*
 4. Small gaps as found: `log_list` (selectable text + context menu rows),
    caret-under-column error rendering (monospace + offset — trivial), cell
    format menus (rime `menu_bar`/`context_menu` already exist).
