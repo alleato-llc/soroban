@@ -124,6 +124,24 @@ targets:
         product: BinaryEditorKit
       - package: BigInt
         product: BigInt
+    # Same generator as the macOS target — it now also emits the iOS 1024 icon.
+    preBuildScripts:
+      - name: Generate App Icon
+        script: |
+          for PY in python3 /opt/homebrew/bin/python3 /usr/local/bin/python3; do
+            if command -v "$PY" &>/dev/null && "$PY" -c 'import PIL' &>/dev/null; then
+              exec "$PY" "${PROJECT_DIR}/../scripts/generate_icon.py"
+            fi
+          done
+          if ls "${PROJECT_DIR}/App/Resources/Assets.xcassets/AppIcon.appiconset/"*.png &>/dev/null; then
+            echo "warning: no python3 with Pillow found — reusing existing icon PNGs"
+          else
+            echo "error: no python3 with Pillow found and no generated icons present (pip3 install Pillow)"
+            exit 1
+          fi
+        basedOnDependencyAnalysis: false
+        outputFiles:
+          - $(PROJECT_DIR)/App/Resources/Assets.xcassets/AppIcon.appiconset/icon_ios_1024.png
     info:
       # Generated outside App/Resources so it isn't also copied as a resource.
       path: App/Info-iOS.plist
@@ -153,6 +171,7 @@ targets:
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "6.0"
         TARGETED_DEVICE_FAMILY: "2" # iPad only
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         SWIFT_EMIT_LOC_STRINGS: false
 
   # Gherkin specs for the SESSION layer (SheetModel: undo, named-cell
