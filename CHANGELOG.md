@@ -221,13 +221,22 @@ point of truth for downloads.
   scenarios — it drives the UI-free `Session` directly, no iced, no rendering,
   no `xcodebuild`). Covers the calculator (log values, `ans`, function defs,
   errors, comments) and the sheet (cell values / formulas / labels / errors,
-  shared log↔grid variables, undo·redo, **point mode** (Excel-style reference
-  insertion — clicking a cell mid-formula splices its reference into the draft),
-  checkbox·slider commits, TSV copy/paste, named cells, column-width round-trip,
-  workbook save/reopen). The gui crate gains a `[lib]` target exposing `Session`
-  so the suite can link it without iced. Rust-only by design (the cross-ecosystem
-  parity oracle stays `spec/anzan`, run by the engine's gherkin suite). No engine
-  behavior change.
+  shared log↔grid variables, undo·redo of cell / format / name edits, **point
+  mode** (Excel-style reference insertion — clicking a cell mid-formula splices
+  its reference into the draft), all four controls (checkbox·slider·stepper·
+  dropdown), TSV copy/cut/paste incl. rectangular blocks and edge clipping,
+  named cells + rename-rewrite + duplicate rejection, cell formatting
+  (display-only), ↑/↓ input-history recall, the names inspector (log + sheet-
+  scoped variables/functions/data types + named cells), the searchable function
+  reference, the binary bit-editor (reflect / flip / use / unavailable), column-
+  width round-trip, and workbook save·reopen·new). **39 scenarios / 213 steps,
+  ~0.15s**, taking `session.rs` to **~90% line coverage** (`cargo llvm-cov
+  --test session --ignore-filename-regex 'main\.rs|shot\.rs'` — the iced view/
+  update shell and the screenshot harness aren't headless-testable, like the
+  Swift `SorobanCLI` is excluded from engine coverage). The gui crate gains a
+  `[lib]` target exposing `Session` so the suite can link it without iced.
+  Rust-only by design (the cross-ecosystem parity oracle stays `spec/anzan`, run
+  by the engine's gherkin suite). No engine behavior change.
 - Rust ecosystem, Phase 3b — **point mode inserts a cell's *name*** (`'Rate'`),
   not just its `A:1` address, when the clicked cell is named — matching the
   AppKit app; the logic is centralized in a tested `Session::point_click`

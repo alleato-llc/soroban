@@ -10,6 +10,9 @@ Feature: The Rust app session — calculator and sheet, headless
 
   # ---- Calculator (the log) ----
 
+  Scenario: A fresh session starts on Sheet 1
+    Then the active sheet is named "Sheet 1"
+
   Scenario: A calculation lands in the log at full precision
     When I enter "0.1 + 0.2"
     Then the result is "0.3"
@@ -33,6 +36,33 @@ Feature: The Rust app session — calculator and sheet, headless
     When I enter "# just a note"
     Then the last line is a note "just a note"
 
+  Scenario: Up and down recall the input history
+    When I enter "10 + 1"
+    And I enter "20 + 2"
+    And I recall the previous input
+    Then the input line holds "20 + 2"
+    When I recall the previous input
+    Then the input line holds "10 + 1"
+    When I recall the next input
+    Then the input line holds "20 + 2"
+
+  Scenario: The reference documents a built-in function
+    Then the reference for "pmt" documents it
+
+  Scenario: The inspector lists log-defined names
+    When I enter "rate = 0.0825"
+    And I enter "double(x) = x * 2"
+    And I enter "data Point { x: Number, y: Number }"
+    Then the inspector lists the variable "rate"
+    And the inspector lists the function "double(x)"
+    And the inspector lists the data type "Point"
+
+  Scenario: The inspector also lists sheet-scoped definitions
+    When I set cell A:1 to "taxRate = 0.0825"
+    And I set cell A:2 to "tax(x) = x * taxRate"
+    Then the inspector lists the variable "taxRate"
+    And the inspector lists the function "tax(x)"
+
   # ---- Sheet (the grid) ----
 
   Scenario: A number cell shows its value
@@ -54,6 +84,49 @@ Feature: The Rust app session — calculator and sheet, headless
     When I enter "rate = 0.1"
     And I set cell A:1 to "=100 * rate"
     Then cell A:1 shows "10"
+
+  Scenario: A cell can be formatted, display-only, and it round-trips
+    When I set cell A:1 to "0.0825"
+    And I make cell A:1 bold
+    And I format cell A:1 as percent
+    Then cell A:1 is bold
+    And cell A:1 is formatted as percent
+    And cell A:1 shows "0.0825"
+
+  Scenario: Renaming a named cell rewrites the formulas that reference it
+    When I set cell A:1 to "5"
+    And I name cell A:1 "Rate"
+    And I set cell B:1 to "=100 * 'Rate'"
+    Then cell B:1 shows "500"
+    When I rename cell A:1 to "Factor"
+    Then cell B:1 contains "=100 * 'Factor'"
+    And cell B:1 shows "500"
+    When I undo
+    Then cell B:1 contains "=100 * 'Rate'"
+
+  Scenario: Undo reverts a formatting change and naming a cell
+    When I set cell A:1 to "5"
+    And I make cell A:1 bold
+    And I name cell A:1 "Rate"
+    Then cell A:1 is bold
+    When I undo
+    Then cell A:1 is not named
+    When I undo
+    Then cell A:1 is not bold
+
+  Scenario: Control cells are enumerated for the sheet
+    When I set cell A:1 to "n = stepper(5, 1, 20)"
+    And I set cell B:2 to "flag = checkbox(true)"
+    Then the sheet has a control in A:1
+    And the sheet has a control in B:2
+
+  Scenario: Starting a new workbook clears the sheet and the log's variables
+    When I enter "taxRate = 5"
+    And I set cell A:1 to "42"
+    And I start a new workbook
+    Then cell A:1 shows ""
+    When I enter "taxRate"
+    Then the last line fails mentioning "unknown variable"
 
   # ---- Undo / redo ----
 
@@ -108,6 +181,20 @@ Feature: The Rust app session — calculator and sheet, headless
     And I set the slider in A:1 to "0.12"
     Then cell A:1 shows "slider:0.12"
 
+  Scenario: Stepping a stepper walks its value by the step
+    When I set cell A:1 to "n = stepper(5, 1, 20)"
+    Then cell A:1 shows "slider:5"
+    When I step A:1 up
+    Then cell A:1 shows "slider:6"
+    When I step A:1 down
+    Then cell A:1 shows "slider:5"
+
+  Scenario: Picking a dropdown option rewrites the cell to that option
+    When I set cell A:1 to "choice = dropdown(1, [1, 2, 3])"
+    Then cell A:1 shows "1"
+    When I pick option 2 in the dropdown in A:1
+    Then cell A:1 shows "3"
+
   # ---- Copy / paste (TSV) ----
 
   Scenario: Copy then paste moves cell contents
@@ -118,6 +205,48 @@ Feature: The Rust app session — calculator and sheet, headless
     Then cell C:1 shows "5"
     And cell C:2 shows "6"
 
+  Scenario: Copy and paste carry a rectangular block across rows and columns
+    When I set cell A:1 to "1"
+    And I set cell B:1 to "2"
+    And I set cell A:2 to "3"
+    And I set cell B:2 to "4"
+    And I copy A:1 through B:2
+    And I paste at D:1
+    Then cell D:1 shows "1"
+    And cell E:1 shows "2"
+    And cell D:2 shows "3"
+    And cell E:2 shows "4"
+
+  Scenario: Cutting a cell clears it, and paste drops it elsewhere
+    When I set cell A:1 to "7"
+    And I cut A:1 through A:1
+    And I paste at C:1
+    Then cell A:1 shows ""
+    And cell C:1 shows "7"
+
+  Scenario: Pasting a block past the last column clips the overflow
+    When I set cell A:1 to "8"
+    And I set cell B:1 to "9"
+    And I copy A:1 through B:1
+    And I paste at Z:1
+    Then cell Z:1 shows "8"
+
+  # ---- Binary bit editor ----
+
+  Scenario: The bit editor reflects and edits the last integer result
+    When I enter "5"
+    And I open the bit editor
+    Then the bit editor is editable
+    When I flip bit 1
+    Then the bit editor value is "7"
+    When I use the bit editor value
+    Then the input line holds "7"
+
+  Scenario: The bit editor is unavailable for a non-integer result
+    When I enter "0.5"
+    And I open the bit editor
+    Then the bit editor is not editable
+
   # ---- Named cells ----
 
   Scenario: A named cell reads by name from a formula
@@ -125,6 +254,17 @@ Feature: The Rust app session — calculator and sheet, headless
     And I name cell A:1 "Rate"
     And I set cell B:1 to "=100 * 'Rate'"
     Then cell B:1 shows "8.25"
+
+  Scenario: A named cell appears in the inspector
+    When I set cell A:1 to "42"
+    And I name cell A:1 "Budget"
+    Then the inspector lists the variable "Budget"
+
+  Scenario: A duplicate cell name is rejected
+    When I set cell A:1 to "1"
+    And I name cell A:1 "Rate"
+    And I set cell A:2 to "2"
+    Then naming cell A:2 "Rate" is rejected
 
   # ---- Column widths ----
 
