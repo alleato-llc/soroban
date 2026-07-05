@@ -24,7 +24,12 @@ reads as future tense, cross-check against this section.
   Phase 2c ported the engine remainder the shared suite doesn't exercise on its
   own (`ReferenceRewriter`, `NamedCells`, journal/package/`DataStore`/CSV, the
   log-only mutation commands, structural edits, `History` reflection, the binary
-  bit-editor model, docs assembly).
+  bit-editor model, docs assembly). **`.soroban` interchange is proven both
+  ways**: `examples/mortgage.soroban` (Swift-authored) and `examples/
+  interchange.soroban` (Rust-authored) are each opened + computed by BOTH
+  ecosystems' test suites — a workbook from either side round-trips through the
+  other (cells, formulas, user functions, log variables, `data` records, named
+  cells, saved bit-formats).
 - **3a — rime extensions**: done as needed — `grid` (virtualized; per-cell
   overlays, double-click activation, per-column widths + resize-drag), `bit_grid`,
   `menu_bar`/`menu_bar_with_trailing`, plus the small gaps. **`autocomplete_field`

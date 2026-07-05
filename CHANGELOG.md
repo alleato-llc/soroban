@@ -11,6 +11,17 @@ point of truth for downloads.
 
 ## [Unreleased]
 
+### Added
+- **Cross-ecosystem `.soroban` interchange is now proven both ways.** A new
+  Rust-authored fixture `examples/interchange.soroban` (regenerate with `cargo
+  run -p soroban-engine --example author_interchange`) is opened and computed by
+  *both* ecosystems' suites (`rust/engine/tests/interchange.rs` + Swift's
+  `InterchangeTests`), mirroring how the Swift-authored `examples/mortgage.
+  soroban` is read by both — so a workbook written by either side is a permanent
+  regression guard on the other. The fixture exercises what mortgage doesn't: a
+  log variable, a user function, a `data`-type record, a named cell, and a saved
+  bit-format variable — all restore and compute identically across Swift ⇄ Rust.
+
 ### Fixed
 - Rust ecosystem, Phase 3b — **the bit editor's grid was reversed**: clicking
   the first bit flipped the last one. `BinaryView::bits()` returns MSB-first but
