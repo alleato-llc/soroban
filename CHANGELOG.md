@@ -21,6 +21,14 @@ point of truth for downloads.
   regression guard on the other. The fixture exercises what mortgage doesn't: a
   log variable, a user function, a `data`-type record, a named cell, and a saved
   bit-format variable — all restore and compute identically across Swift ⇄ Rust.
+- **CI now builds the Rust/iced desktop app for four new desktop targets** —
+  Linux and Windows, each on x86_64 and arm64 (`.github/workflows/rust-gui-build.
+  yml`, on `workflow_dispatch` + `rust/gui/**` PRs). macOS keeps shipping from
+  the Swift app, so it isn't built here. The workflow checks out `rime` as a
+  sibling repo (rust/gui depends on it by the relative `../../../rime/rime`
+  path), builds `--release --locked` per target, and uploads each binary as an
+  artifact — proving the port compiles and links on every desktop OS the Rust
+  ecosystem unlocks. (If `rime` is private, set a `RIME_TOKEN` repo secret.)
 
 ### Fixed
 - Rust ecosystem, Phase 3b — **the bit editor's grid was reversed**: clicking

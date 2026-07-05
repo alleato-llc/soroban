@@ -1,0 +1,104 @@
+name: Rust GUI build
+
+# Cross-platform build of the Rust/iced desktop app (rust/gui) for the four new
+# desktop targets the Rust port unlocks — Linux and Windows, x86_64 and arm64.
+# macOS keeps shipping from the Swift app, so it's not built here. This proves
+# the app compiles+links on each target and uploads a runnable binary artifact;
+# wiring these into the tagged Release (docs/MIGRATION.md §6) is a later step.
+#
+# rust/gui is workspace-EXCLUDED and depends on the sibling `rime` kit by a
+# RELATIVE path (`rime = { path = "../../../rime/rime" }`). So this workflow
+# checks out BOTH repos as siblings under $GITHUB_WORKSPACE — soroban/ and
+# rime/ — which is exactly the layout that path resolves against
+# (soroban/rust/gui/../../../rime/rime → rime/rime).
+#
+# If `alleato-llc/rime` is PRIVATE, set a repo secret `RIME_TOKEN` (a PAT or
+# fine-grained token with read access to it) — the default GITHUB_TOKEN can't
+# read another repo. For a PUBLIC rime the fallback to github.token just works.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "rust/gui/**"
+      - ".github/workflows/rust-gui-build.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - name: linux-arm64
+            os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+          - name: windows-x86_64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - name: windows-arm64
+            os: windows-11-arm
+            target: aarch64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    steps:
+      # Both repos as siblings so rust/gui's ../../../rime/rime path resolves.
+      - name: Check out soroban
+        uses: actions/checkout@v5
+        with:
+          path: soroban
+
+      - name: Check out rime (sibling)
+        uses: actions/checkout@v5
+        with:
+          repository: alleato-llc/rime
+          path: rime
+          token: ${{ secrets.RIME_TOKEN || github.token }}
+
+      - name: Rust toolchain (+ target)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: soroban/rust/gui
+          key: ${{ matrix.target }}
+
+      # iced/winit's Linux build deps (X11 + Wayland + xkbcommon). Most are
+      # dlopen'd at runtime, but installing the dev packages keeps the link
+      # honest across image changes; trim if a leaner set proves enough.
+      - name: Linux windowing deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev libwayland-dev libx11-dev
+
+      - name: Build (release)
+        working-directory: soroban/rust/gui
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Collect binary
+        shell: bash
+        working-directory: soroban/rust/gui
+        run: |
+          mkdir -p dist
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            cp "target/${{ matrix.target }}/release/soroban-gui.exe" \
+               "dist/soroban-gui-${{ matrix.name }}.exe"
+          else
+            cp "target/${{ matrix.target }}/release/soroban-gui" \
+               "dist/soroban-gui-${{ matrix.name }}"
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: soroban-gui-${{ matrix.name }}
+          path: soroban/rust/gui/dist/*
+          if-no-files-found: error
