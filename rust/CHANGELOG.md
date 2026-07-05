@@ -15,6 +15,23 @@ DMG.
 
 ## [Unreleased]
 
+### Added
+
+- **Signed + notarized macOS app.** The macOS release is now a **signed and
+  Apple-notarized** universal `Soroban-<version>.dmg` — one download runs on
+  both Intel and Apple Silicon, and it opens by double-click with no Gatekeeper
+  right-click dance and no quarantine warning. (The bare, unsigned per-arch DMGs
+  of rust-v0.1.2 are gone.)
+
+### Changed
+
+- **The Rust release now runs entirely through salpa** (the house release tool),
+  the same tool that drives the Swift track. salpa owns version → test → build →
+  sign/notarize → publish; each matrix leg pulls its own platform's salpa binary
+  from ghcr and builds natively. Linux/Windows still ship portable, unsigned
+  `soroban-gui-<os>-<arch>` binaries; macOS ships the signed universal DMG. The
+  hand-rolled DMG script and per-leg packaging in the workflow are retired.
+
 ## [rust-v0.1.2] - 2026-07-05
 
 ### Added

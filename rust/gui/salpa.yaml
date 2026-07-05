@@ -1,0 +1,35 @@
+# salpa config for the Rust ecosystem's release deliverable — the rust/gui iced
+# app (docs/MIGRATION.md). salpa (github.com/alleato-llc/salpa) drives version →
+# test → build → publish; release-rust.yml runs it with cwd = this directory on
+# each platform of the release matrix.
+#
+# One config, every leg: salpa's rust recipe signs/notarizes only on macOS
+# (universal dmg) and ships a bare per-platform binary everywhere else, so the
+# SAME file drives all five legs. The Swift/macOS app keeps its OWN salpa config
+# (swift/salpa.yaml, ecosystem apple, v* tags); tag_prefix keeps the two version
+# namespaces from ever colliding.
+ecosystem: rust
+product: Soroban
+tag_prefix: rust-v # this ecosystem's own tag/release namespace (rust-vX.Y.Z)
+
+# The correctness gate (release-rust.yml's test job runs `salpa test`). The
+# workspace lib + gherkin parity suites live one level up (rust/ is the cargo
+# workspace; rust/gui is deliberately excluded), so each suite cds there.
+test:
+  workspace: "cd .. && cargo test --workspace --lib"
+  gherkin: "cd .. && cargo test -p soroban-engine --test gherkin"
+
+build:
+  bin: soroban-gui # the crate's binary; the product name is for the .app/dmg
+  bundle_id: com.alleato.soroban-gui # distinct from the Swift app's com.alleato.Soroban
+  icon: packaging/AppIcon.icns # bundled into Soroban.app/Contents/Resources
+  universal: true # build both mac arches + lipo → one notarized dmg for every Mac
+  sign: "Developer ID Application" # macOS-only; ignored on the Linux/Windows legs
+  notarize: true
+  staple: true
+  package: dmg # macOS deliverable: Soroban-<version>.dmg (signed + notarized)
+
+publish:
+  github: true # attach each leg's artifact to the rust-v<version> GitHub release
+  # No `latest:` alias — the versionless Soroban.dmg belongs to the Swift track;
+  # the Rust dmg stays versioned (Soroban-<version>.dmg) to avoid any confusion.

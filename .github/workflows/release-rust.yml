@@ -1,20 +1,33 @@
 name: Release (Rust)
 
 # The RUST ecosystem's release track — independent of the Swift/macOS release
-# (release.yml, salpa). The Rust/iced app (rust/gui) is cross-platform, so this
-# ships portable binaries for Linux, Windows, AND macOS (unsigned — the signed,
-# notarized native macOS app is the Swift DMG; this is the portable build).
+# (release.yml). Driven entirely by salpa (github.com/alleato-llc/salpa, the
+# house release tool): salpa owns version → test → build → sign/notarize →
+# publish, parameterized by rust/gui/salpa.yaml. The Rust/iced app (rust/gui) is
+# cross-platform, so this fans out over a runner matrix; each leg pulls the
+# salpa binary for ITS platform from ghcr and runs its own native salpa.
 #
-# Versioning is its OWN sequence: rust-v* git tags, patch auto-bumped (#minor/
-# #major in the head commit bumps bigger; an already-tagged HEAD re-releases).
-# The Swift track keeps the plain v* tags via salpa — separate namespaces, no
-# collision. Per-ecosystem changelog: rust/CHANGELOG.md.
+# Deliverables: a signed + notarized UNIVERSAL macOS DMG (Soroban-<ver>.dmg, one
+# for every Mac) plus bare portable binaries for Linux and Windows
+# (soroban-gui-<os>-<arch>[.exe]). Versioning is salpa's own rust-v* sequence
+# (patch auto-bumped; #minor/#major in the head commit bumps bigger) — a
+# separate namespace from the Swift track's v* tags, so they never collide.
 #
 # Trigger: push to main touching rust/** (the ecosystem) or spec/** (shared
 # language behavior — a spec change releases BOTH ecosystems), plus a manual
-# workflow_dispatch. Build steps mirror the PR-tested rust-gui-build.yml.
+# workflow_dispatch. Only these trusted contexts run — never a fork PR, where
+# GitHub withholds secrets.
 #
 # rime is a public sibling repo (rust/gui depends on it by ../../../rime/rime).
+#
+# SECURITY (soroban is public; salpa is a PRIVATE repo):
+#   - The private salpa binary is pulled from ghcr with ONLY the workflow
+#     github.token + `packages: read` (the salpa package grants soroban read
+#     access — no PAT, no custom secret). Nothing about salpa is exposed.
+#   - The Apple signing secrets are least-privilege: they exist in `env:` ONLY
+#     on the macOS job (the sole signer). The Linux/Windows legs never reference
+#     them, so those runners never receive them. GitHub masks secret values in
+#     logs; salpa itself references them only as shell vars (never echoes them).
 
 on:
   workflow_dispatch:
@@ -26,166 +39,157 @@ on:
       - ".github/workflows/release-rust.yml"
 
 permissions:
-  contents: write # create the release + upload binaries
+  contents: write # create the release + upload artifacts
+  packages: read # pull the private salpa binary from ghcr
 
 concurrency:
   group: release-rust
   cancel-in-progress: false
 
+env:
+  SALPA_VERSION: "0.1.11" # pinned salpa release on ghcr (bump deliberately)
+
 jobs:
-  # Correctness gate (mirrors the Swift track's salpa test jobs). rust-ci.yml
-  # runs the full fmt/clippy/matrix separately; here we just guard the release
-  # on the tests passing.
+  # Correctness gate — salpa runs the workspace + gherkin parity suites (defined
+  # in rust/gui/salpa.yaml). rust-ci.yml runs the full fmt/clippy/matrix
+  # separately; here we just guard the release on the tests passing.
   test:
     name: Rust tests
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: rust
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v5
+        with: { path: soroban }
+      - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: rust
-      - name: Unit tests
-        run: cargo test --workspace --lib
-      - name: Gherkin parity suite (spec/anzan)
-        run: cargo test --test gherkin -p soroban-engine
+          workspaces: soroban/rust
+      - uses: oras-project/setup-oras@v1
+      - name: salpa test
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "${{ github.token }}" | oras login ghcr.io -u "${{ github.actor }}" --password-stdin
+          oras pull "ghcr.io/${{ github.repository_owner }}/salpa:${SALPA_VERSION}"
+          SALPA="$PWD/salpa-linux-amd64"; chmod +x "$SALPA"
+          cd soroban/rust/gui && "$SALPA" test
 
-  # Compute the next rust-v* version and create the (empty) GitHub Release, so
-  # the build matrix can attach to it directly.
-  release-init:
+  # Compute the next rust-v* version (salpa reads rust/gui/salpa.yaml for the
+  # tag_prefix) and create the empty GitHub release once, so the parallel build
+  # legs deterministically upload into it (no create race).
+  version:
     name: Version + create release
     needs: [test]
     runs-on: ubuntu-latest
     outputs:
-      tag: ${{ steps.v.outputs.tag }}
       version: ${{ steps.v.outputs.version }}
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v5
         with:
+          path: soroban
           fetch-depth: 0 # rust-v* tags drive the version
-
-      - name: Compute next rust-v* version
+      - uses: oras-project/setup-oras@v1
+      - name: Compute version + init release
         id: v
+        shell: bash
         run: |
           set -euo pipefail
-          existing=$(git tag -l 'rust-v*' --points-at HEAD | head -n1 || true)
-          if [ -n "$existing" ]; then
-            version="${existing#rust-v}"
-            echo "HEAD already tagged $existing — re-releasing that version"
-          else
-            latest=$(git tag -l 'rust-v*' --sort=-v:refname | head -n1 || true)
-            if [ -z "$latest" ]; then
-              version="0.1.0" # seed: the first Rust release matches the crate version
-            else
-              ver="${latest#rust-v}"
-              MAJ="${ver%%.*}"; rest="${ver#*.}"; MIN="${rest%%.*}"; PAT="${rest#*.}"
-              msg=$(git log -1 --pretty=%B)
-              if printf '%s' "$msg" | grep -q '#major'; then
-                MAJ=$((MAJ + 1)); MIN=0; PAT=0
-              elif printf '%s' "$msg" | grep -q '#minor'; then
-                MIN=$((MIN + 1)); PAT=0
-              else
-                PAT=$((PAT + 1))
-              fi
-              version="$MAJ.$MIN.$PAT"
-            fi
-          fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "tag=rust-v$version" >> "$GITHUB_OUTPUT"
-          echo "Rust release: rust-v$version"
-
-      - name: Create the release (idempotent)
-        run: |
-          set -euo pipefail
-          TAG="${{ steps.v.outputs.tag }}"
-          if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
-            echo "Release $TAG already exists — build jobs will --clobber into it"
-          else
-            gh release create "$TAG" \
+          echo "${{ github.token }}" | oras login ghcr.io -u "${{ github.actor }}" --password-stdin
+          oras pull "ghcr.io/${{ github.repository_owner }}/salpa:${SALPA_VERSION}"
+          SALPA="$PWD/salpa-linux-amd64"; chmod +x "$SALPA"
+          VERSION=$(cd soroban/rust/gui && "$SALPA" version)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Rust release: rust-v$VERSION"
+          # Idempotent empty release (already exists on a re-run → skip).
+          if ! gh release view "rust-v$VERSION" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release create "rust-v$VERSION" \
               --repo "${{ github.repository }}" \
               --target "$GITHUB_SHA" \
-              --title "Soroban (Rust) ${{ steps.v.outputs.version }}" \
-              --notes "Cross-platform Soroban desktop app (Rust/iced) — portable, unsigned builds: bare binaries for Linux and Windows, an unsigned \`Soroban.app\` DMG for macOS (first launch: right-click → Open to clear Gatekeeper). The signed/notarized native macOS app is the Swift \`Soroban.dmg\` release. See rust/CHANGELOG.md."
+              --title "Soroban (Rust) $VERSION" \
+              --notes "Cross-platform Soroban desktop app (Rust/iced). macOS: a signed + notarized universal \`Soroban-$VERSION.dmg\` (one for every Mac). Linux/Windows: portable, unsigned \`soroban-gui-<os>-<arch>\` binaries. The Swift \`Soroban.dmg\` is the separate native-macOS track. See rust/CHANGELOG.md."
           fi
 
-  # Build each target and attach it to the release. Six targets: three OSes ×
-  # two arches. macOS builds on Apple Silicon — arm64 native, x86_64 by
-  # cross-compile (the toolchain adds the target).
-  build:
+  # macOS leg (its own job so the Apple signing secrets are scoped HERE and
+  # nowhere else). salpa builds a universal binary, bundles + hardened-runtime
+  # codesigns Soroban.app, then dmg → notarize → staple, and publishes it.
+  build-macos:
+    name: macos-universal
+    needs: [version]
+    runs-on: macos-14
+    env:
+      GH_TOKEN: ${{ github.token }}
+      BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+      P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+    steps:
+      - uses: actions/checkout@v5
+        with: { path: soroban }
+      - uses: actions/checkout@v5
+        with: { repository: alleato-llc/rime, path: rime } # sibling of soroban
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin,aarch64-apple-darwin # universal lipo
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: soroban/rust/gui
+          key: rust-release-macos
+      - uses: oras-project/setup-oras@v1
+      - name: salpa build + publish (signed, notarized)
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "${{ github.token }}" | oras login ghcr.io -u "${{ github.actor }}" --password-stdin
+          oras pull "ghcr.io/${{ github.repository_owner }}/salpa:${SALPA_VERSION}"
+          SALPA="$PWD/salpa-darwin-arm64"; chmod +x "$SALPA"
+          cd soroban/rust/gui
+          "$SALPA" --version "${{ needs.version.outputs.version }}" build
+          "$SALPA" --version "${{ needs.version.outputs.version }}" publish
+
+  # Portable legs — Linux + Windows, three arches. NO signing secrets reach
+  # these runners. salpa builds the bare binary named soroban-gui-<os>-<arch>
+  # and publishes it into the same release.
+  build-portable:
     name: ${{ matrix.name }}
-    needs: [release-init]
+    needs: [version]
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { name: linux-x86_64, os: ubuntu-latest, target: x86_64-unknown-linux-gnu }
-          - { name: linux-arm64, os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu }
-          - { name: windows-x86_64, os: windows-latest, target: x86_64-pc-windows-msvc }
-          - { name: windows-arm64, os: windows-11-arm, target: aarch64-pc-windows-msvc }
-          - { name: macos-arm64, os: macos-14, target: aarch64-apple-darwin }
-          - { name: macos-x86_64, os: macos-14, target: x86_64-apple-darwin }
+          - { name: linux-x86_64, os: ubuntu-latest, salpa: salpa-linux-amd64 }
+          - { name: linux-arm64, os: ubuntu-24.04-arm, salpa: salpa-linux-arm64 }
+          - { name: windows-x86_64, os: windows-latest, salpa: salpa-windows-amd64.exe }
+          - { name: windows-arm64, os: windows-11-arm, salpa: salpa-windows-arm64.exe }
     runs-on: ${{ matrix.os }}
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
-      # Both repos as siblings so rust/gui's ../../../rime/rime path resolves.
-      - name: Check out soroban
-        uses: actions/checkout@v5
-        with:
-          path: soroban
-      - name: Check out rime (sibling)
-        uses: actions/checkout@v5
-        with:
-          repository: alleato-llc/rime # public — the default token can read it
-          path: rime
-
+      - uses: actions/checkout@v5
+        with: { path: soroban }
+      - uses: actions/checkout@v5
+        with: { repository: alleato-llc/rime, path: rime }
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: soroban/rust/gui
-          key: rust-release-${{ matrix.target }}
-
+          key: rust-release-${{ matrix.name }}
       - name: Linux windowing deps
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y libxkbcommon-dev libwayland-dev libx11-dev
-
-      - name: Build (release)
-        working-directory: soroban/rust/gui
-        run: cargo build --release --locked --target ${{ matrix.target }}
-
-      # macOS: wrap the binary in a double-clickable, icon-carrying Soroban.app
-      # inside a drag-to-Applications DMG (unsigned — the signed native app is
-      # the Swift Soroban.dmg). Linux/Windows ship the bare portable binary.
-      - name: Package macOS DMG
-        if: runner.os == 'macOS'
-        working-directory: soroban/rust/gui
-        run: |
-          set -euo pipefail
-          asset="soroban-gui-${{ matrix.name }}.dmg"
-          packaging/make-dmg.sh \
-            "target/${{ matrix.target }}/release/soroban-gui" \
-            "$asset" \
-            "${{ needs.release-init.outputs.version }}"
-          gh release upload "${{ needs.release-init.outputs.tag }}" "$asset" \
-            --clobber --repo "${{ github.repository }}"
-
-      - name: Attach binary to the release
-        if: runner.os != 'macOS'
+      - uses: oras-project/setup-oras@v1
+      - name: salpa build + publish (bare binary)
         shell: bash
-        working-directory: soroban/rust/gui
         run: |
           set -euo pipefail
-          ext=""
-          [ "${{ runner.os }}" = "Windows" ] && ext=".exe"
-          asset="soroban-gui-${{ matrix.name }}${ext}"
-          cp "target/${{ matrix.target }}/release/soroban-gui${ext}" "$asset"
-          gh release upload "${{ needs.release-init.outputs.tag }}" "$asset" \
-            --clobber --repo "${{ github.repository }}"
+          echo "${{ github.token }}" | oras login ghcr.io -u "${{ github.actor }}" --password-stdin
+          oras pull "ghcr.io/${{ github.repository_owner }}/salpa:${SALPA_VERSION}"
+          SALPA="$PWD/${{ matrix.salpa }}"; chmod +x "$SALPA" || true
+          cd soroban/rust/gui
+          "$SALPA" --version "${{ needs.version.outputs.version }}" build
+          "$SALPA" --version "${{ needs.version.outputs.version }}" publish
