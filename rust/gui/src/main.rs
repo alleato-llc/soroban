@@ -247,9 +247,15 @@ enum Message {
 impl App {
     fn update(&mut self, message: Message) -> Task<Message> {
         // Any real action closes an open menu (the backdrop only closes on an
-        // outside click); the toggle itself opens/switches menus, and the
-        // screenshot harness's background frames must leave it be.
-        if self.menu_open.is_some() && !matches!(message, Message::ToggleMenu(_) | Message::Shot(_))
+        // outside click); the toggle itself opens/switches menus, the screenshot
+        // harness's background frames must leave it be, and — crucially now that
+        // the menu bar auto-hides — plain cursor movement must NOT close it, or
+        // reaching for a submenu item would dismiss the menu before you got there.
+        if self.menu_open.is_some()
+            && !matches!(
+                message,
+                Message::ToggleMenu(_) | Message::Shot(_) | Message::PointerMoved(_)
+            )
         {
             self.menu_open = None;
         }
