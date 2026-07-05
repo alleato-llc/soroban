@@ -1013,7 +1013,11 @@ impl App {
         };
 
         container(card(
-            column![text("Binary").size(15).color(palette.ink), content].spacing(12),
+            column![
+                Self::panel_header("Binary", Message::ToggleBinary, palette),
+                content
+            ]
+            .spacing(12),
         ))
         .padding(iced::Padding {
             top: 0.0,
@@ -1259,6 +1263,23 @@ impl App {
 
     /// The reference window: every function, operator, and constant — the
     /// user's own first — with a live search filter.
+    /// A sidebar panel's title row: the title on the left, a × on the right that
+    /// closes the panel (fires `close`).
+    fn panel_header<'a>(
+        title: &'a str,
+        close: Message,
+        palette: &theme::Palette,
+    ) -> Element<'a, Message> {
+        row![
+            text(title).size(15).color(palette.ink),
+            container(button::icon(glyph::CLOSE, close))
+                .width(Length::Fill)
+                .align_x(iced::alignment::Horizontal::Right),
+        ]
+        .align_y(iced::Alignment::Center)
+        .into()
+    }
+
     fn reference_panel(&self, palette: &theme::Palette) -> Element<'_, Message> {
         let search = text_field(
             "Search the reference…",
@@ -1289,7 +1310,7 @@ impl App {
 
         container(card(
             column![
-                text("Reference").size(15).color(palette.ink),
+                Self::panel_header("Reference", Message::ToggleReference, palette),
                 search,
                 scrollable(list).height(Length::Fill),
             ]
@@ -1306,7 +1327,12 @@ impl App {
     /// the original, each row tagged with its provenance (`log` or a clickable
     /// `B:2 ↗` that jumps to the cell).
     fn inspector_panel(&self, palette: &theme::Palette) -> Element<'_, Message> {
-        let mut sections = column![text("Environment").size(15).color(palette.ink)].spacing(16);
+        let mut sections = column![Self::panel_header(
+            "Environment",
+            Message::ToggleInspector,
+            palette
+        )]
+        .spacing(16);
         let groups = [
             ("VARIABLES", self.session.inspector_variables()),
             ("FUNCTIONS", self.session.inspector_functions()),

@@ -218,3 +218,6 @@ portable, unsigned Linux / Windows / macOS binaries.
     iced has no system menu bar) now hides so content fills the whole window,
     revealing only while the pointer hugs the top edge or a menu is open — it
     overlays the top rather than pushing content down, so nothing jumps.
+  - **Panel close buttons.** The Names, Reference, and Binary panels each carry a
+    × in their title row that closes them (a shared `panel_header`), matching the
+    AppKit app's dismissible panels.
