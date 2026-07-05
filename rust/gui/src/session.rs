@@ -9,14 +9,14 @@ use soroban_engine::named_cells::NamedCells;
 use soroban_engine::spreadsheet::SheetDefinitionKind;
 use soroban_engine::workbook::{restore_session, SheetPayload, Workbook};
 use soroban_engine::{
-    package, BigDecimal, BinaryEditorPresets, BinaryFieldSpec, BinaryView, BinaryViewUnavailable,
-    Calculator, CellAddress, CellDisplay, CellFormat, Completion, CompletionKind, Control,
-    EvalOutcome, FormatBuilder, LanguageMode, Sheet, SheetStore, Spreadsheet, UserFunction, Value,
-    BINARY_EDITABLE_WIDTHS,
+    csv, package, BigDecimal, BinaryEditorPresets, BinaryFieldSpec, BinaryView,
+    BinaryViewUnavailable, Calculator, CellAddress, CellDisplay, CellFormat, Completion,
+    CompletionKind, Control, DataSheet, DataStore, EvalOutcome, FormatBuilder, LanguageMode, Sheet,
+    SheetStore, Spreadsheet, UserFunction, Value, BINARY_EDITABLE_WIDTHS,
 };
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 /// Where an inspector entry comes from — the calculation log, or a cell (which
@@ -311,6 +311,14 @@ pub struct Session {
     ///
     /// [`clear_point_anchor`]: Session::clear_point_anchor
     point_anchor: Option<PointAnchor>,
+    /// The working SQLite store backing this document's data sheets, opened
+    /// lazily on the first import/open-with-data (`None` when the document has
+    /// none). Each `DataSheet` shares it by `Rc`. The live editing target:
+    /// edits write through to it, and save copies it into the `.soroban`
+    /// package (open copies the package's `data.sqlite` back out).
+    data_store: Option<Rc<DataStore>>,
+    /// This session's working-database file (a per-session temp path).
+    working_db: PathBuf,
 }
 
 impl Session {
@@ -332,9 +340,154 @@ impl Session {
             format_builder: None,
             revision: 0,
             point_anchor: None,
+            data_store: None,
+            working_db: Self::working_db_path(),
         };
         session.install_log_source();
         session
+    }
+
+    /// A per-session working-database path under the temp dir. Unique per
+    /// process so concurrent windows/tests don't share one SQLite file.
+    fn working_db_path() -> PathBuf {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+        std::env::temp_dir().join(format!("soroban-working-{}-{n}.sqlite", std::process::id()))
+    }
+
+    // MARK: Data sheets
+
+    /// True when the active sheet is a DataStore-backed table (not a grid).
+    pub fn active_is_data(&self) -> bool {
+        self.store.active_sheet().is_data()
+    }
+
+    /// Rows the grid should render for the active sheet — the whole grid for a
+    /// calculation sheet, or the table's height (capped at 10,000) for a data
+    /// sheet. Mirrors Swift's `visibleRowCount`.
+    pub fn visible_row_count(&self) -> usize {
+        let sheet = self.store.active_sheet();
+        let count = match &*sheet.data.borrow() {
+            Some(data) => data.row_count().clamp(1, 10_000),
+            None => Spreadsheet::ROW_COUNT,
+        };
+        count
+    }
+
+    /// Columns to render for the active sheet (the table's width for a data
+    /// sheet, else the grid's 26).
+    pub fn visible_column_count(&self) -> usize {
+        let sheet = self.store.active_sheet();
+        let count = match &*sheet.data.borrow() {
+            Some(data) => data.column_count().max(1),
+            None => Spreadsheet::COLUMN_COUNT,
+        };
+        count
+    }
+
+    /// The working store, opened lazily at `working_db` on first need.
+    fn ensure_data_store(&mut self) -> Result<Rc<DataStore>, String> {
+        if let Some(store) = &self.data_store {
+            return Ok(Rc::clone(store));
+        }
+        let store = Rc::new(DataStore::new(&self.working_db).map_err(|error| error.to_string())?);
+        self.data_store = Some(Rc::clone(&store));
+        Ok(store)
+    }
+
+    /// The working-database path to fold into a save — `Some` iff the document
+    /// has any data sheet, so `data.sqlite` exists in a package iff it's needed.
+    fn working_database_url(&self) -> Option<PathBuf> {
+        self.store
+            .sheets()
+            .iter()
+            .any(|sheet| sheet.is_data())
+            .then(|| self.working_db.clone())
+    }
+
+    /// Reset the working database to `copy_from` (a package's `data.sqlite`) or
+    /// to empty (`None`): drop the connection, clear the file + WAL/SHM, then
+    /// copy the source in. Mirrors Swift's `prepareWorkingDatabase`.
+    fn prepare_working_database(&mut self, copy_from: Option<&Path>) {
+        self.data_store = None; // close the connection before touching the file
+        for suffix in ["", "-wal", "-shm"] {
+            let mut path = self.working_db.clone().into_os_string();
+            path.push(suffix);
+            let _ = std::fs::remove_file(path);
+        }
+        if let Some(source) = copy_from {
+            let _ = std::fs::copy(source, &self.working_db);
+        }
+    }
+
+    /// Import a CSV file as a new data sheet (a SQLite-backed table). Returns an
+    /// optional note (e.g. that columns past the 26th were dropped). Mirrors
+    /// Swift's `SheetModel.importCSV`.
+    pub fn import_csv(&mut self, path: &Path) -> Result<Option<String>, String> {
+        let bytes = std::fs::read(path).map_err(|error| error.to_string())?;
+        // UTF-8, falling back to a byte-as-char (Latin-1) read like the Swift app.
+        let text = String::from_utf8(bytes.clone())
+            .unwrap_or_else(|_| bytes.iter().map(|&b| b as char).collect());
+        let mut rows = csv::parse(&text);
+        if rows.iter().all(|row| row.is_empty()) {
+            return Err("the CSV file is empty".into());
+        }
+        // Cap at the grid's column count (extra columns are dropped).
+        let mut truncated = false;
+        for row in &mut rows {
+            if row.len() > Spreadsheet::COLUMN_COUNT {
+                row.truncate(Spreadsheet::COLUMN_COUNT);
+                truncated = true;
+            }
+        }
+        let name = self.unique_sheet_name(Self::sanitized_name(path));
+        let store = self.ensure_data_store()?;
+        store
+            .create_table(&name, &rows)
+            .map_err(|error| error.to_string())?;
+        let data = DataSheet::new(&name, Rc::clone(&store))
+            .ok_or_else(|| "the imported table could not be opened".to_string())?;
+        let sheet = self.store.make_data_sheet(&name, data);
+        let mut sheets = self.store.sheets();
+        sheets.push(Rc::clone(&sheet));
+        self.store.replace_sheets(sheets, Some(&name));
+        self.revision += 1;
+        Ok(
+            truncated
+                .then(|| format!("Columns beyond {} were dropped.", Spreadsheet::COLUMN_COUNT)),
+        )
+    }
+
+    /// A sanitized base table/sheet name from a file: the stem with `!`/`'`
+    /// (reference-syntax breakers) blanked, trimmed, defaulting to "Data", and
+    /// truncated to leave room for a de-dup " <n>" suffix.
+    fn sanitized_name(path: &Path) -> String {
+        let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("Data");
+        let cleaned: String = stem
+            .chars()
+            .map(|c| if c == '!' || c == '\'' { ' ' } else { c })
+            .collect();
+        let trimmed = cleaned.trim();
+        let base = if trimmed.is_empty() { "Data" } else { trimmed };
+        base.chars()
+            .take(SheetStore::MAX_NAME_LENGTH.saturating_sub(4))
+            .collect()
+    }
+
+    /// `base`, or `base 2` / `base 3` / … until it's unused (case-insensitive).
+    fn unique_sheet_name(&self, base: String) -> String {
+        if self.store.sheet_named(&base).is_none() {
+            return base;
+        }
+        let mut n = 2;
+        loop {
+            let candidate = format!("{base} {n}");
+            if self.store.sheet_named(&candidate).is_none() {
+                return candidate;
+            }
+            n += 1;
+        }
     }
 
     /// A fresh calculator and a sheet store wired to it. The log and the grid
@@ -561,8 +714,13 @@ impl Session {
     // MARK: Editing (slice ③)
 
     /// The raw (unevaluated) text stored in a cell — what the edit bar shows.
+    /// A data sheet reads the stored table value; a grid sheet its cell raw.
     pub fn cell_raw(&self, address: CellAddress) -> String {
-        self.store.active_sheet().grid.raw(address)
+        let sheet = self.store.active_sheet();
+        if let Some(data) = &*sheet.data.borrow() {
+            return data.raw_value(address.row, address.column);
+        }
+        sheet.grid.raw(address)
     }
 
     /// Per-column widths for the active sheet, as a full `GRID_COLS`-length
@@ -681,6 +839,16 @@ impl Session {
     pub fn set_cell_raw(&mut self, address: CellAddress, raw: &str) {
         let old = self.cell_raw(address);
         if old == raw {
+            return;
+        }
+        // Data-sheet edits write through to SQLite (bounds-checked against the
+        // table), not the dependency graph — no undo step, like the Swift app.
+        let sheet = self.store.active_sheet();
+        if let Some(data) = &*sheet.data.borrow() {
+            if data.set_raw_value(raw, address.row, address.column).is_ok() {
+                self.store.recalculate();
+                self.revision += 1;
+            }
             return;
         }
         self.apply_edit(vec![CellChange {
@@ -1398,10 +1566,10 @@ impl Session {
         self.revision
     }
 
-    /// Snapshot the document into a `Workbook`: every sheet's raw cells and
-    /// named cells, plus the log's variables, functions, and data types. (Cell
-    /// formats aren't persisted yet — the engine's workbook `formats` field is
-    /// still untyped; see docs/FORMAT.md.)
+    /// Snapshot the document into a `Workbook`: every sheet's raw cells, named
+    /// cells, and formats, plus the log's variables, functions, and data types.
+    /// Data sheets carry only a `kind`/`table` marker — their rows live in the
+    /// package's `data.sqlite`, folded in by `save_to`.
     fn build_workbook(&self) -> Workbook {
         let payloads: Vec<SheetPayload> = self
             .store
@@ -1435,6 +1603,10 @@ impl Session {
                     .iter()
                     .map(|(address, format)| (address.to_string(), format.clone()))
                     .collect();
+                if let Some(data) = &*sheet.data.borrow() {
+                    payload.kind = Some("data".to_string());
+                    payload.table = Some(data.table().to_string());
+                }
                 payload
             })
             .collect();
@@ -1457,24 +1629,34 @@ impl Session {
         )
     }
 
-    /// Write the document to a `.soroban` package. No data sheets in the gui
-    /// yet, so no database is copied in.
+    /// Write the document to a `.soroban` package, folding in the working
+    /// `data.sqlite` when the document has any data sheets.
     pub fn save_to(&self, path: &Path) -> Result<(), String> {
         let workbook = self.build_workbook();
-        package::write(&workbook, path, None).map_err(|error| error.to_string())
+        let database = self.working_database_url();
+        // Flush the WAL so the byte copy of the working DB captures every row.
+        if database.is_some() {
+            if let Some(store) = &self.data_store {
+                store.checkpoint().map_err(|error| error.to_string())?;
+            }
+        }
+        package::write(&workbook, path, database.as_deref()).map_err(|error| error.to_string())
     }
 
     /// Open a `.soroban` (package or legacy flat file), replacing the current
-    /// document. Restore order is types → functions → variables (via
+    /// document. The package's `data.sqlite` (if any) is copied into the working
+    /// store first; restore order is types → functions → variables (via
     /// `restore_session`), then the sheets.
     pub fn open_from(&mut self, path: &Path) -> Result<(), String> {
         let workbook = package::read(path).map_err(|error| error.to_string())?;
+        self.prepare_working_database(package::database_path(path).as_deref());
         self.load_workbook(workbook);
         Ok(())
     }
 
     /// Reset to an empty single-sheet document (New).
     pub fn new_workbook(&mut self) {
+        self.prepare_working_database(None); // discard any data sheets' working db
         let (calculator, store) = Self::fresh_engine();
         self.calculator = calculator;
         self.store = store;
@@ -1488,6 +1670,21 @@ impl Session {
         restore_session(&mut calculator.borrow_mut(), &workbook);
         let mut sheets = Vec::new();
         for payload in &workbook.sheets {
+            // A data sheet reattaches to its table in the (already-copied)
+            // working database; a corrupt/missing table degrades to an empty
+            // grid sheet rather than failing the whole open.
+            if payload.is_data() {
+                let data = payload.table.as_deref().and_then(|table| {
+                    self.ensure_data_store()
+                        .ok()
+                        .and_then(|store| DataSheet::new(table, store))
+                });
+                match data {
+                    Some(data) => sheets.push(store.make_data_sheet(&payload.name, data)),
+                    None => sheets.push(store.make_sheet(&payload.name)),
+                }
+                continue;
+            }
             let sheet = store.make_sheet(&payload.name);
             let contents: HashMap<CellAddress, String> = payload
                 .cells

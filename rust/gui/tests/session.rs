@@ -446,6 +446,32 @@ fn active_sheet_is_named(world: &mut SessionWorld, expected: String) {
     );
 }
 
+// MARK: Data sheets (CSV import → SQLite table)
+
+#[when(regex = r#"^I import a CSV "(.*)" with rows "(.*)"$"#)]
+fn i_import_csv(world: &mut SessionWorld, name: String, rows: String) {
+    // `;`-separated records, `,`-separated fields — a compact inline CSV.
+    let csv: String = rows.split(';').collect::<Vec<_>>().join("\n");
+    // A per-import temp dir so the file's stem (which becomes the sheet name)
+    // is exactly `name`, uncontaminated by a disambiguating prefix.
+    let dir = std::env::temp_dir().join(format!("soroban-gui-import-{name}"));
+    std::fs::create_dir_all(&dir).unwrap_or_else(|error| panic!("temp dir failed: {error}"));
+    let path = dir.join(format!("{name}.csv"));
+    std::fs::write(&path, csv).unwrap_or_else(|error| panic!("writing the CSV failed: {error}"));
+    world
+        .session
+        .import_csv(&path)
+        .unwrap_or_else(|error| panic!("import failed: {error}"));
+}
+
+#[then("the active sheet is a data sheet")]
+fn the_active_sheet_is_a_data_sheet(world: &mut SessionWorld) {
+    assert!(
+        world.session.active_is_data(),
+        "the active sheet is not a data sheet"
+    );
+}
+
 // MARK: Formatting (display-only)
 
 #[when(regex = r#"^I make cell ([A-Za-z]+:[0-9]+) bold$"#)]

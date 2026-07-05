@@ -11,6 +11,7 @@
 
 use crate::cell_address::CellAddress;
 use crate::context::ResolutionContext;
+use crate::data_store::DataSheet;
 use crate::reference_rewriter::ReferenceRewriter;
 use crate::reflection::{CellObject, WorksheetObject};
 use crate::spreadsheet::{CellDisplay, Spreadsheet};
@@ -19,8 +20,10 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 
-/// One worksheet: a calculation grid plus its name and layout. (Data sheets
-/// — DataStore-backed tables — arrive with the persistence pass.)
+/// One worksheet: a calculation grid plus its name and layout — or, when
+/// `data` is set, a DataStore-backed table (CSV-imported, SQLite-persisted).
+/// A data sheet still carries a `grid` (for the display name / shared context)
+/// but its cell reads route to the table instead; it owns no formulas.
 pub struct Sheet {
     pub(crate) name: RefCell<String>,
     pub grid: Rc<Spreadsheet>,
@@ -31,6 +34,9 @@ pub struct Sheet {
     /// dependency graph). Defaults are pruned, not stored; empty cells may
     /// be formatted (fill a region before its data arrives).
     pub formats: RefCell<HashMap<CellAddress, crate::cell_format::CellFormat>>,
+    /// When set, this is a data sheet: reads resolve against the table (bounded
+    /// by the table, not the 1000-row grid), and it owns no formulas.
+    pub data: RefCell<Option<DataSheet>>,
 }
 
 impl Sheet {
@@ -42,11 +48,17 @@ impl Sheet {
             column_widths: RefCell::new(HashMap::new()),
             row_heights: RefCell::new(HashMap::new()),
             formats: RefCell::new(HashMap::new()),
+            data: RefCell::new(None),
         })
     }
 
     pub fn name(&self) -> String {
         self.name.borrow().clone()
+    }
+
+    /// True when this sheet is backed by a DataStore table rather than a grid.
+    pub fn is_data(&self) -> bool {
+        self.data.borrow().is_some()
     }
 }
 
@@ -126,6 +138,13 @@ impl StoreInner {
     /// A fresh empty sheet built against this store's shared context.
     pub(crate) fn make_sheet(&self, name: &str) -> Rc<Sheet> {
         Sheet::new(name, Spreadsheet::new(Rc::clone(&self.context)))
+    }
+
+    /// A data sheet: an ordinary sheet shell whose reads route to `data`.
+    pub(crate) fn make_data_sheet(&self, name: &str, data: DataSheet) -> Rc<Sheet> {
+        let sheet = self.make_sheet(name);
+        *sheet.data.borrow_mut() = Some(data);
+        sheet
     }
 
     fn check_capacity(&self) -> Result<(), EngineError> {
@@ -440,6 +459,12 @@ impl SheetStore {
                 }
             }
             let target = inner.sheet_for_reference(sheet_name)?;
+            // A qualified ref into a data sheet reads the table (bounded by the
+            // table, not the grid); data sheets own no formulas so an
+            // unqualified ref never lands here.
+            if let Some(data) = &*target.data.borrow() {
+                return data.numeric_value(column, row);
+            }
             target.grid.numeric_value(host, column, row)
         }));
 
@@ -452,6 +477,9 @@ impl SheetStore {
                 }
             }
             let target = inner.sheet_for_reference(sheet_name)?;
+            if let Some(data) = &*target.data.borrow() {
+                return data.numeric_values(fc, fr, tc, tr);
+            }
             target.grid.numeric_values(host, fc, fr, tc, tr)
         }));
 
@@ -466,6 +494,9 @@ impl SheetStore {
                 }
             }
             let target = inner.sheet_for_reference(sheet_name)?;
+            if target.is_data() {
+                return Err(EngineError::domain("data sheets don't have named cells"));
+            }
             target.grid.numeric_value_for_name(host, name)
         }));
 
@@ -621,14 +652,23 @@ impl SheetStore {
     /// and UI's read path (borrows the calculator once, here).
     pub fn display_value(&self, address: CellAddress) -> CellDisplay {
         let sheet = self.inner.active_sheet();
-        self.calculator
-            .borrow_mut()
-            .host_eval(|evaluator, environment| {
-                sheet.grid.display_value((evaluator, environment), address)
-            })
+        self.display_value_on(&sheet, address)
     }
 
     pub fn display_value_on(&self, sheet: &Rc<Sheet>, address: CellAddress) -> CellDisplay {
+        // A data sheet renders straight from the table — no calculator, no
+        // formulas: empty → blank, parseable → a number, else the raw text
+        // (headers and labels). Mirrors Swift's `SheetModel.display(at:)`.
+        if let Some(data) = &*sheet.data.borrow() {
+            let raw = data.raw_value(address.row, address.column);
+            if raw.is_empty() {
+                return CellDisplay::Empty;
+            }
+            return match BigDecimal::parse(&raw) {
+                Some(value) => CellDisplay::Value(value),
+                None => CellDisplay::Text(raw),
+            };
+        }
         self.calculator
             .borrow_mut()
             .host_eval(|evaluator, environment| {
@@ -737,5 +777,11 @@ impl SheetStore {
     /// workbook loading.
     pub fn make_sheet(&self, name: &str) -> Rc<Sheet> {
         self.inner.make_sheet(name)
+    }
+
+    /// A DataStore-backed sheet whose reads route to `data` — for CSV import
+    /// and loading a workbook that carries data sheets.
+    pub fn make_data_sheet(&self, name: &str, data: DataSheet) -> Rc<Sheet> {
+        self.inner.make_data_sheet(name, data)
     }
 }

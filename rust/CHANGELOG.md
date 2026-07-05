@@ -23,6 +23,13 @@ DMG.
   right-click dance and no quarantine warning. (The bare, unsigned per-arch DMGs
   of rust-v0.1.2 are gone.)
 
+- **Data sheets in the Rust app.** *File → Import CSV…* brings a CSV file in as a
+  SQLite-backed data sheet (names sanitized/uniquified, columns capped at 26),
+  matching the Swift app. The sheet is editable, references resolve from formulas
+  (`Nums!A:2`, ranges, aggregates over the whole table up to 10,000 rows), and
+  `worksheet.isData` reports it. Data sheets round-trip through a `.soroban`
+  package's `data.sqlite`, so a workbook authored in either app opens in both.
+
 ### Changed
 
 - **The Rust release now runs entirely through salpa** (the house release tool),

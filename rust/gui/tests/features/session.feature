@@ -583,3 +583,24 @@ Feature: The Rust app session — calculator and sheet, headless
     And I set cell A:1 to "=rate * 4"
     And I save and reopen the workbook
     Then cell A:1 shows "1"
+
+  # ---- Data sheets (CSV import → SQLite table) ----
+
+  Scenario: Importing a CSV creates a named, referenceable data sheet
+    When I import a CSV "People" with rows "name,age;Ada,36;Bob,41"
+    Then the active sheet is named "People"
+    And the active sheet is a data sheet
+    And cell A:1 shows "name"
+    And cell B:2 shows "36"
+    And cell B:3 shows "41"
+
+  Scenario: A formula reads a data sheet by qualified reference
+    When I import a CSV "People" with rows "name,age;Ada,36;Bob,41"
+    And I enter "People!B:2 + People!B:3"
+    Then the result is "77"
+
+  Scenario: A data sheet survives a save and reopen
+    When I import a CSV "Nums" with rows "x;10;20;30"
+    And I save and reopen the workbook
+    And I enter "Nums!A:2 + Nums!A:4"
+    Then the result is "40"

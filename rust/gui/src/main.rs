@@ -327,6 +327,8 @@ enum Message {
     NewWorkbook,
     OpenWorkbook,
     SaveWorkbook,
+    /// Import a CSV file as a new data sheet (SQLite-backed) in the workbook.
+    ImportCsv,
     /// Open a top-level menu (`Some(i)`) or close any open one (`None`).
     ToggleMenu(Option<usize>),
     /// Copy / cut / paste the selection as TSV via the system clipboard.
@@ -678,6 +680,17 @@ impl App {
                     if self.session.save_to(&path).is_ok() {
                         self.file_path = Some(path);
                         self.saved_revision = self.session.revision();
+                    }
+                }
+            }
+            Message::ImportCsv => {
+                if let Some(path) = rfd::FileDialog::new()
+                    .add_filter("CSV", &["csv"])
+                    .pick_file()
+                {
+                    if self.session.import_csv(&path).is_ok() {
+                        self.load_draft();
+                        self.after_document_change();
                     }
                 }
             }
@@ -1057,6 +1070,8 @@ impl App {
                     MenuItem::shortcut("New", "⌘N", Message::NewWorkbook),
                     MenuItem::shortcut("Open…", "⌘O", Message::OpenWorkbook),
                     MenuItem::shortcut("Save", "⌘S", Message::SaveWorkbook),
+                    MenuItem::separator(),
+                    MenuItem::shortcut("Import CSV…", "", Message::ImportCsv),
                     MenuItem::separator(),
                     MenuItem::shortcut("Settings…", "⌘,", Message::OpenSettings),
                 ],
@@ -1890,7 +1905,11 @@ impl App {
 
         let palette = *palette;
         let session = &self.session;
-        let mut sheet = grid(GRID_ROWS, GRID_COLS, move |row, col| {
+        // A data sheet is bounded by its table (≤10k rows); a grid sheet fills
+        // the full 1000×26.
+        let rows = session.visible_row_count();
+        let cols = session.visible_column_count();
+        let mut sheet = grid(rows, cols, move |row, col| {
             let address = CellAddress::new(col, row);
             render_cell(
                 session.display_at(address),

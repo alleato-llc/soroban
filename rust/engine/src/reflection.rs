@@ -162,8 +162,7 @@ impl HostObject for WorksheetObject {
             "columnCount" => Some(Value::Number(BigDecimal::from_int(
                 Spreadsheet::COLUMN_COUNT as i64,
             ))),
-            // Data sheets arrive with the persistence pass.
-            "isData" => Some(Value::bool(false)),
+            "isData" => Some(Value::bool(sheet.is_data())),
             _ => None,
         }
     }

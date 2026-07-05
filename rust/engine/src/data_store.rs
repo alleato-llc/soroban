@@ -77,6 +77,16 @@ impl DataStore {
         &self.path
     }
 
+    /// Flush the write-ahead log into the main database file so a byte copy of
+    /// `path` (what the package writer does) captures every committed row.
+    /// Without this, recent imports/edits sit in the `-wal` and are lost when
+    /// only `data.sqlite` is copied into a `.soroban` package.
+    pub fn checkpoint(&self) -> Result<(), DataStoreError> {
+        self.conn
+            .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))?;
+        Ok(())
+    }
+
     // MARK: Tables
 
     pub fn tables(&self) -> Result<Vec<TableInfo>, DataStoreError> {
@@ -375,6 +385,27 @@ mod tests {
         store.drop_table("sales").expect("drops");
         assert_eq!(store.info("sales"), None);
         assert_eq!(store.value("sales", 0, 0), None);
+
+        fs::remove_dir_all(url.parent().unwrap()).ok();
+    }
+
+    /// A byte copy of the main `.sqlite` file (what the package writer does)
+    /// only captures committed rows after a `checkpoint()` flushes the WAL —
+    /// without it, a freshly imported table is lost when saved into a package.
+    #[test]
+    fn checkpoint_flushes_wal_into_the_main_file() {
+        let (store, url) = make_store();
+        store
+            .create_table("t", &table(&[&["x"], &["10"], &["20"]]))
+            .expect("creates");
+        store.checkpoint().expect("checkpoints");
+
+        // Byte-copy ONLY the main db file — no -wal — into a sibling package.
+        let copy = url.parent().unwrap().join("data.sqlite.copy");
+        fs::copy(&url, &copy).expect("copies the main file");
+        let reopened = DataStore::new(&copy).expect("reopens the copy");
+        assert_eq!(reopened.info("t").expect("table present").rows, 3);
+        assert_eq!(reopened.value("t", 1, 0).as_deref(), Some("10"));
 
         fs::remove_dir_all(url.parent().unwrap()).ok();
     }
