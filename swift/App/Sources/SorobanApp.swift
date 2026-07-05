@@ -162,13 +162,6 @@ struct SorobanApp: App {
 
                 Divider()
 
-                Button("Import Data (CSV)…") {
-                    session.activeView = .sheet
-                    session.workbook.importData()
-                }
-
-                Divider()
-
                 Button("Next Sheet") {
                     session.activeView = .sheet
                     session.sheet.activateSheet(

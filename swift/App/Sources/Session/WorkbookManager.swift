@@ -58,7 +58,7 @@ final class WorkbookManager {
 
     /// An open/import: which flow, and the content types the picker allows.
     struct ImportRequest: Identifiable {
-        enum Kind { case workbook, csvWorkbook, csvData }
+        enum Kind { case workbook, csvWorkbook }
         let id = UUID()
         let kind: Kind
         let contentTypes: [UTType]
@@ -151,8 +151,11 @@ final class WorkbookManager {
         sheet.autosaveToScratch = false
     }
 
-    /// File ▸ Open CSV… — the CSV becomes a NEW workbook (vs Import Data,
-    /// which adds a data sheet to the CURRENT one).
+    /// File ▸ Open CSV… — opens the CSV as a new, EDITABLE workbook. Files that
+    /// fit the grid become ordinary cells; bigger ones become a SQLite-backed
+    /// data sheet. Either way it's a COPY — the source `.csv` is never written
+    /// back; edits are saved into the `.soroban` file. (The single CSV-in door;
+    /// the old "Import Data" command is gone.)
     func openCSV() {
         importRequest = ImportRequest(kind: .csvWorkbook,
                                       contentTypes: [.commaSeparatedText, .plainText])
@@ -212,28 +215,11 @@ final class WorkbookManager {
                                       defaultName: sheet.activeSheetName)
     }
 
-    /// File ▸ Import Data (CSV)… — copies the file into a data sheet backed by
-    /// the package's SQLite store (a COPY; edits never touch the source file).
-    func importData() {
-        importRequest = ImportRequest(kind: .csvData,
-                                      contentTypes: [.commaSeparatedText, .plainText])
-    }
-
-    func importData(url: URL) {
-        withScopedAccess(url) {
-            if let message = sheet.importCSV(from: url) {
-                alert = AlertMessage(title: "Import", detail: message)
-            }
-            noteContentChanged()
-        }
-    }
-
     /// Dispatches a completed `.fileImporter` selection to the right flow.
     func handleImport(_ request: ImportRequest, url: URL) {
         switch request.kind {
         case .workbook: open(url: url)
         case .csvWorkbook: openCSV(url: url)
-        case .csvData: importData(url: url)
         }
     }
 

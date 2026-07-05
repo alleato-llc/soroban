@@ -172,11 +172,6 @@ struct ContentView: View {
                     session.sheet.removeRequested = true
                 }
                 .disabled(!session.sheet.canRemoveSheet)
-                Divider()
-                Button("Import Data (CSV)…") {
-                    session.activeView = .sheet
-                    session.workbook.importData()
-                }
             } label: {
                 Label("Sheet", systemImage: "square.on.square")
             }
