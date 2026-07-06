@@ -88,7 +88,7 @@ public enum NumberFormat: Equatable, Sendable {
     /// `decimals` places (banker's, via `rounded(toPlaces:)`).
     private static func fixed(_ value: BigDecimal, decimals: Int) -> String {
         let rounded = value.rounded(toPlaces: decimals)
-        let digits = String(rounded.significand.magnitude)
+        let digits = rounded.significand.magnitude.description
         let sign = rounded.isNegative ? "-" : ""
 
         var integer: String

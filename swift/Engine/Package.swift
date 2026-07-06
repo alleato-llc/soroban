@@ -4,11 +4,14 @@ import PackageDescription
 let package = Package(
     name: "SorobanEngine",
     platforms: [
-        .macOS(.v14),
+        // macOS 15 / iOS 18: the exact-decimal significand (Number/Integer.swift)
+        // uses the stdlib UInt128/Int128 for its base-2⁶⁴ limb arithmetic, which
+        // are available from these versions.
+        .macOS(.v15),
         // The library (Anzan + SorobanEngine) is platform-agnostic and links
         // into the iPad app; the SorobanCLI/LineNoise executable stays macOS
         // (nothing on the iOS target depends on it, so it never builds there).
-        .iOS(.v17),
+        .iOS(.v18),
     ],
     products: [
         .library(name: "SorobanEngine", targets: ["SorobanEngine"]),

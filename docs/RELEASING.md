@@ -164,7 +164,7 @@ So:
 ## Notes
 
 - The runner builds with Xcode 26.2 on `macos-26` (PickleKit's Gherkin
-  suite needs Swift 6.2+); the app targets macOS 14+.
+  suite needs Swift 6.2+); the app targets macOS 15+.
 - Local builds stay ad-hoc signed (`CODE_SIGN_IDENTITY: "-"` in
   project.yml); salpa overrides signing on the `xcodebuild` command line (and
   imports the cert into a throwaway keychain on the runner), so nothing

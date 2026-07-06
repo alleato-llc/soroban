@@ -1,4 +1,3 @@
-import BigInt
 import Foundation
 
 // MARK: - Exact powers & roots
@@ -37,7 +36,7 @@ extension BigDecimal {
         if shift < 0 { shift = 0 }
         if (exponent - shift) % 2 != 0 { shift += 1 }
 
-        let scaled = significand * BigInt(10).power(shift)
+        let scaled = significand * Integer.powerOfTen(shift)
         let root = Self.integerSquareRoot(scaled)
         let exact = root * root == scaled
         let result = BigDecimal(significand: root, exponent: (exponent - shift) / 2)
@@ -45,11 +44,11 @@ extension BigDecimal {
     }
 
     /// Integer square root (floor) via Newton's method.
-    private static func integerSquareRoot(_ n: BigInt) -> BigInt {
+    private static func integerSquareRoot(_ n: Integer) -> Integer {
         precondition(n.sign != .minus)
         if n < 2 { return n }
         // Initial guess: 2^(ceil(bits/2)) ≥ sqrt(n), guaranteeing descent.
-        var x = BigInt(1) << ((n.bitWidth + 1) / 2)
+        var x = Integer(1) << ((n.bitWidth + 1) / 2)
         while true {
             let y = (x + n / x) / 2
             if y >= x { return x }
@@ -108,7 +107,7 @@ extension BigDecimal: CustomStringConvertible {
     public func formatted(scientificThreshold: Int = 30) -> String {
         if isZero { return "0" }
 
-        let digits = String(significand.magnitude)
+        let digits = significand.magnitude.description
         let sign = isNegative ? "-" : ""
         // Position of the decimal point relative to the digit string.
         let pointPosition = digits.count + exponent

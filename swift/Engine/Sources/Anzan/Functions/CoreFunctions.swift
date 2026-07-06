@@ -25,9 +25,9 @@ enum Functions {
         guard n <= 10_000 else {
             throw EngineError.domainError(message: "fact(\(n)) is too large")
         }
-        var result = BigInt(1)
+        var result = Integer(1)
         for i in 2...Swift.max(n, 2) where n >= 2 {
-            result *= BigInt(i)
+            result *= Integer(i)
         }
         return BigDecimal(significand: result, exponent: 0)
     }
@@ -44,9 +44,9 @@ enum Functions {
         guard smaller <= 10_000 else {
             throw EngineError.domainError(message: "choose(\(n), \(k)) is too large")
         }
-        var result = BigInt(1)
+        var result = Integer(1)
         for i in 0..<smaller {
-            result = result * BigInt(n - i) / BigInt(i + 1)
+            result = result * Integer(n - i) / Integer(i + 1)
         }
         return BigDecimal(significand: result, exponent: 0)
     }
@@ -60,9 +60,9 @@ enum Functions {
         guard k <= 10_000 else {
             throw EngineError.domainError(message: "perm(\(n), \(k)) is too large")
         }
-        var result = BigInt(1)
+        var result = Integer(1)
         for i in (n - k + 1)...Swift.max(n, 1) where k > 0 {
-            result *= BigInt(i)
+            result *= Integer(i)
         }
         return BigDecimal(significand: result, exponent: 0)
     }
@@ -392,7 +392,7 @@ extension BigDecimal {
     /// floor/ceil/trunc to an integer.
     func rounded(_ direction: Direction) -> BigDecimal {
         if isInteger { return self }
-        let scale = BigInt(10).power(-exponent)
+        let scale = Integer(10).power(-exponent)
         let (q, r) = significand.quotientAndRemainder(dividingBy: scale)
         var result = q
         switch direction {

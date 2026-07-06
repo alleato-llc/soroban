@@ -72,7 +72,7 @@ struct BigDecimalArithmeticTests {
     @Test func comparisonAcrossExponents() {
         #expect(num("0.5") < num("2"))
         #expect(num("-3") < num("0.001"))
-        #expect(num("100") == BigDecimal(significand: BigInt(1), exponent: 2))
+        #expect(num("100") == BigDecimal(significand: Integer(1), exponent: 2))
     }
 }
 

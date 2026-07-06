@@ -69,7 +69,8 @@ public struct BinaryView: Sendable, Equatable {
     public var value: Value {
         switch kind {
         case .plain:
-            return .number(BigDecimal(significand: pattern, exponent: 0))
+            // Bridge the BigInt bit-pattern into the significand's Integer type.
+            return .number(BigDecimal(significand: Integer(pattern.description)!, exponent: 0))
         case .fixed(let signed):
             let decoded = signed && pattern >= (BigInt(1) << (width - 1))
                 ? pattern - (BigInt(1) << width)
@@ -98,7 +99,8 @@ public struct BinaryView: Sendable, Equatable {
 
         case .number(let n):
             guard n.isInteger else { return .failure(.notAnInteger) }
-            let magnitude = n.significand * BigInt(10).power(n.exponent)  // exponent ≥ 0
+            // Bridge the Integer significand back to BigInt for the bitwise editor.
+            let magnitude = BigInt(n.significand.description)! * BigInt(10).power(n.exponent)  // exponent ≥ 0
             guard magnitude >= 0 else { return .failure(.negative) }
             let needed = magnitude.isZero ? 1 : String(magnitude, radix: 2).count
             guard needed <= maxWidth else { return .failure(.tooWide) }

@@ -1,4 +1,3 @@
-import BigInt
 
 /// Arbitrary-precision base-10 number: `significand × 10^exponent`.
 ///
@@ -6,17 +5,17 @@ import BigInt
 /// computed to `PrecisionContext.current` significant digits. Values are kept
 /// normalized (no trailing zeros in the significand) so equality is structural.
 public struct BigDecimal: Sendable {
-    public private(set) var significand: BigInt
+    package private(set) var significand: Integer
     public private(set) var exponent: Int
 
-    public init(significand: BigInt, exponent: Int) {
+    package init(significand: Integer, exponent: Int) {
         self.significand = significand
         self.exponent = exponent
         normalize()
     }
 
     public init(_ value: Int) {
-        self.init(significand: BigInt(value), exponent: 0)
+        self.init(significand: Integer(value), exponent: 0)
     }
 
     public static let zero = BigDecimal(0)
@@ -43,7 +42,7 @@ public struct BigDecimal: Sendable {
     /// Number of significant decimal digits in the significand.
     var digitCount: Int {
         if significand.isZero { return 1 }
-        return String(significand.magnitude).count
+        return significand.magnitude.description.count
     }
 }
 
@@ -83,7 +82,7 @@ extension BigDecimal {
         }
 
         guard !mantissa.isEmpty, mantissa != "-", mantissa != "+",
-              let sig = BigInt(mantissa) else { return nil }
+              let sig = Integer(mantissa) else { return nil }
         self.init(significand: sig, exponent: exp10)
     }
 }
@@ -99,10 +98,10 @@ extension BigDecimal: Equatable, Comparable, Hashable {
     }
 
     /// Rescales both values to a common exponent and returns the significands.
-    static func aligned(_ lhs: BigDecimal, _ rhs: BigDecimal) -> (BigInt, BigInt) {
+    static func aligned(_ lhs: BigDecimal, _ rhs: BigDecimal) -> (Integer, Integer) {
         let common = Swift.min(lhs.exponent, rhs.exponent)
-        let l = lhs.significand * BigInt(10).power(lhs.exponent - common)
-        let r = rhs.significand * BigInt(10).power(rhs.exponent - common)
+        let l = lhs.significand * Integer.powerOfTen(lhs.exponent - common)
+        let r = rhs.significand * Integer.powerOfTen(rhs.exponent - common)
         return (l, r)
     }
 }
@@ -137,7 +136,7 @@ extension BigDecimal {
     public func rounded(toSignificantDigits digits: Int) -> BigDecimal {
         let excess = digitCount - digits
         guard excess > 0 else { return self }
-        let scale = BigInt(10).power(excess)
+        let scale = Integer.powerOfTen(excess)
         let (q, r) = significand.quotientAndRemainder(dividingBy: scale)
         return BigDecimal(significand: Self.roundHalfEven(quotient: q, remainder: r, divisor: scale),
                           exponent: exponent + excess)
@@ -147,14 +146,14 @@ extension BigDecimal {
     /// rounds left of the decimal point (`round(1234, -2)` → `1200`).
     public func rounded(toPlaces places: Int) -> BigDecimal {
         guard exponent < -places else { return self }
-        let scale = BigInt(10).power(-places - exponent)
+        let scale = Integer.powerOfTen(-places - exponent)
         let (q, r) = significand.quotientAndRemainder(dividingBy: scale)
         return BigDecimal(significand: Self.roundHalfEven(quotient: q, remainder: r, divisor: scale),
                           exponent: -places)
     }
 
     /// Banker's rounding of `quotient` given the discarded `remainder`.
-    private static func roundHalfEven(quotient: BigInt, remainder: BigInt, divisor: BigInt) -> BigInt {
+    private static func roundHalfEven(quotient: Integer, remainder: Integer, divisor: Integer) -> Integer {
         if remainder.isZero { return quotient }
         let twice = remainder.magnitude * 2
         let bump: Bool
@@ -173,14 +172,14 @@ extension BigDecimal {
     /// HALF_UP) — the fixed-precision `decimal` type's `Rounding.HalfUp` mode.
     public func roundedHalfUp(toPlaces places: Int) -> BigDecimal {
         guard exponent < -places else { return self }
-        let scale = BigInt(10).power(-places - exponent)
+        let scale = Integer.powerOfTen(-places - exponent)
         let (q, r) = significand.quotientAndRemainder(dividingBy: scale)
         return BigDecimal(significand: Self.roundHalfUp(quotient: q, remainder: r, divisor: scale),
                           exponent: -places)
     }
 
     /// Half-or-more rounds away from zero (no even tie-break).
-    private static func roundHalfUp(quotient: BigInt, remainder: BigInt, divisor: BigInt) -> BigInt {
+    private static func roundHalfUp(quotient: Integer, remainder: Integer, divisor: Integer) -> Integer {
         if remainder.isZero { return quotient }
         guard remainder.magnitude * 2 >= divisor.magnitude else { return quotient }
         return quotient + (remainder.sign == .minus ? -1 : 1)
@@ -198,7 +197,7 @@ extension BigDecimal {
         var numerator = lhs.significand
         var exponent = lhs.exponent - rhs.exponent
         if shift > 0 {
-            numerator *= BigInt(10).power(shift)
+            numerator *= Integer.powerOfTen(shift)
             exponent -= shift
         }
         let (q, r) = numerator.quotientAndRemainder(dividingBy: rhs.significand)
