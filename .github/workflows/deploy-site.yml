@@ -65,6 +65,21 @@ jobs:
       - name: Generate living spec + report
         run: scripts/generate-living-spec.sh
 
+      # The CROSS-PLATFORM (Rust) engine's report against the SAME spec/anzan
+      # features — verification parity with the Swift report above. Pure logic
+      # (no GPU), so it runs on this same deploy runner. Env-gated JSON from the
+      # gherkin runner → themed HTML matching spec.html. Also before deploy.
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - name: Generate Rust engine report
+        env:
+          SOROBAN_REPORT: ${{ github.workspace }}/rust-cucumber.json
+        run: |
+          (cd rust && cargo test -p soroban-engine --test gherkin)
+          node scripts/rust-report.mjs "$SOROBAN_REPORT" site/public/rust-report.html
+
       - uses: oras-project/setup-oras@v1
 
       - name: Fetch salpa

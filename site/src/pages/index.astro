@@ -19,6 +19,11 @@ const links = {
     // prose, generated from the engine's Gherkin suite (scripts/
     // generate-living-spec.sh), with the full test report one click deeper.
     verified: "/spec.html",
+    // The two engines' test reports against that one shared spec: the native
+    // Swift engine (PickleKit) and the cross-platform Rust engine (cucumber →
+    // scripts/rust-report.mjs).
+    swiftReport: "/report.html",
+    rustReport: "/rust-report.html",
 };
 ---
 
@@ -50,7 +55,10 @@ const links = {
             <p class="fine">
                 Every behavior is a written, <a href={links.verified}
                     >continuously-verified specification</a
-                >.
+                > — proven by both the <a href={links.swiftReport}
+                    >native (Swift)</a
+                > and <a href={links.rustReport}>cross-platform (Rust)</a>
+                engines against one shared spec.
             </p>
 
             <!-- Real app screenshots in a theme-matched carousel: every shot

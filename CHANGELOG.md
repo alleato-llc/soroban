@@ -25,6 +25,16 @@ still suppresses all release workflows regardless of the paths it touches — se
 
 ### Added
 
+- **The cross-platform (Rust) engine now has its own live test report.** The
+  landing page already published a "Living Specification" + test report from the
+  native Swift engine (PickleKit); the Rust engine now gets a matching report
+  from the **same** `spec/anzan` features. The gherkin runner emits Cucumber
+  JSON when `SOROBAN_REPORT` is set (env-gated, so plain `cargo test` is
+  unchanged), and `scripts/rust-report.mjs` converts it to a themed
+  `rust-report.html` reusing the exact Solarized/Dracula tokens as `spec.html`.
+  `deploy-site.yml` regenerates it on every deploy; the landing page's
+  "continuously-verified" line now links **both** engines' reports. Verification
+  parity: one shared spec, proven by two independent engines.
 - **Stable, version-free download names for the Rust track.** `release-rust.yml`
   now attaches each `rust-v*` release under fixed public names via a
   `gh release upload --clobber` step: `Soroban-cross.dmg` (the signed, notarized

@@ -9,7 +9,7 @@
 //! @rust-pending.
 
 use cucumber::gherkin::Step;
-use cucumber::{given, then, when, World};
+use cucumber::{given, then, when, World, WriterExt as _};
 use soroban_engine::{
     BigDecimal, Calculator, CellAddress, CellDisplay, EngineError, EvalOutcome, LanguageMode,
     SheetStore,
@@ -381,10 +381,29 @@ fn saved_and_reopened(world: &mut AnzanWorld) {
 
 #[tokio::main]
 async fn main() {
-    AnzanWorld::cucumber()
-        .max_concurrent_scenarios(1) // serialized, like the Swift suite
-        .filter_run_and_exit("../../spec/anzan", |_, _, scenario| {
-            !scenario.tags.iter().any(|tag| tag == "rust-pending")
-        })
-        .await;
+    // @rust-pending scenarios are excluded in BOTH modes (the Swift side runs
+    // them; the port hasn't caught up) so the report's counts stay aligned with
+    // the plain-test run.
+    //
+    // Report mode: when SOROBAN_REPORT names a path, emit Cucumber JSON there
+    // (consumed by scripts/rust-report.mjs) instead of the console runner. Kept
+    // env-gated so a normal `cargo test` is completely unchanged.
+    if let Ok(path) = std::env::var("SOROBAN_REPORT") {
+        let file = std::fs::File::create(&path)
+            .unwrap_or_else(|e| panic!("cannot create SOROBAN_REPORT file '{path}': {e}"));
+        AnzanWorld::cucumber()
+            .max_concurrent_scenarios(1)
+            .with_writer(cucumber::writer::Json::new(file).normalized())
+            .filter_run("../../spec/anzan", |_, _, scenario| {
+                !scenario.tags.iter().any(|tag| tag == "rust-pending")
+            })
+            .await;
+    } else {
+        AnzanWorld::cucumber()
+            .max_concurrent_scenarios(1) // serialized, like the Swift suite
+            .filter_run_and_exit("../../spec/anzan", |_, _, scenario| {
+                !scenario.tags.iter().any(|tag| tag == "rust-pending")
+            })
+            .await;
+    }
 }
