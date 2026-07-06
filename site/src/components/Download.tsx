@@ -53,6 +53,25 @@ export default function Download(urls: DownloadUrls) {
     }
   }, []);
 
+  // Windows/Linux each ship two portable binaries (x86-64 + ARM64). Present BOTH
+  // as equal, side-by-side buttons — the visitor's detected arch simply leads
+  // (accent) so it's easy to grab, but neither arch is demoted to a fine-print
+  // link. Mirrors the macOS native/cross pair below.
+  const archButtons = (label: string, x64: string, arm64: string) => {
+    const first = arch === "arm64" ? { href: arm64, name: "ARM64" } : { href: x64, name: "x86-64" };
+    const second = arch === "arm64" ? { href: x64, name: "x86-64" } : { href: arm64, name: "ARM64" };
+    return (
+      <>
+        <a class="button primary" href={first.href}>{label} · {first.name}</a>
+        <a class="button quiet" href={second.href}>{label} · {second.name}</a>
+        <p class="fine build-note">
+          The cross-platform app — pick your architecture (x86-64 or ARM64).{" "}
+          <a href={urls.releasesPage}>other platforms</a>
+        </p>
+      </>
+    );
+  };
+
   if (os === "mac") {
     return (
       <>
@@ -67,46 +86,22 @@ export default function Download(urls: DownloadUrls) {
   }
 
   if (os === "windows") {
-    const primary = arch === "arm64" ? urls.windowsArm64 : urls.windowsX64;
-    const other = arch === "arm64" ? urls.windowsX64 : urls.windowsArm64;
-    const otherLabel = arch === "arm64" ? "x86-64" : "ARM64";
-    return (
-      <>
-        <a class="button primary" href={primary}>Download for Windows</a>
-        <p class="fine build-note">
-          The cross-platform app ({arch === "arm64" ? "ARM64" : "x86-64"}).{" "}
-          <a href={other}>{otherLabel} build</a> ·{" "}
-          <a href={urls.releasesPage}>other platforms</a>
-        </p>
-      </>
-    );
+    return archButtons("Windows", urls.windowsX64, urls.windowsArm64);
   }
 
   if (os === "linux") {
-    const primary = arch === "arm64" ? urls.linuxArm64 : urls.linuxX64;
-    const other = arch === "arm64" ? urls.linuxX64 : urls.linuxArm64;
-    const otherLabel = arch === "arm64" ? "x86-64" : "ARM64";
-    return (
-      <>
-        <a class="button primary" href={primary}>Download for Linux</a>
-        <p class="fine build-note">
-          The cross-platform app ({arch === "arm64" ? "ARM64" : "x86-64"}).{" "}
-          <a href={other}>{otherLabel} build</a> ·{" "}
-          <a href={urls.releasesPage}>other platforms</a>
-        </p>
-      </>
-    );
+    return archButtons("Linux", urls.linuxX64, urls.linuxArm64);
   }
 
-  // Unknown / no-JS: a full, static all-platforms list.
+  // Unknown / no-JS: a full, static all-platforms list — both arches per
+  // portable platform, each an equal link.
   return (
     <>
       <a class="button primary" href={urls.swiftDmg}>Download for macOS</a>
       <p class="fine build-note">
-        Cross-platform builds:{" "}
-        <a href={urls.crossDmg}>macOS</a> ·{" "}
-        <a href={urls.windowsX64}>Windows</a> ·{" "}
-        <a href={urls.linuxX64}>Linux</a>{" "}
+        Cross-platform builds: <a href={urls.crossDmg}>macOS</a> · Windows{" "}
+        (<a href={urls.windowsX64}>x86-64</a> / <a href={urls.windowsArm64}>ARM64</a>) · Linux{" "}
+        (<a href={urls.linuxX64}>x86-64</a> / <a href={urls.linuxArm64}>ARM64</a>){" "}
         (<a href={urls.releasesPage}>all downloads</a>)
       </p>
     </>
