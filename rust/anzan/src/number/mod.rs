@@ -9,7 +9,7 @@
 mod math;
 
 use crate::EngineError;
-use num_bigint::{BigInt, Sign};
+use num_bigint::{BigInt, BigUint, Sign};
 use num_integer::Integer;
 use num_traits::Zero;
 use std::cell::Cell;
@@ -78,6 +78,12 @@ impl BigDecimal {
             self.exponent = 0;
             return;
         }
+        // 10 = 2·5, so any value with a trailing zero is even. An odd significand
+        // has no factor of ten — skip the strip with a low-bit test instead of a
+        // full big-integer division (roughly half of arithmetic results are odd).
+        if !self.significand.is_even() {
+            return;
+        }
         let ten = BigInt::from(10);
         loop {
             let (q, r) = self.significand.div_rem(&ten);
@@ -94,8 +100,56 @@ impl BigDecimal {
         if self.significand.is_zero() {
             return 1;
         }
-        self.significand.magnitude().to_string().len() as i64
+        // 1233/4096 ≈ log10(2): estimate the digit count from the bit length,
+        // then correct it to exact by comparing against powers of ten
+        // (10^(d-1) ≤ |n| < 10^d). Avoids the full base-10 stringify the old
+        // `.to_string().len()` needed on every division/rounding.
+        let mag = self.significand.magnitude();
+        let mut d = (self.significand.bits() as i64) * 1233 / 4096 + 1;
+        while *mag >= ten_pow_u(d) {
+            d += 1;
+        }
+        while d > 1 && *mag < ten_pow_u(d - 1) {
+            d -= 1;
+        }
+        d
     }
+}
+
+thread_local! {
+    /// Powers of ten `0..=128` as unsigned magnitudes, precomputed once. `10^k`
+    /// is rebuilt constantly (digit-count boundary compares, and — from the
+    /// alignment/rounding paths — operand rescaling), so caching the common
+    /// range turns those into a clone of a ready value instead of a fresh
+    /// exponentiation. Mirrors the Swift engine's `Integer.tenLadder`.
+    static TEN_LADDER_U: Vec<BigUint> = {
+        let mut ladder = Vec::with_capacity(129);
+        let ten = BigUint::from(10u32);
+        let mut value = BigUint::from(1u32);
+        for _ in 0..=128 {
+            ladder.push(value.clone());
+            value *= &ten;
+        }
+        ladder
+    };
+}
+
+/// `10^k` (k ≥ 0) as an unsigned magnitude, served from the cache when in range.
+fn ten_pow_u(k: i64) -> BigUint {
+    let k = k as usize;
+    TEN_LADDER_U.with(|ladder| {
+        if k < ladder.len() {
+            ladder[k].clone()
+        } else {
+            BigUint::from(10u32).pow(k as u32)
+        }
+    })
+}
+
+/// `10^k` (k ≥ 0) as a signed value, from the same cache — for the alignment /
+/// rounding / division rescales that multiply a signed significand.
+fn ten_pow(k: i64) -> BigInt {
+    BigInt::from(ten_pow_u(k))
 }
 
 // MARK: - Precision context
@@ -171,13 +225,22 @@ impl BigDecimal {
 // MARK: - Comparison
 
 impl BigDecimal {
-    /// Rescales both values to a common exponent and returns the significands.
-    fn aligned(lhs: &Self, rhs: &Self) -> (BigInt, BigInt) {
+    /// Rescales both values to a common exponent; returns the aligned
+    /// significands and that exponent. The operand already at the common
+    /// exponent is returned as-is — no `× 10^0` (a full multiply by one).
+    fn aligned(lhs: &Self, rhs: &Self) -> (BigInt, BigInt, i64) {
         let common = lhs.exponent.min(rhs.exponent);
-        let ten = BigInt::from(10);
-        let l = &lhs.significand * ten.pow((lhs.exponent - common) as u32);
-        let r = &rhs.significand * ten.pow((rhs.exponent - common) as u32);
-        (l, r)
+        let l = if lhs.exponent == common {
+            lhs.significand.clone()
+        } else {
+            &lhs.significand * ten_pow(lhs.exponent - common)
+        };
+        let r = if rhs.exponent == common {
+            rhs.significand.clone()
+        } else {
+            &rhs.significand * ten_pow(rhs.exponent - common)
+        };
+        (l, r, common)
     }
 }
 
@@ -190,7 +253,7 @@ impl PartialOrd for BigDecimal {
 impl Ord for BigDecimal {
     fn cmp(&self, other: &Self) -> Ordering {
         // Normalization makes structural equality correct; ordering aligns.
-        let (l, r) = Self::aligned(self, other);
+        let (l, r, _) = Self::aligned(self, other);
         l.cmp(&r)
     }
 }
@@ -200,8 +263,7 @@ impl Ord for BigDecimal {
 impl Add for &BigDecimal {
     type Output = BigDecimal;
     fn add(self, rhs: &BigDecimal) -> BigDecimal {
-        let common = self.exponent.min(rhs.exponent);
-        let (l, r) = BigDecimal::aligned(self, rhs);
+        let (l, r, common) = BigDecimal::aligned(self, rhs);
         BigDecimal::new(l + r, common)
     }
 }
@@ -209,7 +271,10 @@ impl Add for &BigDecimal {
 impl Sub for &BigDecimal {
     type Output = BigDecimal;
     fn sub(self, rhs: &BigDecimal) -> BigDecimal {
-        self + &(-rhs)
+        // Align and subtract the significands directly, rather than building an
+        // intermediate `-rhs` and re-aligning through `+`.
+        let (l, r, common) = BigDecimal::aligned(self, rhs);
+        BigDecimal::new(l - r, common)
     }
 }
 
@@ -264,7 +329,7 @@ impl BigDecimal {
         if excess <= 0 {
             return self.clone();
         }
-        let scale = BigInt::from(10).pow(excess as u32);
+        let scale = ten_pow(excess);
         let (q, r) = self.significand.div_rem(&scale);
         Self::new(Self::round_half_even(q, &r, &scale), self.exponent + excess)
     }
@@ -275,7 +340,7 @@ impl BigDecimal {
         if self.exponent >= -places {
             return self.clone();
         }
-        let scale = BigInt::from(10).pow((-places - self.exponent) as u32);
+        let scale = ten_pow(-places - self.exponent);
         let (q, r) = self.significand.div_rem(&scale);
         Self::new(Self::round_half_even(q, &r, &scale), -places)
     }
@@ -309,7 +374,7 @@ impl BigDecimal {
         if self.exponent >= -places {
             return self.clone();
         }
-        let scale = BigInt::from(10).pow((-places - self.exponent) as u32);
+        let scale = ten_pow(-places - self.exponent);
         let (q, r) = self.significand.div_rem(&scale);
         Self::new(Self::round_half_up(q, &r, &scale), -places)
     }
@@ -347,7 +412,7 @@ impl BigDecimal {
         let mut numerator = self.significand.clone();
         let mut exponent = self.exponent - rhs.exponent;
         if shift > 0 {
-            numerator *= BigInt::from(10).pow(shift as u32);
+            numerator *= ten_pow(shift);
             exponent -= shift;
         }
         let (q, r) = numerator.div_rem(&rhs.significand);
@@ -361,8 +426,7 @@ impl BigDecimal {
         if rhs.is_zero() {
             return Err(EngineError::DivisionByZero);
         }
-        let common = self.exponent.min(rhs.exponent);
-        let (l, r) = Self::aligned(self, rhs);
+        let (l, r, common) = Self::aligned(self, rhs);
         Ok(Self::new(l % r, common))
     }
 }
@@ -390,6 +454,6 @@ impl BigDecimal {
         if self.exponent > 10_000 {
             return None; // refuse absurd widths
         }
-        Some(&self.significand * BigInt::from(10).pow(self.exponent as u32))
+        Some(&self.significand * ten_pow(self.exponent))
     }
 }

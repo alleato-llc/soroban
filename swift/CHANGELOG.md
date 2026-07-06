@@ -27,6 +27,18 @@ The GitHub Release for each tag is the point of truth for the signed, notarized
   (reduction and recursion now outrun the Rust engine), with no regressions on the
   wide-precision division paths. `attaswift/BigInt` remains only for the fixed-width
   / binary-editor types.
+- **More exact-arithmetic speedups at the `BigDecimal` layer.** Building on the
+  custom bignum, several hot paths shed avoidable work — the division-heavy `pmt`
+  finance workload is **~8× faster** (the cross-engine bench) and arithmetic ~1.1×,
+  with recursion/reduction/transcendental flat — all bit-identical (the whole
+  shared spec and the differential oracle stay green): `normalize` skips its
+  trailing-zero strip for odd significands and reuses each division's quotient;
+  `digitCount` is derived from the significand's bit length (corrected exactly
+  against cached powers of ten) instead of formatting it to a decimal string;
+  operand alignment no longer multiplies the aligned operand by 10⁰ and
+  subtraction drops a redundant normalize pass; the `Integer` magnitude limb loops
+  run over unsafe buffers; and large operands get divide-and-conquer base-10
+  conversion and Karatsuba multiplication.
 - **Minimum OS is now macOS 15 / iOS 18** (was macOS 14 / iOS 17). The new
   exact-decimal significand uses the stdlib `UInt128`/`Int128` for its limb
   arithmetic, which require these versions.

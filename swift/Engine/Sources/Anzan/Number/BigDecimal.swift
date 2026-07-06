@@ -33,16 +33,23 @@ public struct BigDecimal: Sendable {
             exponent = 0
             return
         }
-        while significand.isMultiple(of: 10) {
-            significand /= 10
+        // 10 = 2·5, so any value with a trailing zero is even. An odd significand
+        // has no factor of ten — skip the strip with a low-bit test instead of a
+        // full big-integer division (roughly half of arithmetic results are odd).
+        if !significand.isEven { return }
+        // Reuse each quotient: one division per stripped digit, not two (the old
+        // `isMultiple(of:10)` + `/= 10` recomputed the same quotient twice).
+        while true {
+            let (q, r) = significand.quotientAndRemainder(dividingBy: 10)
+            if !r.isZero { break }
+            significand = q
             exponent += 1
         }
     }
 
     /// Number of significant decimal digits in the significand.
     var digitCount: Int {
-        if significand.isZero { return 1 }
-        return significand.magnitude.description.count
+        significand.decimalDigitCount
     }
 }
 
@@ -93,16 +100,20 @@ extension BigDecimal: Equatable, Comparable, Hashable {
     // Normalization makes structural equality correct.
 
     public static func < (lhs: BigDecimal, rhs: BigDecimal) -> Bool {
-        let (l, r) = aligned(lhs, rhs)
+        let (l, r, _) = aligned(lhs, rhs)
         return l < r
     }
 
-    /// Rescales both values to a common exponent and returns the significands.
-    static func aligned(_ lhs: BigDecimal, _ rhs: BigDecimal) -> (Integer, Integer) {
+    /// Rescales both values to a common exponent; returns the aligned significands
+    /// and that exponent. The operand already at the common exponent is returned
+    /// as-is — no `× 10^0` (which would run a full big-integer multiply by one).
+    static func aligned(_ lhs: BigDecimal, _ rhs: BigDecimal) -> (l: Integer, r: Integer, exponent: Int) {
         let common = Swift.min(lhs.exponent, rhs.exponent)
-        let l = lhs.significand * Integer.powerOfTen(lhs.exponent - common)
-        let r = rhs.significand * Integer.powerOfTen(rhs.exponent - common)
-        return (l, r)
+        let l = lhs.exponent == common
+            ? lhs.significand : lhs.significand * Integer.powerOfTen(lhs.exponent - common)
+        let r = rhs.exponent == common
+            ? rhs.significand : rhs.significand * Integer.powerOfTen(rhs.exponent - common)
+        return (l, r, common)
     }
 }
 
@@ -110,13 +121,16 @@ extension BigDecimal: Equatable, Comparable, Hashable {
 
 extension BigDecimal {
     public static func + (lhs: BigDecimal, rhs: BigDecimal) -> BigDecimal {
-        let common = Swift.min(lhs.exponent, rhs.exponent)
-        let (l, r) = aligned(lhs, rhs)
+        let (l, r, common) = aligned(lhs, rhs)
         return BigDecimal(significand: l + r, exponent: common)
     }
 
     public static func - (lhs: BigDecimal, rhs: BigDecimal) -> BigDecimal {
-        lhs + (-rhs)
+        // Align and subtract the significands directly. The old `lhs + (-rhs)`
+        // built an intermediate negated BigDecimal — a second normalize pass on
+        // the universal add/sub path — which this avoids.
+        let (l, r, common) = aligned(lhs, rhs)
+        return BigDecimal(significand: l - r, exponent: common)
     }
 
     public static prefix func - (value: BigDecimal) -> BigDecimal {
@@ -209,8 +223,7 @@ extension BigDecimal {
     /// Truncated integer division remainder, matching the sign of the dividend.
     public static func % (lhs: BigDecimal, rhs: BigDecimal) throws(EngineError) -> BigDecimal {
         guard !rhs.isZero else { throw EngineError.divisionByZero }
-        let common = Swift.min(lhs.exponent, rhs.exponent)
-        let (l, r) = aligned(lhs, rhs)
+        let (l, r, common) = aligned(lhs, rhs)
         return BigDecimal(significand: l % r, exponent: common)
     }
 }
