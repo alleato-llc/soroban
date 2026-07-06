@@ -493,3 +493,6 @@ impl fmt::Display for FunctionValue {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;
