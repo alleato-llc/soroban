@@ -62,10 +62,16 @@ jobs:
 
       - name: Generate screenshots (software Vulkan, GL fallback)
         working-directory: soroban
+        env:
+          # Force a 2× (HiDPI) scale factor on X11 so the headless captures come
+          # out Retina-resolution (~2080-wide), matching the macOS shots' crispness
+          # rather than the 1× (~1040-wide) winit default under Xvfb. The Xvfb
+          # screen below is sized to hold the doubled framebuffer.
+          WINIT_X11_SCALE_FACTOR: "2"
         run: |
           set -euo pipefail
           run() { # backend-selecting env… → run the generator under a virtual X server
-            xvfb-run -a --server-args="-screen 0 2560x1600x24" \
+            xvfb-run -a --server-args="-screen 0 3200x2000x24" \
               env "$@" scripts/generate-screenshots.sh
           }
           # lavapipe (software Vulkan) first; software GL (llvmpipe) as fallback.
