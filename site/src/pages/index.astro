@@ -24,6 +24,10 @@ const links = {
     // scripts/rust-report.mjs).
     swiftReport: "/report.html",
     rustReport: "/rust-report.html",
+    // Cross-engine micro-benchmarks — the Rust and Swift engines evaluating the
+    // same Anzan workloads, measured same-box/same-run (bench/, published by
+    // deploy-site.yml). A relative comparison; absolute numbers are trend-only.
+    perf: "/perf.html",
 };
 ---
 
@@ -58,7 +62,9 @@ const links = {
                 > — proven by both the <a href={links.swiftReport}
                     >native (Swift)</a
                 > and <a href={links.rustReport}>cross-platform (Rust)</a>
-                engines against one shared spec.
+                engines against one shared spec — and continuously <a
+                    href={links.perf}>benchmarked</a
+                > across both.
             </p>
 
             <!-- Real app screenshots in a theme-matched carousel with TWO

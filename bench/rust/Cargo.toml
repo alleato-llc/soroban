@@ -1,0 +1,23 @@
+# Cross-engine benchmark runner (Rust). DELIBERATELY OUTSIDE the rust/ workspace
+# (its own target/) so it never disturbs the shared workspace build or CI. It
+# path-depends on the light `anzan` language crate (num-bigint + a few small pure
+# crates) — NOT `soroban-engine`, which would pull the bundled-SQLite C build we
+# don't need to benchmark the evaluator.
+[package]
+name = "soroban-bench-rust"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "runner"
+path = "src/main.rs"
+
+[dependencies]
+anzan = { path = "../../rust/anzan" }
+
+# NB: no custom [profile.release] — we use Cargo's DEFAULT release (opt-level 3,
+# no LTO, 16 codegen units), which is exactly what the shipped rust/gui app builds
+# with. Swift's `swift build -c release` likewise does per-module optimization with
+# no cross-package LTO, so both engines are measured as their apps actually ship —
+# no thumb on the scale from a more aggressive bench-only profile.
