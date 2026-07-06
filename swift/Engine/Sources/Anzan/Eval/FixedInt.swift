@@ -56,7 +56,7 @@ public struct FixedInt: Sendable, Equatable {
     /// The plain decimal value — for comparison, truthiness, and numeric
     /// coercion *outside* typed arithmetic (typed arithmetic stays in `apply`).
     public var decimal: BigDecimal {
-        BigDecimal(significand: value, exponent: 0)
+        BigDecimal(significand: Integer(value.description)!, exponent: 0)
     }
 }
 

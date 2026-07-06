@@ -57,7 +57,8 @@ let programmerFunctions: [BuiltinFunction] = [
                 }
                 value = value * BigInt(base) + BigInt(digit)
             }
-            return .number(BigDecimal(significand: negative ? -value : value, exponent: 0))
+            let signed = negative ? -value : value
+            return .number(BigDecimal(significand: Integer(signed.description)!, exponent: 0))
         }),
 
     BuiltinFunction(
@@ -119,7 +120,7 @@ let programmerFunctions: [BuiltinFunction] = [
             }
             let n = try requireBits(args[0].asNumber(for: "bitShift"), "bitShift")
             let result = by >= 0 ? n << by : n >> (-by)
-            return .number(BigDecimal(significand: result, exponent: 0))
+            return .number(BigDecimal(significand: Integer(result.description)!, exponent: 0))
         }),
 ] + integerWidthConstructors
 
@@ -162,7 +163,8 @@ private func bitFn(_ name: String, _ symbol: String, _ summary: String,
             return try arguments.dropFirst().reduce(arguments[0]) { try FixedInt.applyBitwise($0, $1, op) }
         }
         let bits = try arguments.map { try requireBits($0.asNumber(for: name), name) }
-        return .number(BigDecimal(significand: bits.dropFirst().reduce(bits[0], op), exponent: 0))
+        let combined = bits.dropFirst().reduce(bits[0], op)
+        return .number(BigDecimal(significand: Integer(combined.description)!, exponent: 0))
     })
 }
 
@@ -238,6 +240,7 @@ extension BigDecimal {
         guard isInteger else { return nil }
         guard exponent >= 0 else { return nil }
         guard exponent <= 10_000 else { return nil } // refuse absurd widths
-        return significand * BigInt(10).power(exponent)
+        // Bridge the Integer significand to BigInt for the programmer/bitwise world.
+        return BigInt(significand.description)! * BigInt(10).power(exponent)
     }
 }

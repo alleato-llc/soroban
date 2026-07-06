@@ -312,7 +312,7 @@ package struct Lexer {
                 message: "malformed \(name) literal '\(String(chars[start...index]))'",
                 position: start)
         }
-        return Token(kind: .number(BigDecimal(significand: value, exponent: 0)),
+        return Token(kind: .number(BigDecimal(significand: Integer(value.description)!, exponent: 0)),
                      range: start..<index)
     }
 }
