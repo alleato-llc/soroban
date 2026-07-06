@@ -2,7 +2,7 @@
   "machine": "Apple M4 Max",
   "os": "Darwin arm64",
   "date": "2026-07-06",
-  "git_commit": "1e1ab78",
+  "git_commit": "571bbf6",
   "toolchains": {
     "rust": "rustc 1.96.1 (31fca3adb 2026-06-26)",
     "swift": "Apple Swift version 6.3.2 (swiftlang-6.3.2.1.108 clang-2100.1.1.101)"
@@ -18,72 +18,72 @@
     {
       "impl": "rust-engine",
       "bench": "arith",
-      "mbps": 342996.81,
-      "mbps_median": 339712.62,
-      "iters": 720896
+      "mbps": 464827.29,
+      "mbps_median": 461249.49,
+      "iters": 983040
     },
     {
       "impl": "rust-engine",
       "bench": "fib",
-      "mbps": 74.32,
-      "mbps_median": 73.39,
-      "iters": 152
+      "mbps": 80.09,
+      "mbps_median": 79.43,
+      "iters": 160
     },
     {
       "impl": "rust-engine",
       "bench": "reduce",
-      "mbps": 3555.29,
-      "mbps_median": 3520.74,
-      "iters": 7168
+      "mbps": 4215.65,
+      "mbps_median": 4188.41,
+      "iters": 8704
     },
     {
       "impl": "rust-engine",
       "bench": "transcendental",
-      "mbps": 254069.91,
-      "mbps_median": 251216.45,
-      "iters": 524288
+      "mbps": 268100.48,
+      "mbps_median": 266197.84,
+      "iters": 557056
     },
     {
       "impl": "rust-engine",
       "bench": "finance",
-      "mbps": 826.84,
-      "mbps_median": 815.64,
-      "iters": 1664
+      "mbps": 1803.38,
+      "mbps_median": 1796.23,
+      "iters": 3840
     },
     {
       "impl": "swift-engine",
       "bench": "arith",
-      "mbps": 37192.31,
-      "mbps_median": 36689.98,
-      "iters": 73728
+      "mbps": 90420.05,
+      "mbps_median": 89554.22,
+      "iters": 180224
     },
     {
       "impl": "swift-engine",
       "bench": "fib",
-      "mbps": 84.26,
-      "mbps_median": 83.08,
-      "iters": 176
+      "mbps": 136.84,
+      "mbps_median": 132.44,
+      "iters": 272
     },
     {
       "impl": "swift-engine",
       "bench": "reduce",
-      "mbps": 1504.39,
-      "mbps_median": 1474.55,
-      "iters": 3072
+      "mbps": 6354.25,
+      "mbps_median": 6209.12,
+      "iters": 13312
     },
     {
       "impl": "swift-engine",
       "bench": "transcendental",
-      "mbps": 25622.39,
-      "mbps_median": 25432.49,
-      "iters": 53248
+      "mbps": 57198.2,
+      "mbps_median": 56292.35,
+      "iters": 114688
     },
     {
       "impl": "swift-engine",
       "bench": "finance",
-      "mbps": 43.99,
-      "mbps_median": 43.34,
-      "iters": 88
+      "mbps": 738.4,
+      "mbps_median": 730.81,
+      "iters": 1536
     }
   ]
 }

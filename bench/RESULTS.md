@@ -17,9 +17,9 @@ interpreter's dispatch + user-function recursion (`fib(20)`); `reduce` the index
 loop (`sigma_i=1^1000(i^2)`); `transcendental` the f64 libm/Double seam
 (`sin+cos+tan+atan2`); `finance` the exact `pmt` (power + div).
 
-Machine: Apple M4 Max | Darwin arm64 | 2026-07-06 | commit 1e1ab78.
+Machine: Apple M4 Max | Darwin arm64 | 2026-07-06 | commit 571bbf6.
 
 | Implementation | Arithmetic | Fibonacci | Reduction (∑) | Transcendental | Finance (pmt) |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Rust engine | 342996.8 | 74.3 | 3555.3 | 254069.9 | 826.8 |
-| Swift engine | 37192.3 | 84.3 | 1504.4 | 25622.4 | 44.0 |
+| Rust engine | 464827.3 | 80.1 | 4215.6 | 268100.5 | 1803.4 |
+| Swift engine | 90420.1 | 136.8 | 6354.2 | 57198.2 | 738.4 |
