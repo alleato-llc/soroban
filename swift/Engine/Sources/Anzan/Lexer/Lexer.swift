@@ -9,6 +9,43 @@ package struct Lexer {
         self.chars = Array(source)
     }
 
+    /// An ordered pair of characters — the two-char operator lookup key, so the
+    /// scanner needn't allocate a `String` per token to probe the table.
+    private struct Pair: Hashable {
+        let a: Character, b: Character
+        init(_ a: Character, _ b: Character) { self.a = a; self.b = b }
+    }
+
+    /// Two-character operators, built once. Probed before the single-char table
+    /// so `==` never lexes as two assigns, `<=` as less-than-assign, etc.
+    private static let twoChar: [Pair: Token.Kind] = [
+        Pair("=", "="): .equalEqual, Pair("!", "="): .notEqual,
+        Pair("<", "="): .lessOrEqual, Pair(">", "="): .greaterOrEqual,
+        Pair("<", "<"): .shiftLeft, Pair(">", ">"): .shiftRight,
+        Pair(".", "."): .dotDot, Pair("-", ">"): .arrow, Pair(":", ":"): .colonColon,
+    ]
+
+    /// Single-character operators and punctuation, built once. The typographic
+    /// forms (× ÷ − ·) arrive constantly via copy/paste from documents.
+    private static let simple: [Character: Token.Kind] = [
+        "+": .plus, "-": .minus, "*": .star, "/": .slash,
+        "%": .percent, "^": .caret, "=": .assign,
+        "(": .leftParen, ")": .rightParen, ",": .comma,
+        "[": .leftBracket, "]": .rightBracket,
+        "{": .leftBrace, "}": .rightBrace,
+        ":": .colon, // a cell reference consumes its own ':' (A:1)
+        ";": .semicolon, // namespace member separator
+        "×": .star, "·": .star, "÷": .slash, "−": .minus,
+        "√": .sqrtSign,
+        "<": .lessThan, ">": .greaterThan,
+        "&": .ampersand, "|": .pipe, // Programmer-mode bitwise; parser errors elsewhere
+        "~": .tilde, // Programmer-mode bitwise NOT
+        "≤": .lessOrEqual, "≥": .greaterOrEqual, "≠": .notEqual,
+        "!": .bang, // sheet qualifier — "!=" was caught by the two-char pass
+        "∑": .identifier("sigma"),   // math symbols aren't letters, so the
+        "∏": .identifier("product"), // identifier scanner can't pick them up
+    ]
+
     /// Splits a source line into its code and its trailing `#` comment,
     /// respecting string literals (a `#` inside `"…"` is not a comment). The
     /// comment is returned WITHOUT the leading `#`, trimmed; nil when absent.
@@ -66,16 +103,7 @@ package struct Lexer {
         // Two-character operators before the single-character table
         // (so `==` never lexes as two assigns, `<=` as less-then-assign).
         if index + 1 < chars.count {
-            let pair = String([c, chars[index + 1]])
-            let twoChar: [String: Token.Kind] = [
-                "==": .equalEqual, "!=": .notEqual,
-                "<=": .lessOrEqual, ">=": .greaterOrEqual,
-                "<<": .shiftLeft, ">>": .shiftRight, // before the single-char `<`/`>`
-                "..": .dotDot, // before the number scanner grabs the first '.'
-                "->": .arrow,  // before '-' lexes as minus
-                "::": .colonColon, // namespace qualifier, before the single ':'
-            ]
-            if let kind = twoChar[pair] {
+            if let kind = Lexer.twoChar[Pair(c, chars[index + 1])] {
                 index += 2
                 return Token(kind: kind, range: start..<index)
             }
@@ -94,25 +122,7 @@ package struct Lexer {
 
         // Single-character operators and punctuation. The typographic forms
         // (× ÷ − ·) arrive constantly via copy/paste from documents.
-        let simple: [Character: Token.Kind] = [
-            "+": .plus, "-": .minus, "*": .star, "/": .slash,
-            "%": .percent, "^": .caret, "=": .assign,
-            "(": .leftParen, ")": .rightParen, ",": .comma,
-            "[": .leftBracket, "]": .rightBracket,
-            "{": .leftBrace, "}": .rightBrace,
-            ":": .colon, // a cell reference consumes its own ':' (A:1)
-            ";": .semicolon, // namespace member separator
-            "×": .star, "·": .star, "÷": .slash, "−": .minus,
-            "√": .sqrtSign,
-            "<": .lessThan, ">": .greaterThan,
-            "&": .ampersand, "|": .pipe, // Programmer-mode bitwise; parser errors elsewhere
-            "~": .tilde, // Programmer-mode bitwise NOT
-            "≤": .lessOrEqual, "≥": .greaterOrEqual, "≠": .notEqual,
-            "!": .bang, // sheet qualifier — "!=" was caught by the two-char pass
-            "∑": .identifier("sigma"),   // math symbols aren't letters, so the
-            "∏": .identifier("product"), // identifier scanner can't pick them up
-        ]
-        if let kind = simple[c] {
+        if let kind = Lexer.simple[c] {
             index += 1
             return Token(kind: kind, range: start..<index)
         }
