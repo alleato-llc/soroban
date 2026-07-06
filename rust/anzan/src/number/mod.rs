@@ -78,6 +78,12 @@ impl BigDecimal {
             self.exponent = 0;
             return;
         }
+        // 10 = 2·5, so any value with a trailing zero is even. An odd significand
+        // has no factor of ten — skip the strip with a low-bit test instead of a
+        // full big-integer division (roughly half of arithmetic results are odd).
+        if !self.significand.is_even() {
+            return;
+        }
         let ten = BigInt::from(10);
         loop {
             let (q, r) = self.significand.div_rem(&ten);

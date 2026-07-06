@@ -33,8 +33,16 @@ public struct BigDecimal: Sendable {
             exponent = 0
             return
         }
-        while significand.isMultiple(of: 10) {
-            significand /= 10
+        // 10 = 2·5, so any value with a trailing zero is even. An odd significand
+        // has no factor of ten — skip the strip with a low-bit test instead of a
+        // full big-integer division (roughly half of arithmetic results are odd).
+        if !significand.isEven { return }
+        // Reuse each quotient: one division per stripped digit, not two (the old
+        // `isMultiple(of:10)` + `/= 10` recomputed the same quotient twice).
+        while true {
+            let (q, r) = significand.quotientAndRemainder(dividingBy: 10)
+            if !r.isZero { break }
+            significand = q
             exponent += 1
         }
     }
