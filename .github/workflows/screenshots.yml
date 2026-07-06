@@ -8,7 +8,7 @@ name: Screenshots (Rust app)
 # have none — we use a SOFTWARE stack: Xvfb for a virtual display + Mesa's
 # software Vulkan (lavapipe) with a software-GL (llvmpipe) fallback. The capture
 # itself is the permanent env-gated harness (rust/gui/src/shot.rs), driven by
-# scripts/generate-screenshots.sh.
+# scripts/generate_screenshots.py.
 #
 # rime is a public sibling repo (rust/gui depends on it by ../../../rime/rime).
 #
@@ -22,7 +22,7 @@ on:
     branches: [main]
     paths:
       - "rust/gui/**"
-      - "scripts/generate-screenshots.sh"
+      - "scripts/generate_screenshots.py"
       - ".github/workflows/screenshots.yml"
 
 permissions:
@@ -72,7 +72,7 @@ jobs:
           set -euo pipefail
           run() { # backend-selecting env… → run the generator under a virtual X server
             xvfb-run -a --server-args="-screen 0 3200x2000x24" \
-              env "$@" scripts/generate-screenshots.sh
+              env "$@" python3 scripts/generate_screenshots.py
           }
           # lavapipe (software Vulkan) first; software GL (llvmpipe) as fallback.
           if ! run WGPU_BACKEND=vulkan; then
