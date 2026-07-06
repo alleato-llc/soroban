@@ -1,0 +1,93 @@
+name: Screenshots (Rust app)
+
+# Regenerates the cross-platform (Rust/iced) app's landing-page screenshot set
+# and commits the PNGs to site/public/screenshots/. That commit's `site/**`
+# path then auto-triggers deploy-site.yml, so the site picks them up.
+#
+# The Rust app renders with wgpu, so this needs a GPU. GitHub's Linux runners
+# have none — we use a SOFTWARE stack: Xvfb for a virtual display + Mesa's
+# software Vulkan (lavapipe) with a software-GL (llvmpipe) fallback. The capture
+# itself is the permanent env-gated harness (rust/gui/src/shot.rs), driven by
+# scripts/generate-screenshots.sh.
+#
+# rime is a public sibling repo (rust/gui depends on it by ../../../rime/rime).
+#
+# Manual by default; also runs when the app's rendering could change
+# (rust/gui/**). It commits to site/public/screenshots/ (NOT rust/gui/**), so it
+# never re-triggers itself; the site deploy picks the change up.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "rust/gui/**"
+      - "scripts/generate-screenshots.sh"
+      - ".github/workflows/screenshots.yml"
+
+permissions:
+  contents: write # commit the regenerated PNGs back to the repo
+
+concurrency:
+  group: screenshots
+  cancel-in-progress: true
+
+jobs:
+  screenshots:
+    name: Generate + commit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with: { path: soroban }
+      - uses: actions/checkout@v5
+        with: { repository: alleato-llc/rime, path: rime } # sibling of soroban
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: soroban/rust/gui
+          key: rust-screenshots
+
+      # iced/winit windowing + a software renderer: Xvfb (virtual display),
+      # Mesa Vulkan ICDs (lavapipe = the `lvp` software Vulkan device) and the
+      # software-GL drivers (llvmpipe) for the fallback path, plus vulkan-tools
+      # for diagnostics.
+      - name: Headless GPU + windowing deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            xvfb \
+            mesa-vulkan-drivers vulkan-tools \
+            libgl1-mesa-dri \
+            libxkbcommon-dev libwayland-dev libx11-dev
+
+      - name: Generate screenshots (software Vulkan, GL fallback)
+        working-directory: soroban
+        run: |
+          set -euo pipefail
+          run() { # backend-selecting env… → run the generator under a virtual X server
+            xvfb-run -a --server-args="-screen 0 2560x1600x24" \
+              env "$@" scripts/generate-screenshots.sh
+          }
+          # lavapipe (software Vulkan) first; software GL (llvmpipe) as fallback.
+          if ! run WGPU_BACKEND=vulkan; then
+            echo "::warning::Vulkan/lavapipe capture failed — retrying with software GL (llvmpipe)"
+            run WGPU_BACKEND=gl LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe
+          fi
+          ls -la site/public/screenshots/rust-*.png
+
+      - name: Commit regenerated screenshots
+        working-directory: soroban
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add site/public/screenshots/rust-*.png
+          if git diff --cached --quiet; then
+            echo "No screenshot changes to commit."
+            exit 0
+          fi
+          # NO [skip ci]: this commit touches only site/** (never a release
+          # path), so it can't cut a release — but it SHOULD trigger
+          # deploy-site.yml so the new screenshots go live.
+          git commit -m "site: regenerate Rust app screenshots"
+          git push

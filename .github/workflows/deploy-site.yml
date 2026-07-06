@@ -20,6 +20,11 @@ on:
       - "scripts/generate-living-spec.sh"
       - "salpa.yaml"
       - ".github/workflows/deploy-site.yml"
+  # A new release on EITHER track (v* or rust-v*) redeploys the site so the
+  # build-time download-link resolution (site/src/lib/releases.ts) picks up the
+  # freshly published assets.
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -54,10 +59,19 @@ jobs:
           cache: npm
           cache-dependency-path: site/package-lock.json
 
-      # Runs the Gherkin suite → site/public/{spec,report}.html, so the
-      # published spec always matches the engine that built it. Must run BEFORE
-      # `salpa deploy` (its npm build folds public/ into dist/).
-      - name: Generate living spec + report
+      # The Rust toolchain is needed too: the living spec is Rust-rendered and
+      # the Rust engine report runs on this same runner (pure logic, no GPU).
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+
+      # Regenerates ALL three verification pages from the same spec/anzan
+      # features — spec.html (Rust-rendered, engine-neutral), report.html
+      # (Swift), rust-report.html (Rust) — so the published pages always match
+      # the engines that built them. Must run BEFORE `salpa deploy` (its npm
+      # build folds public/ into dist/).
+      - name: Generate verification pages (living spec + both reports)
         run: scripts/generate-living-spec.sh
 
       - uses: oras-project/setup-oras@v1
@@ -84,4 +98,9 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Deploy
+        # GITHUB_TOKEN lifts the Releases-API rate limit for the build-time
+        # download-link resolution (site/src/lib/releases.ts); the build falls
+        # back to the Releases page if the lookup fails, so it's not required.
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: salpa deploy # npm build site/ → publish dist
