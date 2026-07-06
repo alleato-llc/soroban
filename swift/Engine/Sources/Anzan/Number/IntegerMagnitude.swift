@@ -70,11 +70,24 @@ enum Magnitude {
 
     // MARK: Multiply
 
-    /// Schoolbook a × b, accumulating each column in a `UInt128` so the product +
-    /// running limb + carry never overflows (max is exactly 2¹²⁸−1). Operands here
-    /// are tiny — a few limbs for 50-digit decimals — so schoolbook beats Karatsuba;
-    /// add Karatsuba only if a large-operand workload ever needs it.
+    /// Below this limb count (for the smaller operand) schoolbook wins; at or
+    /// above it Karatsuba's fewer sub-multiplies pay for their overhead. ~32
+    /// limbs ≈ 600 decimal digits — a 50-digit significand (≈3 limbs) never
+    /// reaches it, so the common path stays schoolbook.
+    static let karatsubaThreshold = 32
+
+    /// a × b, dispatching to Karatsuba for large operands and schoolbook otherwise.
     static func multiply(_ a: [UInt], _ b: [UInt]) -> [UInt] {
+        if a.isEmpty || b.isEmpty { return [] }
+        if Swift.min(a.count, b.count) >= karatsubaThreshold {
+            return multiplyKaratsuba(a, b)
+        }
+        return multiplySchoolbook(a, b)
+    }
+
+    /// Schoolbook a × b, accumulating each column in a `UInt128` so the product +
+    /// running limb + carry never overflows (max is exactly 2¹²⁸−1).
+    static func multiplySchoolbook(_ a: [UInt], _ b: [UInt]) -> [UInt] {
         if a.isEmpty || b.isEmpty { return [] }
         var result = [UInt](repeating: 0, count: a.count + b.count)
         result.withUnsafeMutableBufferPointer { r in
@@ -94,6 +107,54 @@ enum Magnitude {
             }
         }
         return normalized(result)
+    }
+
+    /// Karatsuba a × b. Split each at `m` limbs (`x = x1·Bᵐ + x0`, `B = 2⁶⁴`):
+    /// `z0 = x0·y0`, `z2 = x1·y1`, `z1 = (x0+x1)(y0+y1) − z0 − z2`, and the
+    /// product is `z2·B²ᵐ + z1·Bᵐ + z0`. Three sub-multiplies instead of four,
+    /// recursing through `multiply` (so sub-products below the threshold fall
+    /// back to schoolbook).
+    private static func multiplyKaratsuba(_ a: [UInt], _ b: [UInt]) -> [UInt] {
+        let m = Swift.min(a.count, b.count) / 2
+        let (a0, a1) = splitLimbs(a, at: m)
+        let (b0, b1) = splitLimbs(b, at: m)
+
+        let z0 = multiply(a0, b0)
+        let z2 = multiply(a1, b1)
+        // z1 = (a0+a1)(b0+b1) − z0 − z2, which is ≥ 0 (equals a0·b1 + a1·b0).
+        let z1 = subtract(subtract(multiply(add(a0, a1), add(b0, b1)), z0), z2)
+
+        var result = [UInt](repeating: 0, count: a.count + b.count + 1)
+        addInto(&result, z0, offset: 0)
+        addInto(&result, z1, offset: m)
+        addInto(&result, z2, offset: 2 * m)
+        return normalized(result)
+    }
+
+    /// Splits normalized limbs into (low `at` limbs, the rest), each normalized.
+    private static func splitLimbs(_ x: [UInt], at m: Int) -> (low: [UInt], high: [UInt]) {
+        if x.count <= m { return (normalized(x), []) }
+        return (normalized(Array(x[0..<m])), normalized(Array(x[m...])))
+    }
+
+    /// Adds `addend` into `result` starting at limb `offset`, propagating carry.
+    /// `result` must have room (callers size it to fit the full product + carry).
+    private static func addInto(_ result: inout [UInt], _ addend: [UInt], offset: Int) {
+        if addend.isEmpty { return }
+        result.withUnsafeMutableBufferPointer { r in
+            addend.withUnsafeBufferPointer { addend in
+                var carry: UInt128 = 0
+                var i = 0
+                while i < addend.count || carry != 0 {
+                    let idx = offset + i
+                    let value = i < addend.count ? UInt128(addend[i]) : 0
+                    let sum = UInt128(r[idx]) + value + carry
+                    r[idx] = UInt(truncatingIfNeeded: sum)
+                    carry = sum >> 64
+                    i += 1
+                }
+            }
+        }
     }
 
     // MARK: Shift
@@ -233,21 +294,39 @@ enum Magnitude {
     static let decimalChunkDigits = 19
 
     /// Base-10 string of a magnitude (empty magnitude → "0").
+    ///
+    /// Divide-and-conquer: split the value by the largest cached power
+    /// `10^(19·2^i)` below it, recurse on each half, and zero-pad the low half to
+    /// that power's digit width. Each divisor is ~half the value's size, so this
+    /// is ~O(M(n)·log n) instead of the O(n²) of stripping one 10¹⁹ chunk at a
+    /// time — the win shows on large operands (factorials, high powers).
     static func decimalString(_ limbs: [UInt]) -> String {
         if limbs.isEmpty { return "0" }
-        var value = limbs
-        var chunks = [UInt]()
-        while !value.isEmpty {
-            let (q, r) = divModSingle(value, decimalChunk)
-            chunks.append(r.first ?? 0)
-            value = q
+        if limbs.count == 1 { return String(limbs[0]) }
+        // Squaring ladder 10^(19·2^i), built once, up to just below the value.
+        var powers: [[UInt]] = [[decimalChunk]]
+        var digits = [decimalChunkDigits]
+        while true {
+            let squared = multiply(powers[powers.count - 1], powers[powers.count - 1])
+            if squared.count >= limbs.count { break }
+            powers.append(squared)
+            digits.append(digits[digits.count - 1] * 2)
         }
-        var result = String(chunks.last!)
-        for chunk in chunks.dropLast().reversed() {
-            let s = String(chunk)
-            result += String(repeating: "0", count: decimalChunkDigits - s.count) + s
-        }
-        return result
+        return convertToDecimal(limbs, powers: powers, digits: digits)
+    }
+
+    /// Recursive base-10 conversion over the prebuilt `10^(19·2^i)` ladder.
+    private static func convertToDecimal(_ v: [UInt], powers: [[UInt]], digits: [Int]) -> String {
+        if v.count <= 1 { return String(v.first ?? 0) }
+        // Largest ladder level strictly smaller (in limbs) than v — so the high
+        // half is non-empty and both halves shrink.
+        var level = powers.count - 1
+        while level > 0 && powers[level].count >= v.count { level -= 1 }
+        let (hi, lo) = divMod(v, powers[level])
+        let hiStr = convertToDecimal(hi, powers: powers, digits: digits)
+        let loStr = convertToDecimal(lo, powers: powers, digits: digits)
+        let pad = digits[level] - loStr.count
+        return hiStr + (pad > 0 ? String(repeating: "0", count: pad) + loStr : loStr)
     }
 }
 

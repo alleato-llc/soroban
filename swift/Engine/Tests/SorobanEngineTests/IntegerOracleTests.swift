@@ -48,6 +48,13 @@ struct IntegerOracleTests {
 
     static func toInteger(_ b: BigInt) -> Integer { Integer(b.description)! }
 
+    /// A random reference value with exactly `digits` decimal digits (no sign).
+    static func randomBig(digits: Int, _ rng: inout SeededRNG) -> BigInt {
+        var s = String(Int.random(in: 1...9, using: &rng))
+        for _ in 1..<digits { s += String(Int.random(in: 0...9, using: &rng)) }
+        return BigInt(s)!
+    }
+
     /// The full sample set: every edge value plus many random pairs, seeded.
     static func samples() -> [BigInt] {
         var rng = SeededRNG(seed: 0xA11CE)
@@ -152,6 +159,45 @@ struct IntegerOracleTests {
             let n = Self.toInteger(b)
             #expect(n.decimalDigitCount == n.magnitude.description.count,
                     "digitCount of \(b)")
+        }
+    }
+
+    /// Exercise Karatsuba multiply (only triggers past ~32 limbs ≈ 600 digits,
+    /// which the main sample set never reaches) and its recursive schoolbook base
+    /// against attaswift, across balanced and lopsided operand sizes.
+    @Test func multiplyLargeOperandsMatchesReference() {
+        var rng = SeededRNG(seed: 0x4A2B)
+        for _ in 0..<60 {
+            let la = Int.random(in: 200...1600, using: &rng)
+            let lb = Int.random(in: 200...1600, using: &rng)
+            let ra = Self.randomBig(digits: la, &rng)
+            let rb = Self.randomBig(digits: lb, &rng)
+            let signA = Bool.random(using: &rng) ? BigInt(-1) : BigInt(1)
+            let signB = Bool.random(using: &rng) ? BigInt(-1) : BigInt(1)
+            let a = ra * signA, b = rb * signB
+            #expect((Self.toInteger(a) * Self.toInteger(b)).description == (a * b).description,
+                    "\(la)-digit × \(lb)-digit")
+        }
+    }
+
+    /// Stress the divide-and-conquer base-10 conversion (multi-level recursion
+    /// only kicks in past a few hundred digits): round-trip large values through
+    /// parse → `description` and cross-check against the literal / attaswift.
+    @Test func decimalStringRoundTripsLargeValues() {
+        var rng = SeededRNG(seed: 0xB16)
+        for _ in 0..<200 {
+            let len = Int.random(in: 100...2000, using: &rng)
+            var s = String(Int.random(in: 1...9, using: &rng))
+            for _ in 1..<len { s += String(Int.random(in: 0...9, using: &rng)) }
+            #expect(Integer(s)!.description == s)
+            #expect(Integer("-" + s)!.description == "-" + s)
+        }
+        // Powers of ten and their neighbors, spanning several ladder levels.
+        for k in [50, 100, 200, 500, 1000, 2000] {
+            let ten = BigInt(10).power(k)
+            #expect(Self.toInteger(ten).description == ten.description)
+            #expect(Self.toInteger(ten - 1).description == (ten - 1).description)
+            #expect(Self.toInteger(ten + 1).description == (ten + 1).description)
         }
     }
 
