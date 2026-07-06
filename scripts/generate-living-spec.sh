@@ -1,13 +1,19 @@
 #!/usr/bin/env bash
 #
-# Generates the Living Specification + interactive test report into the
-# landing page's public/ directory, straight from the engine's Gherkin
-# suite (PickleKit's ReportSuite). The site build serves them as
-# /spec.html and /report.html; the spec is the front door, the report the
-# drill-down, and they cross-link.
+# Regenerates all three verification pages into the landing page's public/
+# directory, from the SAME shared spec/anzan/*.feature files:
 #
-# Run from anywhere. The output is committed as a static snapshot until CI
-# regenerates it on release.
+#   spec.html         the Living Specification — the behavior prose, engine-
+#                     NEUTRAL, rendered by the Rust generator
+#                     (rust/engine/tests/living_spec.rs). The front door; it
+#                     cross-links both engine reports below.
+#   report.html       the native (Swift) engine's test report (PickleKit).
+#   rust-report.html  the cross-platform (Rust) engine's test report
+#                     (cucumber JSON → scripts/rust-report.mjs).
+#
+# Needs Swift (report.html), a Rust toolchain (spec.html + rust-report.html),
+# and Node (the rust-report converter). Run from anywhere. Output is committed
+# as a static snapshot until CI regenerates it.
 #
 #   scripts/generate-living-spec.sh
 #
@@ -17,11 +23,22 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PUBLIC="$ROOT/site/public"
 mkdir -p "$PUBLIC"
 
-cd "$ROOT/swift/Engine"
-PICKLE_REPORT=1 \
-  PICKLE_REPORT_PATH="$PUBLIC/report.html" \
-  PICKLE_SPEC_PATH="$PUBLIC/spec.html" \
-  PICKLE_SPEC_TITLE="Anzan — Living Specification" \
-  swift test --filter GherkinTests
+# 1. Native (Swift) engine → report.html only. (The living spec is Rust-rendered
+#    now; dropping PICKLE_SPEC_PATH leaves PickleKit emitting just the report.)
+( cd "$ROOT/swift/Engine"
+  PICKLE_REPORT=1 \
+    PICKLE_REPORT_PATH="$PUBLIC/report.html" \
+    swift test --filter GherkinTests )
 
-echo "Wrote $PUBLIC/spec.html and $PUBLIC/report.html"
+# 2. Living spec (engine-neutral) — the Rust generator parses spec/anzan and
+#    renders spec.html matching the report's design.
+( cd "$ROOT/rust"
+  SOROBAN_SPEC="$PUBLIC/spec.html" cargo test -p soroban-engine --test living_spec )
+
+# 3. Cross-platform (Rust) engine → rust-report.html, from the same features.
+( cd "$ROOT/rust"
+  SOROBAN_REPORT="$PUBLIC/rust-cucumber.json" cargo test -p soroban-engine --test gherkin )
+node "$ROOT/scripts/rust-report.mjs" "$PUBLIC/rust-cucumber.json" "$PUBLIC/rust-report.html"
+rm -f "$PUBLIC/rust-cucumber.json"
+
+echo "Wrote $PUBLIC/{spec,report,rust-report}.html"

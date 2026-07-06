@@ -1,0 +1,99 @@
+/* Palette: Solarized Light / Dracula — the Soroban site's tokens.
+   data-theme is set before paint by the head script. */
+:root, :root[data-theme="light"] {
+  --bg: #fdf6e3; --surface: #eee8d5; --text: #073642;
+  --muted: #657b83; --faint: #93a1a1; --accent: #268bd2;
+  --error: #dc322f; --border: rgba(7,54,66,0.12); --shadow: rgba(7,54,66,0.06);
+  --passed: #2aa198; --failed: #dc322f; --skipped: #93a1a1; --undefined: #b58900;
+}
+:root[data-theme="dark"] {
+  --bg: #282a36; --surface: #343746; --text: #f8f8f2;
+  --muted: #bd93f9; --faint: #6272a4; --accent: #ff79c6;
+  --error: #ff5555; --border: rgba(248,248,242,0.1); --shadow: rgba(0,0,0,0.3);
+  --passed: #50fa7b; --failed: #ff5555; --skipped: #6272a4; --undefined: #ffb86c;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font: 16px/1.6 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); padding: 20px; transition: background 0.2s ease, color 0.2s ease; -webkit-font-smoothing: antialiased; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+.page-header-left { display: flex; align-items: center; gap: 0.7rem; }
+.icon-btn { border: 1px solid var(--border); background: var(--bg); color: var(--muted); border-radius: 8px; width: 2.2rem; height: 2.2rem; font-size: 1.05rem; cursor: pointer; line-height: 1; flex: none; }
+.icon-btn:hover { color: var(--text); }
+.tag { display: inline-block; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); padding: 2px 8px; border-radius: 999px; font-size: 11px; margin-right: 4px; }
+/* Shared page header — identical on both views so they read as one
+   family: a title row with the theme toggle, a muted sub-line, and a
+   cross-link, on a 1040px centered column with a bottom divider. */
+.page-width { max-width: 1040px; margin-left: auto; margin-right: auto; }
+.page-header { max-width: 1040px; margin: 0 auto 1.25rem; padding-bottom: 1rem; border-bottom: 1px solid var(--border); }
+.page-header-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.page-header h1 { font-size: 1.7rem; letter-spacing: -0.015em; }
+.page-sub { margin-top: 0.5rem; color: var(--faint); font-size: 0.9rem; }
+.page-sub .check { color: var(--passed); font-weight: 700; }
+.page-sub strong { color: var(--text); }
+.cross-link { margin-top: 0.4rem; font-size: 0.9rem; }
+/* Shared two-column layout + persistent sticky outline rail — both
+   views are identical here: a pinned feature list with scroll-spy. */
+.page-layout { max-width: 1040px; margin: 0 auto; display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 2.5rem; align-items: start; }
+.page-body { min-width: 0; }
+.rail { position: sticky; top: 1rem; max-height: calc(100vh - 2rem); overflow-y: auto; overscroll-behavior: contain; font-size: 0.9rem; line-height: 1.4; }
+.rail h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--faint); margin-bottom: 0.6rem; }
+.rail ul { list-style: none; border-left: 1px solid var(--border); }
+.rail a { display: flex; align-items: center; gap: 0.45rem; padding: 0.25rem 0 0.25rem 0.85rem; color: var(--muted); font-weight: 600; border-left: 2px solid transparent; margin-left: -1px; text-decoration: none; }
+.rail a:hover { color: var(--accent); }
+.rail a[aria-current] { color: var(--accent); border-left-color: var(--accent); }
+.rail .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.rail .dot.passed { background: var(--passed); }
+.rail .dot.failed { background: var(--failed); }
+.rail .dot.skipped { background: var(--skipped); }
+@media (max-width: 900px) { .page-layout { grid-template-columns: 1fr; } .rail { display: none; } }
+/* Persistent by default, collapsible on demand (☰) — remembered. */
+html[data-rail="collapsed"] .page-layout { grid-template-columns: minmax(0, 1fr); }
+html[data-rail="collapsed"] .rail { display: none; }
+/* Feature sections render as the SAME card on both views — defined
+   by a border, not a grey fill, so the theme stays clean. */
+.feature, .spec-feature { border: 1px solid var(--border); border-radius: 12px; margin-bottom: 16px; overflow: hidden; }
+/* Scenario-outline groups: an outline's expanded examples collapse
+   under one header (name + count), so a run of cases reads as one
+   family instead of N look-alike rows. The accent stripe marks the
+   span; nested cases indent and lose their own top border. */
+.outline-group { border-top: 1px solid var(--border); }
+.outline-group > summary { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1.1rem; cursor: pointer; list-style: none; border-left: 3px solid var(--accent); }
+.outline-group > summary::-webkit-details-marker { display: none; }
+.outline-group > summary::before { content: '\25B6'; font-size: 10px; color: var(--faint); transition: transform 0.2s; flex: none; }
+.outline-group[open] > summary::before { transform: rotate(90deg); }
+.outline-group > summary:hover { background: color-mix(in srgb, var(--faint) 8%, transparent); }
+.outline-group[data-status="failed"] > summary { color: var(--failed); }
+.outline-name { flex: 1; min-width: 0; overflow-wrap: anywhere; font-weight: 600; }
+.outline-badge { flex: none; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); padding: 2px 8px; border-radius: 999px; }
+.outline-cases { border-left: 3px solid color-mix(in srgb, var(--accent) 35%, transparent); }
+.outline-cases > .scenario { border-top: 1px dashed var(--border); }
+.outline-cases > .scenario:first-child { border-top: none; }
+/* Layout + rail are shared (ReportShared.commonCSS); only the
+   document body's prose styling is spec-specific. The card is
+   edge-to-edge; the head/narrative pad themselves, and scenario
+   rows get full-width dividers like the report. */
+.spec-feature { scroll-margin-top: 16px; }
+.feature-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; padding: 0.9rem 1.1rem 0.6rem; }
+.feature-head h2 { font-size: 1.15rem; letter-spacing: -0.01em; }
+.verified { font-size: 0.8rem; font-weight: 600; white-space: nowrap; }
+.verified.ok { color: var(--passed); }
+.verified.bad { color: var(--failed); }
+.tags { padding: 0 1.1rem 0.4rem; }
+.narrative { color: var(--faint); font-style: italic; margin: 0 1.1rem 0.8rem; white-space: pre-line; }
+.scenario { border-top: 1px solid var(--border); }
+.scenario summary { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1.1rem; cursor: pointer; list-style: none; }
+.scenario summary:hover { background: color-mix(in srgb, var(--faint) 8%, transparent); }
+.scenario summary::-webkit-details-marker { display: none; }
+.mark { font-weight: 700; font-size: 0.85rem; flex: none; }
+.mark.passed { color: var(--passed); }
+.mark.failed { color: var(--failed); }
+.mark.skipped { color: var(--skipped); }
+.scenario-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.scenario.failed > summary { color: var(--failed); }
+.run-link { font-size: 0.72rem; color: var(--faint); white-space: nowrap; }
+.run-link:hover { color: var(--accent); }
+.steps { padding: 0.2rem 1.1rem 0.7rem 2.1rem; font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 0.85rem; line-height: 1.7; }
+.step { overflow-wrap: anywhere; }
+.step .kw { color: var(--accent); font-weight: 600; }
+.step .txt { color: var(--text); }
+.step.muted { color: var(--faint); font-style: italic; }

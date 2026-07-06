@@ -25,6 +25,16 @@ still suppresses all release workflows regardless of the paths it touches — se
 
 ### Added
 
+- **The Living Specification is now engine-neutral (Rust-rendered).** `spec.html`
+  — the behavior prose at `/spec.html` — was generated only by Swift/PickleKit; it
+  is now rendered by a Rust generator (`rust/engine/tests/living_spec.rs`) that
+  parses the shared `spec/anzan/*.feature` files directly (via the `gherkin`
+  parser `cucumber` re-exports) and reproduces the same page structure + design
+  tokens (verified: identical 14 features · 522 behaviors · 1404 steps). It now
+  cross-links **both** engine reports — `report.html` (native Swift) and
+  `rust-report.html` (Rust) — as equal proofs. `scripts/generate-living-spec.sh`
+  is now the single command that regenerates all three pages; the front door no
+  longer belongs to one ecosystem.
 - **The landing page now shows the cross-platform (Rust) app, not just the
   native one.** The hero carousel gained a native/cross **build toggle** beside
   the existing dark/light theme split, with a matched set of real Rust-app

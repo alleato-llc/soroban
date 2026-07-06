@@ -59,26 +59,20 @@ jobs:
           cache: npm
           cache-dependency-path: site/package-lock.json
 
-      # Runs the Gherkin suite → site/public/{spec,report}.html, so the
-      # published spec always matches the engine that built it. Must run BEFORE
-      # `salpa deploy` (its npm build folds public/ into dist/).
-      - name: Generate living spec + report
-        run: scripts/generate-living-spec.sh
-
-      # The CROSS-PLATFORM (Rust) engine's report against the SAME spec/anzan
-      # features — verification parity with the Swift report above. Pure logic
-      # (no GPU), so it runs on this same deploy runner. Env-gated JSON from the
-      # gherkin runner → themed HTML matching spec.html. Also before deploy.
+      # The Rust toolchain is needed too: the living spec is Rust-rendered and
+      # the Rust engine report runs on this same runner (pure logic, no GPU).
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: rust
-      - name: Generate Rust engine report
-        env:
-          SOROBAN_REPORT: ${{ github.workspace }}/rust-cucumber.json
-        run: |
-          (cd rust && cargo test -p soroban-engine --test gherkin)
-          node scripts/rust-report.mjs "$SOROBAN_REPORT" site/public/rust-report.html
+
+      # Regenerates ALL three verification pages from the same spec/anzan
+      # features — spec.html (Rust-rendered, engine-neutral), report.html
+      # (Swift), rust-report.html (Rust) — so the published pages always match
+      # the engines that built them. Must run BEFORE `salpa deploy` (its npm
+      # build folds public/ into dist/).
+      - name: Generate verification pages (living spec + both reports)
+        run: scripts/generate-living-spec.sh
 
       - uses: oras-project/setup-oras@v1
 

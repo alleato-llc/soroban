@@ -49,7 +49,10 @@ src/
                            the build never breaks
   styles/global.css        all styling; CSS custom properties up top
 public/favicon.svg         one abacus rod (frame, beam, beads)
-public/spec.html           the Living Specification (generated — see below)
+public/spec.html           the Living Specification — engine-NEUTRAL behavior
+                           prose, RUST-rendered (rust/engine/tests/living_spec.rs
+                           parses spec/anzan directly), links both reports below
+                           (generated — see below)
 public/report.html         the native (Swift) engine test report (generated)
 public/rust-report.html    the cross-platform (Rust) engine test report —
                            same spec/anzan features, verified by the Rust
@@ -57,25 +60,28 @@ public/rust-report.html    the cross-platform (Rust) engine test report —
                            the gherkin runner's Cucumber JSON)
 ```
 
-## The Living Specification (`/spec.html`, `/report.html`)
+## The Living Specification (`/spec.html`) + two engine reports
 
-The **Verified** nav link points at `/spec.html` — the engine's Gherkin
-suite rendered by PickleKit's `ReportSuite` as a *living specification*:
-every behavior as verified Given/When/Then prose, with the full
-interactive test report one click deeper at `/report.html` (they
-cross-link). Both use the same Solarized/Dracula palette as the site, so
-they read as one product.
+The **Verified** nav link points at `/spec.html` — the *living
+specification*: every behavior in `spec/anzan/*.feature` as
+Given/When/Then prose. It is **engine-neutral**: rendered by a **Rust**
+generator (`rust/engine/tests/living_spec.rs`) that parses the shared
+features directly, and it cross-links **both** engine test reports —
+`/report.html` (native Swift, PickleKit) and `/rust-report.html`
+(cross-platform Rust) — the same 14 features proven by two engines. All
+three share the same Solarized/Dracula palette, so they read as one
+product.
 
-These two files are **generated, not hand-written** — regenerate after
-behavior changes with:
+These files are **generated, not hand-written** — regenerate all three
+after behavior changes with:
 
 ```sh
-scripts/generate-living-spec.sh   # runs the Gherkin suite → site/public/
+scripts/generate-living-spec.sh   # Swift report + Rust spec + Rust report → site/public/
 ```
 
-They're committed as a static snapshot so the site deploys with them; CI
-will refresh them on release. (Build-time generation isn't wired yet —
-the snapshot is the source of truth until it is.)
+(Needs Swift + a Rust toolchain + Node.) They're committed as a static
+snapshot so the site deploys with them; `deploy-site.yml` refreshes them
+on deploy.
 
 ## Theming (the contract)
 
@@ -138,8 +144,9 @@ the header nav to its own row.
 ## Deploying
 
 `npm run build` produces a fully static `dist/`. In practice it's deployed by
-the **`deploy-site.yml`** workflow: regenerate the living spec + both engine
-reports (Swift via PickleKit, Rust via `scripts/rust-report.mjs`), build, and
-publish `dist/` to the static host (`soroban.alleato.dev`). Deploy
+the **`deploy-site.yml`** workflow: regenerate the three verification pages
+(`scripts/generate-living-spec.sh` — Rust-rendered `spec.html`, Swift
+`report.html`, Rust `rust-report.html`), build, and publish `dist/` to the
+static host (`soroban.alleato.dev`). Deploy
 credentials are repo variables/secrets and the hosting infra is provisioned out
 of band — the output is plain static, so any host would serve it.
