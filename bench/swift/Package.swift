@@ -9,7 +9,7 @@ import PackageDescription
 
 let package = Package(
     name: "soroban-bench-swift",
-    platforms: [.macOS(.v14)],
+    platforms: [.macOS(.v15)], // matches the engine floor (UInt128 significand math)
     dependencies: [
         .package(path: "../../swift/Engine"),
     ],
