@@ -39,8 +39,8 @@ public struct FixedDecimal: Sendable, Equatable {
             ? rawValue.roundedHalfUp(toPlaces: scale)
             : rawValue.rounded(toPlaces: scale)
         // unscaled = rounded × 10^scale (an integer); must fit `precision` digits.
-        let unscaled = rounded.significand * Integer(10).power(rounded.exponent + scale)
-        guard unscaled.magnitude < Integer(10).power(precision) else {
+        let unscaled = rounded.significand * Integer.powerOfTen(rounded.exponent + scale)
+        guard unscaled.magnitude < Integer.powerOfTen(precision) else {
             throw EngineError.domainError(
                 message: "\(Self.text(rounded, scale: scale)) exceeds Decimal(\(precision), \(scale)) — more than \(precision) digits")
         }
@@ -57,7 +57,7 @@ public struct FixedDecimal: Sendable, Equatable {
     public var text: String { Self.text(value, scale: scale) }
 
     private static func text(_ value: BigDecimal, scale: Int) -> String {
-        let unscaled = value.significand * Integer(10).power(value.exponent + scale)
+        let unscaled = value.significand * Integer.powerOfTen(value.exponent + scale)
         let negative = unscaled.sign == .minus
         var digits = unscaled.magnitude.description
         if scale > 0 {
