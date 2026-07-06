@@ -28,32 +28,42 @@ enum Magnitude {
 
     // MARK: Add / subtract
 
-    /// a + b.
+    /// a + b. Result normalized.
     static func add(_ a: [UInt], _ b: [UInt]) -> [UInt] {
         let (long, short) = a.count >= b.count ? (a, b) : (b, a)
-        var result = [UInt]()
-        result.reserveCapacity(long.count + 1)
+        var result = [UInt](repeating: 0, count: long.count + 1)
         var carry: UInt128 = 0
-        for i in 0..<long.count {
-            var sum = UInt128(long[i]) + carry
-            if i < short.count { sum += UInt128(short[i]) }
-            result.append(UInt(truncatingIfNeeded: sum))
-            carry = sum >> 64
+        result.withUnsafeMutableBufferPointer { r in
+            long.withUnsafeBufferPointer { long in
+                short.withUnsafeBufferPointer { short in
+                    for i in 0..<long.count {
+                        var sum = UInt128(long[i]) + carry
+                        if i < short.count { sum += UInt128(short[i]) }
+                        r[i] = UInt(truncatingIfNeeded: sum)
+                        carry = sum >> 64
+                    }
+                    r[long.count] = UInt(truncatingIfNeeded: carry)
+                }
+            }
         }
-        if carry != 0 { result.append(UInt(truncatingIfNeeded: carry)) }
-        return result
+        return normalized(result)
     }
 
     /// a - b, requiring a >= b. Result normalized.
     static func subtract(_ a: [UInt], _ b: [UInt]) -> [UInt] {
-        var result = [UInt]()
-        result.reserveCapacity(a.count)
+        var result = [UInt](repeating: 0, count: a.count)
         var borrow: Int128 = 0
-        for i in 0..<a.count {
-            var diff = Int128(a[i]) - borrow
-            if i < b.count { diff -= Int128(b[i]) }
-            if diff < 0 { diff += Int128(1) << 64; borrow = 1 } else { borrow = 0 }
-            result.append(UInt(truncatingIfNeeded: diff))
+        result.withUnsafeMutableBufferPointer { r in
+            a.withUnsafeBufferPointer { a in
+                b.withUnsafeBufferPointer { b in
+                    for i in 0..<a.count {
+                        var diff = Int128(a[i]) - borrow
+                        if i < b.count { diff -= Int128(b[i]) }
+                        if diff < 0 { diff += Int128(1) << 64; borrow = 1 } else { borrow = 0 }
+                        r[i] = UInt(truncatingIfNeeded: diff)
+                    }
+                }
+            }
         }
         return normalized(result)
     }
@@ -67,15 +77,21 @@ enum Magnitude {
     static func multiply(_ a: [UInt], _ b: [UInt]) -> [UInt] {
         if a.isEmpty || b.isEmpty { return [] }
         var result = [UInt](repeating: 0, count: a.count + b.count)
-        for i in 0..<a.count {
-            var carry: UInt128 = 0
-            let ai = UInt128(a[i])
-            for j in 0..<b.count {
-                let sum = ai * UInt128(b[j]) + UInt128(result[i + j]) + carry
-                result[i + j] = UInt(truncatingIfNeeded: sum)
-                carry = sum >> 64
+        result.withUnsafeMutableBufferPointer { r in
+            a.withUnsafeBufferPointer { a in
+                b.withUnsafeBufferPointer { b in
+                    for i in 0..<a.count {
+                        var carry: UInt128 = 0
+                        let ai = UInt128(a[i])
+                        for j in 0..<b.count {
+                            let sum = ai * UInt128(b[j]) + UInt128(r[i + j]) + carry
+                            r[i + j] = UInt(truncatingIfNeeded: sum)
+                            carry = sum >> 64
+                        }
+                        r[i + b.count] = UInt(truncatingIfNeeded: carry)
+                    }
+                }
             }
-            result[i + b.count] = UInt(truncatingIfNeeded: carry)
         }
         return normalized(result)
     }
@@ -112,12 +128,16 @@ enum Magnitude {
     private static func divModSingle(_ a: [UInt], _ divisor: UInt) -> ([UInt], [UInt]) {
         var quotient = [UInt](repeating: 0, count: a.count)
         var rem: UInt = 0
-        var i = a.count - 1
-        while i >= 0 {
-            let (q, r) = divisor.dividingFullWidth((high: rem, low: a[i]))
-            quotient[i] = q
-            rem = r
-            i -= 1
+        a.withUnsafeBufferPointer { a in
+            quotient.withUnsafeMutableBufferPointer { q in
+                var i = a.count - 1
+                while i >= 0 {
+                    let (quo, r) = divisor.dividingFullWidth((high: rem, low: a[i]))
+                    q[i] = quo
+                    rem = r
+                    i -= 1
+                }
+            }
         }
         return (normalized(quotient), rem == 0 ? [] : [rem])
     }
@@ -149,44 +169,50 @@ enum Magnitude {
         let vTop = UInt128(vn[n - 1])
         let vSecond = UInt128(vn[n - 2])
 
-        var j = m
-        while j >= 0 {
-            // D3. Estimate the quotient digit qhat (at most 2 too large).
-            let numer = (UInt128(un[j + n]) << 64) | UInt128(un[j + n - 1])
-            var qhat = numer / vTop
-            var rhat = numer % vTop
-            while qhat >= base || qhat * vSecond > (rhat << 64) + UInt128(un[j + n - 2]) {
-                qhat -= 1
-                rhat += vTop
-                if rhat >= base { break }
-            }
+        un.withUnsafeMutableBufferPointer { un in
+            vn.withUnsafeBufferPointer { vn in
+                quotient.withUnsafeMutableBufferPointer { quotient in
+                    var j = m
+                    while j >= 0 {
+                        // D3. Estimate the quotient digit qhat (at most 2 too large).
+                        let numer = (UInt128(un[j + n]) << 64) | UInt128(un[j + n - 1])
+                        var qhat = numer / vTop
+                        var rhat = numer % vTop
+                        while qhat >= base || qhat * vSecond > (rhat << 64) + UInt128(un[j + n - 2]) {
+                            qhat -= 1
+                            rhat += vTop
+                            if rhat >= base { break }
+                        }
 
-            // D4. Multiply and subtract qhat · v from the running dividend.
-            var borrow: Int128 = 0
-            var carry: UInt128 = 0
-            for i in 0..<n {
-                let product = qhat * UInt128(vn[i]) + carry
-                carry = product >> 64
-                let sub = Int128(un[j + i]) - borrow - Int128(UInt(truncatingIfNeeded: product))
-                un[j + i] = UInt(truncatingIfNeeded: sub)
-                borrow = sub < 0 ? 1 : 0
-            }
-            let sub = Int128(un[j + n]) - borrow - Int128(carry)
-            un[j + n] = UInt(truncatingIfNeeded: sub)
+                        // D4. Multiply and subtract qhat · v from the running dividend.
+                        var borrow: Int128 = 0
+                        var carry: UInt128 = 0
+                        for i in 0..<n {
+                            let product = qhat * UInt128(vn[i]) + carry
+                            carry = product >> 64
+                            let sub = Int128(un[j + i]) - borrow - Int128(UInt(truncatingIfNeeded: product))
+                            un[j + i] = UInt(truncatingIfNeeded: sub)
+                            borrow = sub < 0 ? 1 : 0
+                        }
+                        let sub = Int128(un[j + n]) - borrow - Int128(carry)
+                        un[j + n] = UInt(truncatingIfNeeded: sub)
 
-            // D5/D6. If we oversubtracted, qhat was one too big — add v back.
-            if sub < 0 {
-                qhat -= 1
-                var addCarry: UInt128 = 0
-                for i in 0..<n {
-                    let sum = UInt128(un[j + i]) + UInt128(vn[i]) + addCarry
-                    un[j + i] = UInt(truncatingIfNeeded: sum)
-                    addCarry = sum >> 64
+                        // D5/D6. If we oversubtracted, qhat was one too big — add v back.
+                        if sub < 0 {
+                            qhat -= 1
+                            var addCarry: UInt128 = 0
+                            for i in 0..<n {
+                                let sum = UInt128(un[j + i]) + UInt128(vn[i]) + addCarry
+                                un[j + i] = UInt(truncatingIfNeeded: sum)
+                                addCarry = sum >> 64
+                            }
+                            un[j + n] = UInt(truncatingIfNeeded: UInt128(un[j + n]) + addCarry)
+                        }
+                        quotient[j] = UInt(truncatingIfNeeded: qhat)
+                        j -= 1
+                    }
                 }
-                un[j + n] = UInt(truncatingIfNeeded: UInt128(un[j + n]) + addCarry)
             }
-            quotient[j] = UInt(truncatingIfNeeded: qhat)
-            j -= 1
         }
 
         // D8. Denormalize the remainder (shift right by s).
