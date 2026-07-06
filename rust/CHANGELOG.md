@@ -15,6 +15,17 @@ DMG.
 
 ## [Unreleased]
 
+### Changed
+
+- **Faster exact-decimal hot paths.** Bit-identical to before (the shared spec is
+  unchanged): `normalize` skips its trailing-zero strip for odd significands (a
+  low-bit test instead of a big-integer division); `digit_count` estimates from
+  the significand's bit length and corrects against powers of ten rather than
+  formatting it to a decimal string; a thread-local powers-of-ten cache feeds the
+  alignment / rounding / division rescales that previously rebuilt `10^k` from
+  scratch each call; and subtraction aligns and subtracts significands directly
+  instead of routing through an intermediate negation.
+
 ### Added
 
 - **Working multi-sheet tabs in the Rust app.** The grid's tab strip now shows
