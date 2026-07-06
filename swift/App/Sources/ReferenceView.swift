@@ -29,14 +29,32 @@ struct ReferenceView: View {
     }
 
     var body: some View {
+        splitLayout
+            .background(theme.windowBackground.color)
+            #if os(macOS)
+            .frame(minWidth: 600, minHeight: 420)
+            #endif
+    }
+
+    // HSplitView (a draggable macOS splitter) has no iOS equivalent; the iPad
+    // uses a fixed-width sidebar + a divider.
+    @ViewBuilder private var splitLayout: some View {
+        #if os(macOS)
         HSplitView {
             sidebar
                 .frame(minWidth: 160, maxWidth: 220)
             detail
                 .frame(minWidth: 380, maxWidth: .infinity)
         }
-        .background(theme.windowBackground.color)
-        .frame(minWidth: 600, minHeight: 420)
+        #else
+        HStack(spacing: 0) {
+            sidebar
+                .frame(width: 220)
+            Divider()
+            detail
+                .frame(maxWidth: .infinity)
+        }
+        #endif
     }
 
     private var sidebar: some View {

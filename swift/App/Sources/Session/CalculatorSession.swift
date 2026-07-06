@@ -6,6 +6,11 @@ import BinaryEditorKit
 
 /// Drives the log + input UI: evaluates lines, records history, and provides
 /// ↑/↓ recall over past inputs (persisted across launches).
+///
+/// The binary bit-editor surface lives in `CalculatorSession+Binary.swift` and
+/// the autocomplete / input-history recall in `CalculatorSession+Autocomplete.swift`;
+/// this file holds the stored state, evaluation (`submit`), and the log/view
+/// plumbing.
 /// Which main view is showing above the input bar.
 enum MainView {
     case log, sheet
@@ -52,7 +57,11 @@ final class CalculatorSession {
     var input = ""
     var activeView: MainView = .log
 
-    // MARK: Binary bit-editor (Programmer mode)
+    // MARK: Binary bit-editor state (Programmer mode)
+    //
+    // The behavior (bit flips, formats, the visual builder) lives in
+    // `CalculatorSession+Binary.swift`; @Observable requires the stored
+    // properties in the class body.
 
     /// Whether the binary overlay is shown. Only ever visible in Programmer
     /// mode (the view gates on it). Defaults ON the first time (discoverable),
@@ -73,42 +82,8 @@ final class CalculatorSession {
     }
     /// The live, uncommitted value while you click bits — nil means the overlay
     /// tracks `ans`. Cleared on any submit (a new result re-syncs the grid).
-    private(set) var binaryDraft: Value?
-
-    /// The previous result the overlay edits (the implied register).
-    var ans: Value { calculator.environment.ans }
-
-    /// The bit view the overlay renders: the live draft if editing, else `ans`.
-    var binaryView: Result<BinaryView, BinaryView.Unavailable> {
-        BinaryView.make(for: binaryDraft ?? ans, preferredWidth: binaryWidth)
-    }
-    /// True when there are uncommitted bit flips (the commit affordance shows).
-    var binaryHasEdits: Bool { binaryDraft != nil }
-
-    /// Flip bit `index` (0 = LSB) of the working value, staging it as a draft
-    /// (no log entry — that waits for `commitBinary`).
-    func flipBinaryBit(_ index: Int) {
-        guard case .success(let view) = binaryView else { return }
-        binaryDraft = view.flippingBit(index).value
-    }
-
-    /// Insert the current (possibly bit-edited) value into the input line as a
-    /// literal — you fold it into an expression and submit when ready, rather
-    /// than it landing in the log on its own. A plain integer inserts as a `0b…`
-    /// binary literal (you were editing bits); a typed `Int…` inserts its
-    /// canonical constructor (which carries the type and sign).
-    func useBinaryValue() {
-        guard case .success(let view) = binaryView else { return }
-        switch view.kind {
-        case .plain: insert(value: "0b" + String(view.pattern, radix: 2))
-        case .fixed: insert(value: view.value.description)
-        }
-    }
-
-    /// Reset the grid to `ans`, discarding staged bit edits.
-    func cancelBinaryEdits() { binaryDraft = nil }
-
-    // MARK: Binary bit-editor — formats (named bit ranges)
+    /// (Internal setter — written by `CalculatorSession+Binary.swift`.)
+    var binaryDraft: Value?
 
     /// The active bit-field format — a map `{owner: 3, …}` overlaid on the grid
     /// to label bit ranges; nil = raw bits. A presentational lens, not a value
@@ -116,139 +91,8 @@ final class CalculatorSession {
     /// ordinary map variable in the log (see `saveFormat`).
     var activeFormat: Value?
 
-    /// The active format decoded to ordered fields (each with optional per-bit flags).
-    var activeLayout: [BinaryView.FieldSpec]? {
-        activeFormat.flatMap { BinaryView.layout(from: $0) }
-    }
-
-    /// Built-in formats — the shared set in `BinaryEditorKit` (so the calculator
-    /// and Tama present the same presets).
-    static let binaryFormatPresets = BinaryEditorPresets.standard
-
-    /// Custom/saved formats persisted in the workbook — any environment variable
-    /// that is a map of positive-integer widths reads back as a format.
-    var savedFormats: [(name: String, format: Value)] {
-        logVariables
-            .compactMap { BinaryView.layout(from: $0.value) != nil ? ($0.key, $0.value) : nil }
-            .sorted { $0.0 < $1.0 }
-    }
-
-    /// The display name of the active format for the menu label — a preset/saved
-    /// name when it matches one, else "Custom"; nil when no format is active.
-    var activeFormatName: String? {
-        guard let format = activeFormat else { return nil }
-        if let preset = Self.binaryFormatPresets.first(where: { $0.format == format }) { return preset.name }
-        if let saved = savedFormats.first(where: { $0.format == format }) { return saved.name }
-        return "Custom"
-    }
-
-    func applyFormat(_ value: Value?) {
-        activeFormat = value.flatMap { BinaryView.layout(from: $0) != nil ? $0 : nil }
-        fitWidthToFormat()
-    }
-
-    /// Widen a plain register to at least the active format's total, so the
-    /// fields aren't clipped by a too-narrow width (a fixed-width int can't grow).
-    private func fitWidthToFormat() {
-        guard let layout = activeLayout else { return }
-        // A format owns its register width — snap to it (grow OR shrink), so
-        // IPv4 is 32 bits, MAC 48, IPv6 128 — never wider.
-        if let fit = BinaryView.editableWidths.first(where: { $0 >= BinaryView.layoutWidth(layout) }) {
-            binaryWidth = fit
-        }
-    }
-
-    /// Defines the `Bits` schema once per workbook (a one-time log line),
-    /// preserving any in-progress input. A no-op once `Bits::BitFormat` exists.
-    /// (Schema + serializer are the shared `BinaryEditorBits` in the engine.)
-    private func ensureBitsSchema() {
-        guard calculator.environment.dataType(named: "Bits::BitFormat") == nil else { return }
-        let stash = input
-        input = BinaryEditorBits.schemaSource
-        submit()
-        suppressNextSuggestionRefresh = true
-        input = stash
-    }
-
-    /// Persists a layout as a typed `name = Bits::BitFormat(...)` log assignment,
-    /// so it lives in the workbook and reappears in `savedFormats`; re-points the
-    /// active format at the saved record (a map and a record never compare equal,
-    /// so the menu would otherwise read "Custom"). Preserves the input line.
-    private func persistFormat(_ layout: [BinaryView.FieldSpec], named name: String) {
-        let stash = input
-        ensureBitsSchema()
-        input = "\(name) = \(BinaryEditorBits.formatSource(layout))"
-        submit()
-        if let saved = calculator.environment.userVariables[name] { activeFormat = saved }
-        suppressNextSuggestionRefresh = true
-        input = stash
-    }
-
-    /// Persist the active format under a name (the "Save current…" path).
-    func saveFormat(named name: String) {
-        guard let layout = activeLayout else { return }
-        let trimmed = name.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty else { return }
-        persistFormat(layout, named: trimmed)
-    }
-
-    // MARK: Binary bit-editor — visual format builder
-
-    /// Apply a freshly-built layout WITHOUT saving it (transient session state,
-    /// like a preset). Defines the schema if needed, then evaluates the typed
-    /// constructor off the log (`evaluateFormula` never logs or touches `ans`).
-    func applyBuiltFormat(_ layout: [BinaryView.FieldSpec]) {
-        guard !layout.isEmpty else { return }
-        ensureBitsSchema()
-        if case .success(let value) = calculator.evaluateFormula(BinaryEditorBits.formatSource(layout)) {
-            applyFormat(value)
-        }
-    }
-
-    /// Save a freshly-built layout under a name (persists + applies).
-    func saveBuiltFormat(_ layout: [BinaryView.FieldSpec], named name: String) {
-        let trimmed = name.trimmingCharacters(in: .whitespaces)
-        guard !layout.isEmpty, !trimmed.isEmpty else { return }
-        persistFormat(layout, named: trimmed)
-        fitWidthToFormat()
-    }
-
-    /// Rename a saved format (host-managed): re-store its value under the new
-    /// name and drop the old. The active format follows automatically — its
-    /// value is unchanged, so the menu re-labels via the value match.
-    func renameSavedFormat(_ oldName: String, to newName: String) {
-        let trimmed = newName.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty, trimmed != oldName,
-              let value = calculator.environment.userVariables[oldName],
-              BinaryView.layout(from: value) != nil else { return }
-        calculator.setUserVariable(trimmed, to: value)
-        calculator.removeUserVariable(oldName)
-        environmentGeneration += 1
-        workbook.noteContentChanged()
-    }
-
-    /// Delete a saved format (host-managed): drop the variable. If it was the
-    /// active format, clear it (the value would otherwise dangle as "Custom").
-    func deleteSavedFormat(_ name: String) {
-        guard calculator.environment.userVariables[name] != nil else { return }
-        let wasActive = activeFormatName == name
-        calculator.removeUserVariable(name)
-        if wasActive { applyFormat(nil) }
-        environmentGeneration += 1
-        workbook.noteContentChanged()
-    }
-
-    /// The current binary value decoded into the active format's fields.
-    var binaryFields: [BinaryView.Field] {
-        guard let layout = activeLayout, case .success(let view) = binaryView else { return [] }
-        return view.fields(layout)
-    }
-
-    /// Edit a field by value (writes only its bit range, clamped), staging a draft.
-    func setBinaryField(_ name: String, to value: BigInt) {
-        guard let layout = activeLayout, case .success(let view) = binaryView else { return }
-        binaryDraft = view.setting(field: name, to: value, layout: layout).value
-    }
+    /// The previous result the overlay edits (the implied register).
+    var ans: Value { calculator.environment.ans }
 
     // MARK: Function reference
 
@@ -292,7 +136,8 @@ final class CalculatorSession {
     /// Observation bridge for the LOG half of the inspector: bumped when a
     /// submission changed variables/functions/data types (the sheet half
     /// rides `sheet.generation`).
-    private(set) var environmentGeneration = 0
+    /// (Internal setter — also written by `CalculatorSession+Binary.swift`.)
+    var environmentGeneration = 0
 
     /// The log-defined environment, read-only (the inspector's data source).
     var logVariables: [String: Value] { calculator.environment.userVariables }
@@ -311,11 +156,12 @@ final class CalculatorSession {
     }
 
     /// Autocomplete candidates for the word being typed (empty → hidden).
-    private(set) var suggestions: [Completion] = []
-    private(set) var selectedSuggestion = 0
+    /// (Internal setters — written by `CalculatorSession+Autocomplete.swift`.)
+    var suggestions: [Completion] = []
+    var selectedSuggestion = 0
     /// Set by programmatic input changes (history recall, accept, …) so the
     /// resulting onChange doesn't immediately pop suggestions back open.
-    private var suppressNextSuggestionRefresh = false
+    var suppressNextSuggestionRefresh = false
 
     /// The grid; shares this session's calculator so variables and `A:1`
     /// references work in both views.
@@ -324,12 +170,12 @@ final class CalculatorSession {
     /// Save/Save As/Open for `.soroban` workbooks (cells + variables).
     let workbook: WorkbookManager
 
-    private let calculator = Calculator()
-    private var inputHistory: [String]
+    let calculator = Calculator()
+    var inputHistory: [String]
     /// Cursor into `inputHistory` while the user is ↑/↓-navigating; nil when
     /// typing fresh input. The in-progress line is stashed in `draft`.
-    private var historyCursor: Int?
-    private var draft = ""
+    var historyCursor: Int?
+    var draft = ""
 
     private static let historyKey = "inputHistory"
     private static let historyLimit = 200
@@ -545,101 +391,5 @@ final class CalculatorSession {
     func clearLog() {
         log.clear() // empties the persisted tape too
         logGeneration += 1
-    }
-
-    // MARK: Autocomplete
-
-    /// SpeedCrunch-style continuation: when the field was empty and the user
-    /// just typed a leading binary operator, prepend `ans` so `+5` becomes
-    /// `ans+5`. Returns true if it rewrote (the caller then skips the normal
-    /// suggestion refresh — the rewrite re-enters onChange and handles it).
-    /// Only fires on genuine typing from an empty field, never on a programmatic
-    /// set (history recall / accept set `suppressNextSuggestionRefresh` first).
-    func applyAnsPrefixIfNeeded(old: String, new: String) -> Bool {
-        guard !suppressNextSuggestionRefresh,
-              old.allSatisfy({ $0 == " " }),
-              let rewritten = Calculator.ansPrefixed(new, mode: mode), rewritten != new
-        else { return false }
-        suppressNextSuggestionRefresh = true // the re-entrant onChange won't pop suggestions
-        input = rewritten
-        return true
-    }
-
-    /// Recomputes suggestions for the identifier being typed at the caret
-    /// (end of input). Called from the input field's onChange.
-    func refreshSuggestions() {
-        if suppressNextSuggestionRefresh {
-            suppressNextSuggestionRefresh = false
-            dismissSuggestions()
-            return
-        }
-        let word = Calculator.trailingIdentifier(of: input)
-        suggestions = word.isEmpty ? [] : calculator.completions(forPrefix: word)
-        selectedSuggestion = 0
-    }
-
-    func dismissSuggestions() {
-        suggestions = []
-        selectedSuggestion = 0
-    }
-
-    /// ↑/↓ within the open suggestion list (wraps around).
-    func moveSuggestion(_ delta: Int) {
-        guard !suggestions.isEmpty else { return }
-        selectedSuggestion = (selectedSuggestion + delta + suggestions.count) % suggestions.count
-    }
-
-    /// Replaces the typed prefix with the chosen candidate; functions get
-    /// their opening parenthesis for free.
-    func acceptSuggestion(_ index: Int? = nil) {
-        let chosen = index ?? selectedSuggestion
-        guard suggestions.indices.contains(chosen) else { return }
-        let completion = suggestions[chosen]
-
-        suppressNextSuggestionRefresh = true
-        input.removeLast(Calculator.trailingIdentifier(of: input).count)
-        input += completion.name
-        if completion.kind == .function {
-            input += "("
-        }
-    }
-
-    /// ↑ — step back through past inputs.
-    func recallPrevious() {
-        guard !inputHistory.isEmpty else { return }
-        if historyCursor == nil {
-            draft = input
-            historyCursor = inputHistory.count
-        }
-        guard let cursor = historyCursor, cursor > 0 else { return }
-        historyCursor = cursor - 1
-        suppressNextSuggestionRefresh = true
-        input = inputHistory[cursor - 1]
-    }
-
-    /// ↓ — step forward, ending at the stashed draft.
-    func recallNext() {
-        guard let cursor = historyCursor else { return }
-        suppressNextSuggestionRefresh = true
-        if cursor >= inputHistory.count - 1 {
-            historyCursor = nil
-            input = draft
-        } else {
-            historyCursor = cursor + 1
-            input = inputHistory[cursor + 1]
-        }
-    }
-
-    /// Clicking a log line: expressions replace the input, results append.
-    func recall(expression: String) {
-        suppressNextSuggestionRefresh = true
-        input = expression
-        historyCursor = nil
-    }
-
-    func insert(value: String) {
-        suppressNextSuggestionRefresh = true
-        input += input.isEmpty || input.hasSuffix(" ") ? value : " \(value)"
-        historyCursor = nil
     }
 }

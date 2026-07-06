@@ -39,6 +39,12 @@ display-only, never a change of meaning.
 
 ## The binary bit editor
 
+> The bit-field **format model** below (numeric / flags / enum / reserved /
+> unused fields, the `Bits` module) is shared, language-level, and engine-tested.
+> Each app's bit-editor **UI** is documented in its ecosystem: the Swift component
+> is [BinaryEditorKit](../swift/docs/KIT.md); the Rust editor is built on rime's
+> `bit_grid` in [rust/gui](../rust/docs/GUI.md).
+
 In the app, Programmer mode reveals a **bit editor** overlay (toggle with
 ⌥⌘B, or the View menu). It shows the current answer as a grid of bits:
 

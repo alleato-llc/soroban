@@ -1,7 +1,6 @@
 import SorobanEngine
 import Observation
 import Foundation
-import AppKit // NSPasteboard — the context menu's copy/cut/paste
 
 /// UI-facing wrapper around the engine `Spreadsheet`: selection state,
 /// editing, grid layout (column widths / row heights), and persistence.

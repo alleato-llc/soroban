@@ -3,6 +3,7 @@ options:
   bundleIdPrefix: com.alleato
   deploymentTarget:
     macOS: "14.0"
+    iOS: "17.0"
   createIntermediateGroups: true
 
 packages:
@@ -101,6 +102,78 @@ targets:
         CODE_SIGN_STYLE: Automatic
         SWIFT_EMIT_LOC_STRINGS: false
 
+  # The native iPadOS app — SAME App/Sources as the macOS target (one
+  # codebase), sharing the platform-agnostic Engine/Kit packages. Built as a
+  # second target (not a multi-platform destination) so the macOS Soroban
+  # target + its test bundle stay untouched. AppKit-coupled files are ported
+  # phase by phase (docs plan); until then the iOS build fails only on those.
+  SorobanIOS:
+    type: application
+    platform: iOS
+    sources:
+      - App/Sources
+      - path: App/Resources
+        buildPhase: resources
+        # The macOS target's Info.plist lives here; the iOS target has its own
+        # (App/Info-iOS.plist), so keep the mac one out of the copy phase.
+        excludes: [Info.plist]
+    dependencies:
+      - package: SorobanEngine
+        product: SorobanEngine
+      - package: BinaryEditorKit
+        product: BinaryEditorKit
+      - package: BigInt
+        product: BigInt
+    # Same generator as the macOS target — it now also emits the iOS 1024 icon.
+    preBuildScripts:
+      - name: Generate App Icon
+        script: |
+          for PY in python3 /opt/homebrew/bin/python3 /usr/local/bin/python3; do
+            if command -v "$PY" &>/dev/null && "$PY" -c 'import PIL' &>/dev/null; then
+              exec "$PY" "${PROJECT_DIR}/../scripts/generate_icon.py"
+            fi
+          done
+          if ls "${PROJECT_DIR}/App/Resources/Assets.xcassets/AppIcon.appiconset/"*.png &>/dev/null; then
+            echo "warning: no python3 with Pillow found — reusing existing icon PNGs"
+          else
+            echo "error: no python3 with Pillow found and no generated icons present (pip3 install Pillow)"
+            exit 1
+          fi
+        basedOnDependencyAnalysis: false
+        outputFiles:
+          - $(PROJECT_DIR)/App/Resources/Assets.xcassets/AppIcon.appiconset/icon_ios_1024.png
+    info:
+      # Generated outside App/Resources so it isn't also copied as a resource.
+      path: App/Info-iOS.plist
+      properties:
+        CFBundleName: Soroban・算盤
+        CFBundleDisplayName: Soroban・算盤
+        LSApplicationCategoryType: public.app-category.utilities
+        UILaunchScreen: {}
+        # Files-app association + open-in-place for the .soroban package.
+        LSSupportsOpeningDocumentsInPlace: true
+        UIApplicationSupportsIndirectInputEvents: true
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Soroban Workbook
+            CFBundleTypeRole: Editor
+            LSItemContentTypes: [com.alleato.soroban.workbook]
+            LSHandlerRank: Owner
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: com.alleato.soroban.workbook
+            UTTypeDescription: Soroban Workbook
+            UTTypeConformsTo: [com.apple.package]
+            UTTypeTagSpecification:
+              public.filename-extension: [soroban]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.alleato.Soroban
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "6.0"
+        TARGETED_DEVICE_FAMILY: "2" # iPad only
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        SWIFT_EMIT_LOC_STRINGS: false
+
   # Gherkin specs for the SESSION layer (SheetModel: undo, named-cell
   # rewriting, control commits, CSV export). SheetModel compiles directly
   # into this bundle — no host app, no UI automation; PickleKit drives it
@@ -110,6 +183,7 @@ targets:
     platform: macOS
     sources:
       - App/Sources/Session/SheetModel # the model + its per-concern extensions
+      - App/Sources/Session/Platform/Clipboard.swift # the pasteboard seam +Clipboard uses
       - App/Sources/Session/LogStore.swift # the UI-free log model (History reflection)
       - App/Sources/Session/HistoryEntry.swift # a log entry (LogStore's element)
       - path: App/Tests/Session
@@ -138,5 +212,13 @@ schemes:
     test:
       config: Debug
       targets: [SorobanSessionTests]
+    archive:
+      config: Release
+  SorobanIOS:
+    build:
+      targets:
+        SorobanIOS: all
+    run:
+      config: Debug
     archive:
       config: Release

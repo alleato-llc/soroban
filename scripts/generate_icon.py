@@ -147,7 +147,15 @@ def main() -> None:
     for name, points, scale in SIZES:
         px = points * scale
         master.resize((px, px), Image.LANCZOS).save(ICONSET / name)
-    print(f"wrote {len(SIZES)} icons to {ICONSET}")
+
+    # iOS wants a single 1024 "universal" icon, and iOS icons must be opaque
+    # (no alpha — the system applies its own mask). Flatten the master onto a
+    # solid gradient-purple background so the corners are filled and the iPad
+    # build has a valid icon.
+    ios = Image.new("RGB", (CANVAS, CANVAS), GRADIENT_TOP)
+    ios.paste(master, (0, 0), master if master.mode == "RGBA" else None)
+    ios.save(ICONSET / "icon_ios_1024.png")
+    print(f"wrote {len(SIZES) + 1} icons to {ICONSET}")
 
 
 if __name__ == "__main__":

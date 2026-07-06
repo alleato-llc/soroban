@@ -98,8 +98,27 @@ pub fn configure(app: &mut App) {
     match std::env::var("SOROBAN_SHOT_MENU").as_deref() {
         Ok("file") => app.menu_open = Some(0),
         Ok("edit") => app.menu_open = Some(1),
-        Ok("view") => app.menu_open = Some(2),
+        Ok("sheet") => app.menu_open = Some(2),
+        Ok("view") => app.menu_open = Some(3),
         _ => {}
+    }
+    // Open the right-click cell context menu (formatting + clipboard verbs) at a
+    // fixed anchor, for shooting it over the grid.
+    if let Ok(which) = std::env::var("SOROBAN_SHOT_CELLMENU") {
+        app.mode = ViewMode::Grid;
+        if app.grid_selection.is_none() {
+            app.grid_selection = Some(GridSelection::cell(3, 1));
+        }
+        app.load_draft();
+        app.cell_menu = Some(iced::Point::new(260.0, 300.0));
+        // Optionally fly out a submenu by name (number/alignment/text/fill).
+        app.cell_menu_submenu = match which.as_str() {
+            "number" => Some(0),
+            "alignment" => Some(1),
+            "text" => Some(2),
+            "fill" => Some(3),
+            _ => None,
+        };
     }
     match std::env::var("SOROBAN_SHOT_PANEL").as_deref() {
         Ok("inspector") => app.inspector_visible = true,

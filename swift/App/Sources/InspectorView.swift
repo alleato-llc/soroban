@@ -25,7 +25,9 @@ struct InspectorView: View {
                     .fill(.clear)
                     .frame(width: 8)
                     .contentShape(Rectangle())
+                    #if os(macOS)
                     .onHover { $0 ? NSCursor.resizeLeftRight.push() : NSCursor.pop() }
+                    #endif
                     .gesture(DragGesture(minimumDistance: 1)
                         .onChanged { drag in
                             // session.inspectorWidth is the stable base — not
@@ -165,8 +167,7 @@ private struct EntryRow: View {
             Button("Insert Name") { insert(insertableName) }
             Button("Insert Value") { insert(entry.detail) }
             Button("Copy Value") {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(entry.detail, forType: .string)
+                Clipboard.write(string: entry.detail)
             }
             if case .cell = entry.provenance {
                 Button("Go to Definition", action: jump)

@@ -1,5 +1,4 @@
 import SwiftUI
-import AppKit
 
 /// Custom About window (replaces the stock About panel via the `.appInfo`
 /// command group): tells the story of the name and states what the app is
@@ -17,7 +16,7 @@ struct AboutView: View {
         let theme = themeManager.current
 
         VStack(spacing: 14) {
-            Image(nsImage: NSApp.applicationIconImage)
+            appIconImage()
                 .resizable()
                 .frame(width: 96, height: 96)
 

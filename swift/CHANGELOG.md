@@ -15,6 +15,14 @@ The GitHub Release for each tag is the point of truth for the signed, notarized
 
 ## [Unreleased]
 
+### Changed
+
+- **One CSV door: *Open CSV*.** The separate *Import Data (CSV)…* command is
+  gone; *File → Open CSV…* (⇧⌘O) is now the single way to bring a CSV in. It
+  opens the file as an editable workbook (grid cells when it fits, else a data
+  sheet) — a copy, so edits save into the `.soroban` file and the source `.csv`
+  is never modified. Matches the Rust app's unified *Open CSV*.
+
 ## [1.4.5] — 2026-06-17
 
 ### Changed

@@ -160,3 +160,147 @@ fn from_json_depth_cap_is_an_error_not_a_crash() {
     let bomb = format!("fromJson(\"{}\")", "[".repeat(300));
     assert!(Calculator::new().evaluate(&bomb).is_err());
 }
+
+// MARK: Operator application (apply_op / compare / subscript_value)
+
+#[test]
+fn numeric_operators_reject_non_numeric_operands() {
+    // Every operator but `+` (which concatenates against a string) needs
+    // numbers; the error names the operator symbol and the offending kind.
+    assert_eq!(
+        error_of("\"a\" - 1"),
+        EngineError::domain("expected a number for -, got a string")
+    );
+    assert_eq!(
+        error_of("[1] * 2"),
+        EngineError::domain("expected a number for *, got an array")
+    );
+    assert_eq!(
+        error_of("\"a\" ^ 2"),
+        EngineError::domain("expected a number for ^, got a string")
+    );
+    // `+` against a non-string, non-numeric operand is still a type error
+    // (concatenation needs a string on one side).
+    assert!(error_of("[1] + 2")
+        .to_string()
+        .contains("expected a number for +"));
+}
+
+#[test]
+fn ordering_comparisons_require_numbers() {
+    // `==`/`!=` work on any values, but `< > <= >=` coerce to numbers.
+    assert_eq!(
+        error_of("\"a\" < 1"),
+        EngineError::domain("expected a number for <, got a string")
+    );
+    assert_eq!(
+        error_of("[1] >= [2]"),
+        EngineError::domain("expected a number for >=, got an array")
+    );
+}
+
+#[test]
+fn truthiness_requires_a_number() {
+    // if()'s condition (and reduction bounds) must be numeric.
+    assert_eq!(
+        error_of("if(\"x\", 1, 2)"),
+        EngineError::domain("expected a number for the if() condition, got a string")
+    );
+}
+
+#[test]
+fn subscript_type_errors_are_precise() {
+    // A map/record subscripted by a non-string key.
+    assert_eq!(
+        error_of("{a: 1}[0]"),
+        EngineError::domain("map keys are strings — e.g. m[\"name\"], got a number")
+    );
+    // A missing key in a map.
+    assert_eq!(
+        error_of("{a: 1}[\"b\"]"),
+        EngineError::domain("no key 'b' in map")
+    );
+    // Indexing a plain number isn't allowed.
+    assert_eq!(
+        error_of("5[0]"),
+        EngineError::domain("a number can't be indexed")
+    );
+    // Out-of-range array/string indices report the container size.
+    assert_eq!(
+        error_of("[1, 2][5]"),
+        EngineError::domain("index 5 is out of range (array has 2 elements)")
+    );
+    assert_eq!(
+        error_of("\"ab\"[9]"),
+        EngineError::domain("index 9 is out of range (string has 2 characters)")
+    );
+}
+
+#[test]
+fn record_subscript_missing_field_lists_the_fields() {
+    let mut calculator = Calculator::new();
+    calculator
+        .evaluate("data Point { x: Number, y: Number }")
+        .expect("declares");
+    calculator
+        .evaluate("p = Point(x: 1, y: 2)")
+        .expect("constructs");
+    let error = calculator
+        .evaluate("p[\"z\"]")
+        .expect_err("no such field")
+        .to_string();
+    assert!(error.contains("Point has no field 'z'"), "{error}");
+    assert!(error.contains("x, y"), "lists the real fields: {error}");
+}
+
+// MARK: Fixed-width integer / fixed-precision decimal mixing matrix
+
+#[test]
+fn fixed_int_mixing_matrix_errors() {
+    // Signed and unsigned never combine.
+    assert!(error_of("Int8(1) + UInt8(1)")
+        .to_string()
+        .contains("signed and unsigned never combine"));
+    // A fractional plain number can't adopt a fixed-width type.
+    assert!(error_of("Int8(1) + 1.5")
+        .to_string()
+        .contains("needs whole numbers"));
+    // Overflow errors rather than wraps.
+    assert!(error_of("Int8(127) + Int8(1)")
+        .to_string()
+        .contains("out of range"));
+    // Cross-family: a decimal can't combine with a fixed-width int.
+    assert!(error_of("Int8(1) + Decimal(1.5)")
+        .to_string()
+        .contains("with a fixed-width integer"));
+    // A fixed-width base needs a non-negative integer exponent.
+    assert_eq!(
+        error_of("Int8(2) ^ -1"),
+        EngineError::domain("a fixed-width base needs a non-negative integer exponent")
+    );
+}
+
+#[test]
+fn fixed_decimal_mixing_matrix_errors() {
+    // Different rounding modes never reconcile.
+    assert!(
+        error_of("Decimal(1.0, 5, 2) + Decimal(1.0, 5, 2, Rounding.HalfUp)")
+            .to_string()
+            .contains("different rounding")
+    );
+    // Power is unsupported on decimals (`^` is power in normal mode). Modulo
+    // shares this match arm but is unreachable via the parser — normal `%` is
+    // postfix percent and programmer `%` lowers to the `mod` builtin (which
+    // coerces the decimal to a plain number), so no `BinaryOperator::Modulo`
+    // ever reaches `apply_binary`; only power exercises the arm.
+    assert!(error_of("Decimal(2.0, 5, 2) ^ 2")
+        .to_string()
+        .contains("doesn't support ^ (power)"));
+    // Cross-family: a non-numeric operand can't combine with a decimal.
+    // (An `Int8` mix routes through the FixedInt hook, checked first — see
+    // fixed_int_mixing_matrix_errors — so an array exercises the decimal's
+    // own operand guard here.)
+    assert!(error_of("[1] - Decimal(2.0, 5, 2)")
+        .to_string()
+        .contains("with a fixed-precision decimal"));
+}

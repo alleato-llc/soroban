@@ -12,7 +12,10 @@ MyModel.soroban/
 
 Legacy single-file `.soroban` JSON documents still open (they're treated as
 a package with no database); saves always write the package shape. The codec
-lives in the engine (`Workbook.swift`, `WorkbookPackage.swift`).
+lives in each ecosystem's hosting engine (Swift:
+[../swift/docs/ENGINE.md](../swift/docs/ENGINE.md); Rust:
+[../rust/docs/ENGINE.md](../rust/docs/ENGINE.md)) — this format is the
+interchange contract both must honor.
 
 **Data sheets** (`"kind": "data"` below) hold imported records — CSV imports
 land in `data.sqlite` (tables `tables` + sparse `cells(t, r, c, v)`), read

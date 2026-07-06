@@ -1,5 +1,7 @@
+import Foundation
 import SorobanEngine
-import AppKit // NSPasteboard — the context menu's copy/cut/paste
+// Pasteboard access goes through the platform-neutral `Clipboard` seam
+// (NSPasteboard on macOS, UIPasteboard on iPadOS) — no direct AppKit here.
 
 // MARK: Clipboard (TSV — interoperates with Excel/Numbers)
 
@@ -34,39 +36,30 @@ extension SheetModel {
         let tsv: String    // must match the plain-string content, else stale
     }
 
-    static let cellsPasteboardType =
-        NSPasteboard.PasteboardType("com.alleato.soroban.cells")
-
     /// ⌘C and the context menu both land here (SpreadsheetView's
     /// onCopyCommand defers to this so both pasteboard types are written).
     func copySelectionToPasteboard() {
         guard let rect = selectionRect, let tsv = selectionTSV() else { return }
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(tsv, forType: .string)
         let anchor = CellAddress(column: rect.columns.lowerBound,
                                  row: rect.rows.lowerBound)
-        if let data = try? JSONEncoder().encode(
-            CellsClipboard(anchor: "\(anchor)", tsv: tsv)) {
-            pasteboard.setData(data, forType: Self.cellsPasteboardType)
-        }
+        let cells = try? JSONEncoder().encode(
+            CellsClipboard(anchor: "\(anchor)", tsv: tsv))
+        Clipboard.writeCells(tsv: tsv, cells: cells)
     }
 
     /// Cut writes ONLY plain TSV — cut-paste keeps references verbatim
     /// (Excel's no-adjust-on-move, without the move-references machinery).
     func cutSelectionToPasteboard() {
         guard let tsv = selectionTSV() else { return }
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(tsv, forType: .string)
+        Clipboard.write(string: tsv)
         clearSelection()
     }
 
     func pasteFromPasteboard() {
-        let pasteboard = NSPasteboard.general
-        guard let text = pasteboard.string(forType: .string) else { return }
+        guard let text = Clipboard.readString() else { return }
         // Our own copy? (The TSV must match — a newer copy from another app
         // replaces the string but leaves our stale custom data behind.)
-        if let data = pasteboard.data(forType: Self.cellsPasteboardType),
+        if let data = Clipboard.readCellsData(),
            let payload = try? JSONDecoder().decode(CellsClipboard.self, from: data),
            payload.tsv == text,
            let source = CellAddress(key: payload.anchor) {

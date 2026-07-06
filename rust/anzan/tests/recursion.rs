@@ -24,9 +24,11 @@ fn deep_non_tail_recursion_completes_on_segmented_stacks() {
 }
 
 #[test]
-fn runaway_recursion_errors_with_the_base_case_hint() {
-    // Both caps (call depth, tail iterations) share one message contract:
-    // it names the symptom AND hints at the missing base case.
+fn runaway_tail_recursion_hits_the_tail_iteration_cap() {
+    // `f(x) = f(x)` is a TAIL call — it loops at constant stack, so the
+    // MAX_TAIL_ITERATIONS guard (not the depth cap) is what cuts it off.
+    // Both caps share one message contract: it names the symptom AND hints
+    // at the missing base case.
     let mut calculator = Calculator::new();
     calculator.evaluate("f(x) = f(x)").expect("defines");
     let error = calculator
@@ -35,4 +37,54 @@ fn runaway_recursion_errors_with_the_base_case_hint() {
         .to_string();
     assert!(error.contains("nested too deeply"), "{error}");
     assert!(error.contains("base case"), "{error}");
+}
+
+#[test]
+fn runaway_non_tail_recursion_hits_the_call_depth_cap() {
+    // `+ 1` after the call keeps this non-tail, so it stacks — and with no
+    // base case it trips MAX_CALL_DEPTH (the other arm of the same guard)
+    // rather than looping forever. Same message contract.
+    let mut calculator = Calculator::new();
+    calculator.evaluate("g(x) = g(x) + 1").expect("defines");
+    let error = calculator
+        .evaluate("g(1)")
+        .expect_err("non-tail runaway must be cut off")
+        .to_string();
+    assert!(error.contains("nested too deeply"), "{error}");
+    assert!(error.contains("base case"), "{error}");
+    assert!(
+        error.contains("g()"),
+        "names the offending function: {error}"
+    );
+}
+
+#[test]
+fn tail_recursion_loops_at_constant_stack() {
+    // An accumulator whose recursive call is the WHOLE taken branch is a
+    // tail call: `apply_user` turns it into a loop iteration (TailStep::Call)
+    // at constant stack. 500k iterations would blow any real stack without
+    // TCO — and it stays under MAX_TAIL_ITERATIONS (1,000,000).
+    let mut calculator = Calculator::new();
+    calculator
+        .evaluate("tally(n, acc) = if(n <= 0, acc, tally(n - 1, acc + 1))")
+        .expect("defines");
+    let outcome = calculator
+        .evaluate("tally(500000, 0)")
+        .expect("tail loop must run to completion");
+    assert_eq!(outcome.to_string(), "500000");
+}
+
+#[test]
+fn tail_recursion_walks_through_nested_conditionals() {
+    // `tail_step` descends the taken branch of if() to find the tail call —
+    // even through a nested conditional. The recursive call sits two if()
+    // levels deep, so this only completes if the walker recurses into both.
+    let mut calculator = Calculator::new();
+    calculator
+        .evaluate("walk(n) = if(n <= 0, 0, if(n > 1000000, 0, walk(n - 1)))")
+        .expect("defines");
+    let outcome = calculator
+        .evaluate("walk(200000)")
+        .expect("nested-conditional tail recursion completes");
+    assert_eq!(outcome.to_string(), "0");
 }

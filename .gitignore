@@ -8,6 +8,8 @@
 # Xcode
 DerivedData/
 xcuserdata/
+# xcodebuild's default SYMROOT when built from swift/ without a derived-data path
+build/
 
 # macOS
 .DS_Store

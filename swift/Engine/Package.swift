@@ -4,7 +4,11 @@ import PackageDescription
 let package = Package(
     name: "SorobanEngine",
     platforms: [
-        .macOS(.v14)
+        .macOS(.v14),
+        // The library (Anzan + SorobanEngine) is platform-agnostic and links
+        // into the iPad app; the SorobanCLI/LineNoise executable stays macOS
+        // (nothing on the iOS target depends on it, so it never builds there).
+        .iOS(.v17),
     ],
     products: [
         .library(name: "SorobanEngine", targets: ["SorobanEngine"]),

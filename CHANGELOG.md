@@ -37,6 +37,16 @@ still suppresses all release workflows regardless of the paths it touches — se
 
 ### Changed
 
+- **Documentation reorganized ecosystem-first.** The shared language/format spec
+  and a new [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (the common design) stay
+  top-level in `docs/`; each ecosystem gained its own authored docs
+  ([swift/README.md](swift/README.md) + `swift/docs/`,
+  [rust/README.md](rust/README.md) + `rust/docs/`) and a nested `CLAUDE.md`, and
+  the root `README.md`/`CLAUDE.md` were slimmed to a monorepo overview + router
+  (the Swift app tour and the deep per-subsystem architecture moved into the
+  Swift ecosystem docs). New [CONTRIBUTING.md](CONTRIBUTING.md) and
+  [spec/README.md](spec/README.md). No behavior or code change;
+  `docs/ANZAN.md` (the site-rendered spec) is unchanged.
 - **Two independent release tracks, split by ecosystem.** `swift/**` (or
   `spec/**`) changes cut a **macOS release** (`release.yml` → salpa → signed,
   notarized `Soroban.dmg`, tagged `vX.Y.Z`). `rust/**` (or `spec/**`) changes cut

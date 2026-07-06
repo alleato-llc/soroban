@@ -53,7 +53,7 @@ struct SliderCellContent: View {
                             // An open editor means this click was a reference
                             // insertion, not a drag.
                             session.sheet.handleCellClick(
-                                address, isShiftDown: NSEvent.modifierFlags.contains(.shift))
+                                address, isShiftDown: isShiftKeyDown())
                             return
                         }
                         session.sheet.commitSlider(at: address, info: info,
@@ -108,7 +108,7 @@ struct StepperCellContent: View {
                 let sheet = session.sheet
                 guard sheet.editing == nil else { // point mode owns clicks
                     sheet.handleCellClick(address,
-                                          isShiftDown: NSEvent.modifierFlags.contains(.shift))
+                                          isShiftDown: isShiftKeyDown())
                     return
                 }
                 guard enabled else { return }
@@ -136,7 +136,7 @@ struct CheckboxCellContent: View {
                 let sheet = session.sheet
                 guard sheet.editing == nil else { // point mode owns clicks
                     sheet.handleCellClick(address,
-                                          isShiftDown: NSEvent.modifierFlags.contains(.shift))
+                                          isShiftDown: isShiftKeyDown())
                     return
                 }
                 sheet.commitControl(at: address, literal: info.isOn ? "false" : "true")
