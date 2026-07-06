@@ -15,6 +15,25 @@ enum Magnitude {
         return limbs
     }
 
+    /// Sign of `2·a − b` (both normalized) WITHOUT allocating `2·a`: -1 / 0 / 1.
+    /// Rounding compares the doubled remainder against the divisor on every
+    /// divide; computing `2·a`'s limbs on the fly avoids two array temporaries.
+    static func compareDoubled(_ a: [UInt], _ b: [UInt]) -> Int {
+        if a.isEmpty { return b.isEmpty ? 0 : -1 }
+        // 2·a gains a top limb iff a's high bit is set.
+        let doubledCount = a.count + ((a[a.count - 1] >> 63) != 0 ? 1 : 0)
+        if doubledCount != b.count { return doubledCount < b.count ? -1 : 1 }
+        var i = doubledCount - 1
+        while i >= 0 {
+            let low = i < a.count ? (a[i] << 1) : 0
+            let carry = i - 1 >= 0 ? (a[i - 1] >> 63) : 0
+            let twoAi = low | carry
+            if twoAi != b[i] { return twoAi < b[i] ? -1 : 1 }
+            i -= 1
+        }
+        return 0
+    }
+
     /// Three-way compare: -1 if a < b, 0 if equal, 1 if a > b (inputs normalized).
     static func compare(_ a: [UInt], _ b: [UInt]) -> Int {
         if a.count != b.count { return a.count < b.count ? -1 : 1 }
