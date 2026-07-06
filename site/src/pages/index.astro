@@ -61,37 +61,77 @@ const links = {
                 engines against one shared spec.
             </p>
 
-            <!-- Real app screenshots in a theme-matched carousel: every shot
-                 for the current theme cycles (dark has more than light), the
-                 page-theme set is shown via CSS. Single click pauses/plays;
-                 double click maximizes (Esc / click-away / double-click to
-                 exit). Dots are built per theme. Honors reduced-motion. -->
-            <div class="hero-shot" data-carousel>
+            <!-- Real app screenshots in a theme-matched carousel with TWO
+                 build sets: the native (Swift) app and the cross-platform
+                 (Rust) app. The segmented toggle picks the build; CSS shows
+                 only the current build+theme; every shot for that pair cycles.
+                 Single click pauses/plays; double click maximizes (Esc /
+                 click-away / double-click to exit). Dots rebuild per set.
+                 Honors reduced-motion. -->
+            <div class="hero-shot" data-carousel data-build="native">
+                <div class="build-toggle" role="tablist" aria-label="Which build to preview">
+                    <button class="bt-opt is-active" data-build="native" role="tab">Native · macOS</button>
+                    <button class="bt-opt" data-build="cross" role="tab">Cross-platform</button>
+                </div>
                 <div class="shots">
-                    <img class="shot shot-dark is-active" data-slide="0"
+                    <!-- Native (Swift/macOS) -->
+                    <img class="shot shot-dark is-active" data-build="native" data-slide="0"
                         src="/screenshots/log-dark.png"
                         alt="Soroban's calculation log with computed results"
                         width="3056" height="1970" loading="eager" />
-                    <img class="shot shot-dark" data-slide="1"
+                    <img class="shot shot-dark" data-build="native" data-slide="1"
                         src="/screenshots/log-inspector-dark.png"
                         alt="Soroban's calculation log with the environment inspector and autocomplete"
                         width="3056" height="1970" loading="lazy" />
-                    <img class="shot shot-dark" data-slide="2"
+                    <img class="shot shot-dark" data-build="native" data-slide="2"
                         src="/screenshots/grid-dark.png"
                         alt="Soroban's spreadsheet grid: a mortgage model with formulas and controls"
                         width="3056" height="1970" loading="lazy" />
-                    <img class="shot shot-light is-active" data-slide="0"
+                    <img class="shot shot-light is-active" data-build="native" data-slide="0"
                         src="/screenshots/log-light.png"
                         alt="Soroban's calculation log with computed results"
                         width="3056" height="1970" loading="eager" />
-                    <img class="shot shot-light" data-slide="1"
+                    <img class="shot shot-light" data-build="native" data-slide="1"
                         src="/screenshots/grid-light.png"
                         alt="Soroban's spreadsheet grid: a mortgage model with formulas and controls"
                         width="3056" height="1970" loading="lazy" />
-                    <img class="shot shot-light" data-slide="2"
+                    <img class="shot shot-light" data-build="native" data-slide="2"
                         src="/screenshots/grid-inspector-light.png"
                         alt="Soroban's spreadsheet grid with the environment inspector"
                         width="3056" height="1970" loading="lazy" />
+                    <!-- Cross-platform (Rust/iced) -->
+                    <img class="shot shot-dark" data-build="cross" data-slide="0"
+                        src="/screenshots/rust-log-dark.png"
+                        alt="The cross-platform Rust app's calculation log with computed results"
+                        width="2080" height="1360" loading="lazy" />
+                    <img class="shot shot-dark" data-build="cross" data-slide="1"
+                        src="/screenshots/rust-log-inspector-dark.png"
+                        alt="The cross-platform Rust app's log with the environment inspector"
+                        width="2080" height="1360" loading="lazy" />
+                    <img class="shot shot-dark" data-build="cross" data-slide="2"
+                        src="/screenshots/rust-grid-dark.png"
+                        alt="The cross-platform Rust app's grid: a mortgage model with a live slider control"
+                        width="2080" height="1360" loading="lazy" />
+                    <img class="shot shot-dark" data-build="cross" data-slide="3"
+                        src="/screenshots/rust-grid-inspector-dark.png"
+                        alt="The cross-platform Rust app's grid with the environment inspector"
+                        width="2080" height="1360" loading="lazy" />
+                    <img class="shot shot-light" data-build="cross" data-slide="0"
+                        src="/screenshots/rust-log-light.png"
+                        alt="The cross-platform Rust app's calculation log with computed results"
+                        width="2080" height="1360" loading="lazy" />
+                    <img class="shot shot-light" data-build="cross" data-slide="1"
+                        src="/screenshots/rust-log-inspector-light.png"
+                        alt="The cross-platform Rust app's log with the environment inspector"
+                        width="2080" height="1360" loading="lazy" />
+                    <img class="shot shot-light" data-build="cross" data-slide="2"
+                        src="/screenshots/rust-grid-light.png"
+                        alt="The cross-platform Rust app's grid: a mortgage model with a live slider control"
+                        width="2080" height="1360" loading="lazy" />
+                    <img class="shot shot-light" data-build="cross" data-slide="3"
+                        src="/screenshots/rust-grid-inspector-light.png"
+                        alt="The cross-platform Rust app's grid with the environment inspector"
+                        width="2080" height="1360" loading="lazy" />
                 </div>
                 <div class="dots" aria-label="Screenshot navigation"></div>
             </div>
@@ -119,10 +159,14 @@ const links = {
 
                     const theme = () =>
                         document.documentElement.dataset.theme === "light" ? "light" : "dark";
+                    const build = () =>
+                        root.dataset.build === "cross" ? "cross" : "native";
                     const slides = () =>
-                        [...root.querySelectorAll<HTMLImageElement>(`.shot-${theme()}`)].sort(
-                            (a, b) => Number(a.dataset.slide) - Number(b.dataset.slide),
-                        );
+                        [
+                            ...root.querySelectorAll<HTMLImageElement>(
+                                `.shot-${theme()}[data-build="${build()}"]`,
+                            ),
+                        ].sort((a, b) => Number(a.dataset.slide) - Number(b.dataset.slide));
 
                     const render = () => {
                         const list = slides();
@@ -214,6 +258,26 @@ const links = {
                     }).observe(document.documentElement, {
                         attributes: true,
                         attributeFilter: ["data-theme"],
+                    });
+
+                    // Segmented build toggle: switch the native/cross set,
+                    // reset to its first slide, and rebuild dots + track.
+                    root.querySelectorAll<HTMLButtonElement>(".bt-opt").forEach((btn) => {
+                        btn.addEventListener("click", (e) => {
+                            e.stopPropagation();
+                            const chosen = btn.dataset.build ?? "native";
+                            if (root.dataset.build === chosen) return;
+                            root.dataset.build = chosen;
+                            root.querySelectorAll(".bt-opt").forEach((b) =>
+                                b.classList.toggle(
+                                    "is-active",
+                                    (b as HTMLElement).dataset.build === chosen,
+                                ),
+                            );
+                            index = 0;
+                            buildDots();
+                            render();
+                        });
                     });
 
                     buildDots();
