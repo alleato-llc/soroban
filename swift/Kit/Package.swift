@@ -8,8 +8,10 @@ import PackageDescription
 let package = Package(
     name: "BinaryEditorKit",
     platforms: [
-        .macOS(.v14),
-        .iOS(.v17), // the bit-editor UI is pure SwiftUI — links into the iPad app
+        // Tracks the Engine dependency: its exact-decimal significand uses the
+        // stdlib UInt128/Int128 (macOS 15 / iOS 18), so this Kit inherits the floor.
+        .macOS(.v15),
+        .iOS(.v18), // the bit-editor UI is pure SwiftUI — links into the iPad app
     ],
     products: [
         .library(name: "BinaryEditorKit", targets: ["BinaryEditorKit"]),
