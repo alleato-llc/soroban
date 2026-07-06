@@ -9,7 +9,7 @@ use soroban_engine::{CellAlignment, LanguageMode};
 
 use crate::render::*;
 use crate::shot;
-use crate::{grid_editor_id, log_input_id, App, Message, ViewMode};
+use crate::{grid_editor_id, log_input_id, log_scroll_id, App, Message, ViewMode};
 
 impl App {
     pub(crate) fn update(&mut self, message: Message) -> Task<Message> {
@@ -45,6 +45,10 @@ impl App {
                     self.session.refresh_binary();
                     self.sync_binary_field_drafts();
                 }
+                // Snap the tape to the freshest entry (just above the input),
+                // like a REPL scrolling on each result. A no-op in the grid view
+                // (the log scrollable isn't mounted there).
+                return operation::snap_to_end(log_scroll_id());
             }
             // Arrows: an open autocomplete popup claims ↑/↓ first (move the
             // highlight — the dual-role the rime widget documents); otherwise

@@ -15,6 +15,16 @@ DMG.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The log view now uses the full window width and auto-scrolls.** The Rust
+  app's log tape was confined to roughly the left half of the window (the
+  scrollable and its container weren't width-filling), wasting the right side and
+  clipping wide results; it now fills the full width. Submitting a line also snaps
+  the tape to the newest entry, so the freshest result is always visible just
+  above the input (a REPL-style auto-scroll) instead of stranding it below the
+  fold on a long history.
+
 ### Changed
 
 - **Faster exact-decimal hot paths.** The division-heavy `pmt` finance workload is

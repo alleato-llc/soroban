@@ -9,7 +9,7 @@ use rime::widgets::{button, card, grid, rename_bar, section, text_field};
 use soroban_engine::{CellAddress, LanguageMode};
 
 use crate::render::*;
-use crate::{edit_bar_id, grid_editor_id, log_input_id, App, Message};
+use crate::{edit_bar_id, grid_editor_id, log_input_id, log_scroll_id, App, Message};
 
 impl App {
     /// The reference window: every function, operator, and constant — the
@@ -151,11 +151,13 @@ impl App {
                     font,
                 ));
             }
-            scrollable(items.padding([4, 8]))
+            scrollable(items.width(Length::Fill).padding([4, 8]))
+                .id(log_scroll_id())
+                .width(Length::Fill)
                 .height(Length::Fill)
                 .into()
         };
-        let log = container(log_inner).height(Length::Fill);
+        let log = container(log_inner).width(Length::Fill).height(Length::Fill);
 
         // The input is pinned to the BOTTOM, behind a `>` prompt; Enter submits
         // (no `=` button — the original has none). A mode affordance (cycles

@@ -148,6 +148,11 @@ fn log_input_id() -> Id {
     Id::new("soroban-log-input")
 }
 
+/// The log tape's scrollable id, so a submit can snap it to the newest entry.
+fn log_scroll_id() -> Id {
+    Id::new("soroban-log-scroll")
+}
+
 /// The inline cell editor's widget id (hosted inside the grid on the active
 /// cell), so double-click / point-mode can focus it.
 fn grid_editor_id() -> Id {
