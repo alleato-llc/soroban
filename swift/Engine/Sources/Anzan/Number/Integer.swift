@@ -133,6 +133,21 @@ extension Integer {
         return (limbs.count - 1) * 64 + (64 - top.leadingZeroBitCount)
     }
 
+    /// Number of decimal digits in the magnitude (zero counts as one), computed
+    /// from the bit width **without allocating a base-10 string**. Exact: the
+    /// `1233/4096 ≈ log10(2)` estimate is corrected against cached powers of ten
+    /// (`10^(d-1) ≤ |self| < 10^d`). Drives `BigDecimal.digitCount`, which the
+    /// division/rounding paths hit several times per op.
+    var decimalDigitCount: Int {
+        let bits = bitWidth
+        if bits == 0 { return 1 } // zero
+        let mag = magnitude
+        var d = bits * 1233 / 4096 + 1
+        while mag >= Integer.powerOfTen(d) { d += 1 }
+        while d > 1 && mag < Integer.powerOfTen(d - 1) { d -= 1 }
+        return d
+    }
+
     var isEven: Bool {
         switch self {
         case .small(let value): return value % 2 == 0

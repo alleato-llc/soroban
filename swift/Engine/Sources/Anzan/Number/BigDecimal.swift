@@ -49,8 +49,7 @@ public struct BigDecimal: Sendable {
 
     /// Number of significant decimal digits in the significand.
     var digitCount: Int {
-        if significand.isZero { return 1 }
-        return significand.magnitude.description.count
+        significand.decimalDigitCount
     }
 }
 

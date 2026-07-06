@@ -137,6 +137,24 @@ struct IntegerOracleTests {
         }
     }
 
+    /// Guard for the stringify-free `decimalDigitCount` (drives `BigDecimal.digitCount`,
+    /// which feeds division guard-digits — an off-by-one here would shift results and
+    /// diverge the two engines). Assert it equals the base-10 string length across the
+    /// fuzz corpus PLUS every power-of-ten boundary (`10^k − 1`, `10^k`, `10^k + 1`),
+    /// where the digit count increments and the bit-length estimate must correct.
+    @Test func decimalDigitCountMatchesStringLength() {
+        var values = Self.samples()
+        for k in 0...200 {
+            let ten = BigInt(10).power(k)
+            values.append(contentsOf: [ten - 1, ten, ten + 1, -ten, -(ten + 1)])
+        }
+        for b in values {
+            let n = Self.toInteger(b)
+            #expect(n.decimalDigitCount == n.magnitude.description.count,
+                    "digitCount of \(b)")
+        }
+    }
+
     /// `bitWidth` isn't compared to attaswift (its sign-bit convention differs);
     /// instead assert the property the integer-sqrt seed relies on:
     /// `2^bitWidth > |value| ≥ 2^(bitWidth-1)` for nonzero values.

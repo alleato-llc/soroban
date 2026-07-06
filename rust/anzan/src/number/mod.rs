@@ -9,7 +9,7 @@
 mod math;
 
 use crate::EngineError;
-use num_bigint::{BigInt, Sign};
+use num_bigint::{BigInt, BigUint, Sign};
 use num_integer::Integer;
 use num_traits::Zero;
 use std::cell::Cell;
@@ -100,8 +100,50 @@ impl BigDecimal {
         if self.significand.is_zero() {
             return 1;
         }
-        self.significand.magnitude().to_string().len() as i64
+        // 1233/4096 ≈ log10(2): estimate the digit count from the bit length,
+        // then correct it to exact by comparing against powers of ten
+        // (10^(d-1) ≤ |n| < 10^d). Avoids the full base-10 stringify the old
+        // `.to_string().len()` needed on every division/rounding.
+        let mag = self.significand.magnitude();
+        let mut d = (self.significand.bits() as i64) * 1233 / 4096 + 1;
+        while *mag >= ten_pow_u(d) {
+            d += 1;
+        }
+        while d > 1 && *mag < ten_pow_u(d - 1) {
+            d -= 1;
+        }
+        d
     }
+}
+
+thread_local! {
+    /// Powers of ten `0..=128` as unsigned magnitudes, precomputed once. `10^k`
+    /// is rebuilt constantly (digit-count boundary compares, and — from the
+    /// alignment/rounding paths — operand rescaling), so caching the common
+    /// range turns those into a clone of a ready value instead of a fresh
+    /// exponentiation. Mirrors the Swift engine's `Integer.tenLadder`.
+    static TEN_LADDER_U: Vec<BigUint> = {
+        let mut ladder = Vec::with_capacity(129);
+        let ten = BigUint::from(10u32);
+        let mut value = BigUint::from(1u32);
+        for _ in 0..=128 {
+            ladder.push(value.clone());
+            value *= &ten;
+        }
+        ladder
+    };
+}
+
+/// `10^k` (k ≥ 0) as an unsigned magnitude, served from the cache when in range.
+fn ten_pow_u(k: i64) -> BigUint {
+    let k = k as usize;
+    TEN_LADDER_U.with(|ladder| {
+        if k < ladder.len() {
+            ladder[k].clone()
+        } else {
+            BigUint::from(10u32).pow(k as u32)
+        }
+    })
 }
 
 // MARK: - Precision context
