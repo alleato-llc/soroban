@@ -58,7 +58,7 @@ jobs:
             xvfb \
             mesa-vulkan-drivers vulkan-tools \
             libgl1-mesa-dri \
-            libxkbcommon-dev libwayland-dev libx11-dev
+            libxkbcommon-dev libxkbcommon-x11-0 libwayland-dev libx11-dev
 
       - name: Generate screenshots (software Vulkan, GL fallback)
         working-directory: soroban

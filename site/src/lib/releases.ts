@@ -62,11 +62,21 @@ function newest(releases: Release[], match: (tag: string) => boolean): Release |
     .sort((a, b) => Date.parse(b.published_at) - Date.parse(a.published_at))[0];
 }
 
-/** An asset's URL by exact name, else the release's own page, else the list. */
-function pick(rel: Release | undefined, name: string): string {
-  return rel?.assets.find((a) => a.name === name)?.browser_download_url
-    ?? rel?.html_url
-    ?? RELEASES_PAGE;
+/**
+ * First asset URL matching any candidate (exact name or regex), in order —
+ * else the release's own page, else the list. We prefer the stable, version-free
+ * name (`Soroban-cross.dmg`, `soroban-<os>-<arch>`) but fall back to whatever the
+ * release actually carries: salpa also publishes the universal dmg as
+ * `Soroban-<ver>.dmg` and the portables as `soroban-gui-<os>-<arch>`, so the
+ * pattern resolves those too (and keeps working on releases cut before the
+ * stable-name step landed).
+ */
+function pick(rel: Release | undefined, ...candidates: (string | RegExp)[]): string {
+  for (const c of candidates) {
+    const hit = rel?.assets.find((a) => (typeof c === "string" ? a.name === c : c.test(a.name)));
+    if (hit) return hit.browser_download_url;
+  }
+  return rel?.html_url ?? RELEASES_PAGE;
 }
 
 export async function resolveDownloads(): Promise<DownloadUrls> {
@@ -76,12 +86,13 @@ export async function resolveDownloads(): Promise<DownloadUrls> {
     const swift = newest(releases, (t) => /^v\d/.test(t));
     const rust = newest(releases, (t) => /^rust-v\d/.test(t));
     return {
-      swiftDmg: pick(swift, "Soroban.dmg"),
-      crossDmg: pick(rust, "Soroban-cross.dmg"),
-      linuxX64: pick(rust, "soroban-linux-x86_64"),
-      linuxArm64: pick(rust, "soroban-linux-arm64"),
-      windowsX64: pick(rust, "soroban-windows-x86_64.exe"),
-      windowsArm64: pick(rust, "soroban-windows-arm64.exe"),
+      swiftDmg: pick(swift, "Soroban.dmg", /\.dmg$/i),
+      // The rust release carries exactly one dmg (the universal build).
+      crossDmg: pick(rust, "Soroban-cross.dmg", /\.dmg$/i),
+      linuxX64: pick(rust, "soroban-linux-x86_64", /^soroban(-gui)?-linux-x86_64$/i),
+      linuxArm64: pick(rust, "soroban-linux-arm64", /^soroban(-gui)?-linux-arm64$/i),
+      windowsX64: pick(rust, "soroban-windows-x86_64.exe", /^soroban(-gui)?-windows-x86_64\.exe$/i),
+      windowsArm64: pick(rust, "soroban-windows-arm64.exe", /^soroban(-gui)?-windows-arm64\.exe$/i),
       releasesPage: RELEASES_PAGE,
     };
   } catch (err) {
