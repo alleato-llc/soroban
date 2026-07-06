@@ -149,15 +149,18 @@ jobs:
           cd soroban/rust/gui
           "$SALPA" --version "${{ needs.version.outputs.version }}" build
           "$SALPA" --version "${{ needs.version.outputs.version }}" publish
-          # Stable cross-platform download alias for the landing page. GitHub has
+          # Stable cross-platform download name for the landing page. GitHub has
           # ONE repo-wide "latest" release, so releases/latest/download is
           # unreliable per track (v* vs rust-v*); the site resolves this track's
           # tag via the Releases API and links this FIXED name. Soroban-cross.dmg
           # (universal) is distinct from the Swift track's native Soroban.dmg.
+          # NOTE: `gh release upload file#label` sets the asset's LABEL, not its
+          # name — so copy to the target NAME first, then upload that file.
           VERSION="${{ needs.version.outputs.version }}"
           DMG=$(find . -name "Soroban-$VERSION.dmg" -type f | head -1)
+          cp "$DMG" "Soroban-cross.dmg"
           gh release upload "rust-v$VERSION" \
-            "$DMG#Soroban-cross.dmg" \
+            "Soroban-cross.dmg" \
             --repo "${{ github.repository }}" --clobber
 
   # Portable legs — Linux + Windows, three arches. NO signing secrets reach
@@ -215,13 +218,16 @@ jobs:
           cd soroban/rust/gui
           "$SALPA" --version "${{ needs.version.outputs.version }}" build
           "$SALPA" --version "${{ needs.version.outputs.version }}" publish
-          # Stable per-platform download alias for the landing page (drops the
+          # Stable per-platform download name for the landing page (drops the
           # -gui infix for a clean public name); the site links a fixed URL per
           # OS/arch and resolves this track's tag via the Releases API. Cargo's
           # output path is deterministic (gui has its own target/ dir).
+          # NOTE: `gh release upload file#label` sets the LABEL, not the asset
+          # name (and every leg's raw binary is basename `soroban-gui`, so
+          # uploading it directly would collide) — copy to the target NAME first.
           VERSION="${{ needs.version.outputs.version }}"
           EXT=""; case "${{ matrix.name }}" in windows-*) EXT=".exe";; esac
-          BIN="target/release/soroban-gui$EXT"
+          cp "target/release/soroban-gui$EXT" "soroban-${{ matrix.name }}$EXT"
           gh release upload "rust-v$VERSION" \
-            "$BIN#soroban-${{ matrix.name }}$EXT" \
+            "soroban-${{ matrix.name }}$EXT" \
             --repo "${{ github.repository }}" --clobber
