@@ -6,7 +6,7 @@ extension Integer {
         switch value {
         case .small(let v):
             if v != Int.min { return .small(-v) }
-            return .pack(negative: false, [0, 0x8000_0000]) // -(Int.min) = +2⁶³
+            return .pack(negative: false, [0x8000_0000_0000_0000]) // -(Int.min) = +2⁶³
         case .big(let negative, let magnitude):
             return .big(negative: !negative, magnitude: magnitude)
         }

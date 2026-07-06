@@ -19,13 +19,17 @@ The GitHub Release for each tag is the point of truth for the signed, notarized
 
 - **Faster exact arithmetic: a custom bignum under `BigDecimal`.** The significand
   is now a purpose-built `Integer` (sign-magnitude, with an inline small-value case
-  that skips heap allocation and ARC) instead of `attaswift/BigInt`. Results are
+  that skips heap allocation and ARC, over a base-2⁶⁴ limb magnitude with schoolbook
+  multiply and Knuth division) instead of `attaswift/BigInt`. Results are
   bit-identical — the whole shared spec and a new differential fuzz oracle against
-  `BigInt` stay green — but small-integer-heavy work is markedly faster:
-  reduction/∑ workloads ~4× and recursive integer functions ~1.5× in the
-  cross-engine benchmark (both now outrun the Rust engine), with no regressions on
-  the wide-precision paths. `attaswift/BigInt` remains only for the fixed-width /
-  binary-editor types.
+  `BigInt` stay green — but the cross-engine benchmark is markedly faster:
+  reduction/∑ ~4.3×, finance (`pmt`) ~1.9×, and recursive integer functions ~1.5×
+  (reduction and recursion now outrun the Rust engine), with no regressions on the
+  wide-precision division paths. `attaswift/BigInt` remains only for the fixed-width
+  / binary-editor types.
+- **Minimum OS is now macOS 15 / iOS 18** (was macOS 14 / iOS 17). The new
+  exact-decimal significand uses the stdlib `UInt128`/`Int128` for its limb
+  arithmetic, which require these versions.
 - **One CSV door: *Open CSV*.** The separate *Import Data (CSV)…* command is
   gone; *File → Open CSV…* (⇧⌘O) is now the single way to bring a CSV in. It
   opens the file as an editable workbook (grid cells when it fits, else a data

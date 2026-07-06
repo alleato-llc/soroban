@@ -18,7 +18,7 @@
 /// funnels through `pack(negative:_:)`, which enforces this.
 package enum Integer: Sendable {
     case small(Int)
-    case big(negative: Bool, magnitude: [UInt32])
+    case big(negative: Bool, magnitude: [UInt])
 
     /// Sign as a two-case value mirroring `attaswift`/`num-bigint` (zero reports
     /// `.plus`), so `x.sign == .minus` reads the same at the call sites.
@@ -35,33 +35,30 @@ extension Integer {
     /// drops high zero limbs, collapses to `.small` whenever the value fits in
     /// `Int` (including `Int.min`), else keeps `.big`. This is the ONLY path that
     /// builds a `.big`, so canonicity is guaranteed.
-    static func pack(negative: Bool, _ magnitude: [UInt32]) -> Integer {
+    static func pack(negative: Bool, _ magnitude: [UInt]) -> Integer {
         var mag = magnitude
         while mag.last == 0 { mag.removeLast() }
         if mag.isEmpty { return .small(0) }
 
-        if mag.count <= 2 {
-            let value = UInt64(mag[0]) | (mag.count == 2 ? UInt64(mag[1]) << 32 : 0)
+        if mag.count == 1 {
+            let value = mag[0]
             if !negative {
-                if value <= UInt64(Int.max) { return .small(Int(value)) }
+                if value <= UInt(Int.max) { return .small(Int(value)) }
             } else {
-                if value <= UInt64(Int.max) { return .small(-Int(value)) }
-                if value == UInt64(Int.max) + 1 { return .small(Int.min) } // -2⁶³
+                if value <= UInt(Int.max) { return .small(-Int(value)) }
+                if value == UInt(Int.max) + 1 { return .small(Int.min) } // -2⁶³
             }
         }
         return .big(negative: negative, magnitude: mag)
     }
 
-    /// The magnitude (absolute value) as normalized little-endian base-2³² limbs;
+    /// The magnitude (absolute value) as normalized little-endian base-2⁶⁴ limbs;
     /// empty for zero.
-    var magnitudeLimbs: [UInt32] {
+    var magnitudeLimbs: [UInt] {
         switch self {
         case .small(let value):
-            if value == 0 { return [] }
             let m = value.magnitude // UInt: |Int.min| == 2⁶³ is representable
-            let low = UInt32(truncatingIfNeeded: m)
-            let high = UInt32(truncatingIfNeeded: m >> 32)
-            return high == 0 ? [low] : [low, high]
+            return m == 0 ? [] : [m]
         case .big(_, let magnitude):
             return magnitude
         }
@@ -120,8 +117,8 @@ extension Integer {
     package var magnitude: Integer {
         switch self {
         case .small(let value):
-            // |Int.min| overflows Int → promote to a two-limb .big.
-            if value == Int.min { return .pack(negative: false, [0, 0x8000_0000]) }
+            // |Int.min| overflows Int → promote to a single-limb .big (2⁶³).
+            if value == Int.min { return .pack(negative: false, [0x8000_0000_0000_0000]) }
             return .small(Swift.abs(value))
         case .big(_, let magnitude):
             return .big(negative: false, magnitude: magnitude)
@@ -133,7 +130,7 @@ extension Integer {
     var bitWidth: Int {
         let limbs = magnitudeLimbs
         guard let top = limbs.last else { return 0 }
-        return (limbs.count - 1) * 32 + (32 - top.leadingZeroBitCount)
+        return (limbs.count - 1) * 64 + (64 - top.leadingZeroBitCount)
     }
 
     var isEven: Bool {
