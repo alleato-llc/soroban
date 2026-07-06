@@ -105,15 +105,25 @@ truncation; an already-typed `Number` mixed in **errors** (cast required).
 (`0.1 + 0.2 ≠ 0.3`) — the precise failure the language was built to avoid. Their
 only use is *simulating* IEEE hardware behavior, which is niche.
 
-## Implementation
+## Implementation shape
 
-`FixedInt` (`Anzan/Eval/FixedInt.swift`: `value: BigInt` × `bits` × `signed`) is the
-payload of `Value.fixedInt`. The parameterized `Int`/`UInt` builtins live in
-ProgrammerFunctions; the per-width `Int8…Int256`/`UInt8…UInt256` are generated from
-`FixedInt.allowedWidths` (one place for the width set). Arithmetic is intercepted in
-`Evaluator.apply` (`FixedInt.applyBinary`), bitwise in the bit builtins via
-two's-complement (`FixedInt.applyBitwise`/`bitwiseNot`). Persists like a record —
-`description` is the per-width form, restored by re-evaluation.
+Ecosystem-neutral (both implementations follow the same shape):
+
+- A **fixed-int value** carries `value` (a big integer) × `bits` × `signed`, and is
+  the payload of a dedicated `Value.fixedInt` case.
+- The parameterized `Int(value, bits)` / `UInt(value, bits)` builtins plus the
+  per-width `Int8…Int256` / `UInt8…UInt256` constructors are **generated from one
+  width set** (a single list of allowed widths), so the width lineup lives in one
+  place.
+- Arithmetic is **intercepted before ordinary numeric coercion** (a single "is a
+  fixed-int involved?" hook), leaving the plain number path untouched. Bitwise ops
+  use **two's-complement over the width**.
+- Persists like a record — the canonical, re-parseable form is the per-width
+  spelling (`Int32(255)`), restored by re-evaluation.
+
+For the concrete types and files, see the ecosystem docs:
+[../swift/docs/ENGINE.md](../swift/docs/ENGINE.md) and
+[../rust/docs/ANZAN.md](../rust/docs/ANZAN.md).
 
 ## Open questions for the build
 

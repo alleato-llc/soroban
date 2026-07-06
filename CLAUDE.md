@@ -2,6 +2,32 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Documentation map
+
+The docs are **modular, ecosystem-first**. This root file holds cross-cutting
+guidance; deep, ecosystem-specific architecture is being migrated into nested
+`CLAUDE.md` files (loaded automatically when you work under each tree):
+
+- **Shared design & language:** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (the
+  common design), [docs/ANZAN.md](docs/ANZAN.md) (the language spec) and its
+  companions, [docs/FORMAT.md](docs/FORMAT.md) (interchange), the
+  [docs/](docs/README.md) index.
+- **Swift / Apple:** [swift/README.md](swift/README.md),
+  [swift/docs/](swift/docs/), and [swift/CLAUDE.md](swift/CLAUDE.md).
+- **Rust:** [rust/README.md](rust/README.md), [rust/docs/](rust/docs/), and
+  [rust/CLAUDE.md](rust/CLAUDE.md).
+- **Shared behavior spec:** [spec/README.md](spec/README.md).
+- **Contributing / releases:** [CONTRIBUTING.md](CONTRIBUTING.md),
+  [docs/RELEASING.md](docs/RELEASING.md).
+
+> **Migration in progress (docs overhaul, Phase 1 of 3):** the per-subsystem
+> architecture below still lives here and remains authoritative until Phase 2
+> moves the Swift-specific detail into `swift/CLAUDE.md` / `swift/docs/` and the
+> Rust-specific detail into `rust/CLAUDE.md` / `rust/docs/`. Some source-file
+> names in the sections below predate the module-directory split and are being
+> corrected as that content moves. Prefer the ecosystem docs above when they
+> disagree.
+
 ## Commands
 
 ```sh

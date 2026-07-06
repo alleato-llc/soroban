@@ -119,21 +119,25 @@ apply to decimals (error). Like `Int`, sums can overflow a tight precision
   record or a fixed-width int (the `Decimal` builtin is always present, so no
   ordering dependency).
 
-## Implementation shape (for the build)
+## Implementation shape
 
-Mirror `FixedInt` exactly:
+Ecosystem-neutral, and a direct parallel to the fixed-width integer
+([FIXED-WIDTH.md](FIXED-WIDTH.md)):
 
-- `FixedDecimal` (Anzan/Eval/): `value: BigDecimal` (already rounded + in range),
-  `precision`, `scale`, `rounding`. A new `Value.fixedDecimal(FixedDecimal)` case
-  — touches the same exhaustive `Value` switches the `.fixedInt` case did (the
-  compiler enumerates them).
-- The `Decimal` builtin (ProgrammerFunctions or a new accounting home) +
-  `Rounding` as a reserved constant (`Constants.rounding`, like `Constants.json`).
-- Arithmetic intercepted in `Evaluator.apply` alongside the `FixedInt` hook:
-  `if FixedDecimal.isInvolved(lhs, rhs) { … }` before `asNumber`.
-- All rounding routes through the engine's existing `PrecisionContext` rounding
-  for `Bankers`; `HalfUp` adds one rounding helper (the only new numeric code).
-  No `Double` anywhere — stays exact-to-scale.
+- A **fixed-decimal value** carries `value` (an exact decimal, already rounded and
+  in range), `precision`, `scale`, and `rounding`, as the payload of a dedicated
+  `Value.fixedDecimal` case (touching the same exhaustive `Value` switches the
+  fixed-int case does).
+- A `Decimal(...)` builtin, with `Rounding` as a reserved constant map (the way
+  `Json` is a reserved constant).
+- Arithmetic is **intercepted before ordinary numeric coercion**, alongside the
+  fixed-int hook.
+- Rounding routes through the engine's existing banker's-rounding path; half-up
+  adds one rounding helper. **No float anywhere** — stays exact-to-scale.
+
+For the concrete types and files, see the ecosystem docs:
+[../swift/docs/ENGINE.md](../swift/docs/ENGINE.md) and
+[../rust/docs/ANZAN.md](../rust/docs/ANZAN.md).
 
 ## Open questions for the build
 
