@@ -17,7 +17,9 @@ DMG.
 
 ### Changed
 
-- **Faster exact-decimal hot paths.** Bit-identical to before (the shared spec is
+- **Faster exact-decimal hot paths.** The division-heavy `pmt` finance workload is
+  **~2.2× faster** and general arithmetic ~1.3× (the cross-engine bench), reduction
+  ~1.2×. Bit-identical to before (the shared spec is
   unchanged): `normalize` skips its trailing-zero strip for odd significands (a
   low-bit test instead of a big-integer division); `digit_count` estimates from
   the significand's bit length and corrects against powers of ten rather than
