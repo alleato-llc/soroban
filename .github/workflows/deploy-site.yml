@@ -18,8 +18,8 @@ on:
       - "swift/Engine/**" # spec/report are generated from the engine — keep them live
       - "spec/**" # …and from the shared Gherkin feature files
       - "bench/**" # the cross-engine perf report (perf.html) is generated from bench/
-      - "scripts/generate-living-spec.sh"
-      - "scripts/generate-perf.sh"
+      - "scripts/generate_living_spec.py"
+      - "scripts/generate_perf.py"
       - "salpa.yaml"
       - ".github/workflows/deploy-site.yml"
   # A new release on EITHER track (v* or rust-v*) redeploys the site so the
@@ -74,14 +74,14 @@ jobs:
       # the engines that built them. Must run BEFORE `salpa deploy` (its npm
       # build folds public/ into dist/).
       - name: Generate verification pages (living spec + both reports)
-        run: scripts/generate-living-spec.sh
+        run: python3 scripts/generate_living_spec.py
 
       # The cross-engine perf report (perf.html) — builds both engines in release
       # and measures. Same-box/same-run RELATIVE comparison; absolute numbers are
       # trend-only (the report and bench/README.md say so). This runner is shared
       # and noisy, so we don't gate on the numbers — we just publish them.
       - name: Generate performance report (Rust vs Swift engine)
-        run: scripts/generate-perf.sh
+        run: python3 scripts/generate_perf.py
 
       - uses: oras-project/setup-oras@v1
 
