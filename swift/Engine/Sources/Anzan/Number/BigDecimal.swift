@@ -169,14 +169,17 @@ extension BigDecimal {
     /// Banker's rounding of `quotient` given the discarded `remainder`.
     private static func roundHalfEven(quotient: Integer, remainder: Integer, divisor: Integer) -> Integer {
         if remainder.isZero { return quotient }
-        let twice = remainder.magnitude * 2
+        // Compare 2·|remainder| to |divisor| without materializing either as an
+        // Integer (the old `remainder.magnitude * 2 > divisor.magnitude` built
+        // three array temporaries per call, twice per divide).
+        let cmp = Magnitude.compareDoubled(remainder.magnitudeLimbs, divisor.magnitudeLimbs)
         let bump: Bool
-        if twice > divisor.magnitude {
+        if cmp > 0 {
             bump = true
-        } else if twice < divisor.magnitude {
+        } else if cmp < 0 {
             bump = false
         } else {
-            bump = !quotient.isMultiple(of: 2) // exactly half: round to even
+            bump = !quotient.isEven // exactly half: round to even
         }
         guard bump else { return quotient }
         return quotient + (remainder.sign == .minus ? -1 : 1)
@@ -195,7 +198,8 @@ extension BigDecimal {
     /// Half-or-more rounds away from zero (no even tie-break).
     private static func roundHalfUp(quotient: Integer, remainder: Integer, divisor: Integer) -> Integer {
         if remainder.isZero { return quotient }
-        guard remainder.magnitude * 2 >= divisor.magnitude else { return quotient }
+        guard Magnitude.compareDoubled(remainder.magnitudeLimbs, divisor.magnitudeLimbs) >= 0
+        else { return quotient }
         return quotient + (remainder.sign == .minus ? -1 : 1)
     }
 
