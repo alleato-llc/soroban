@@ -149,6 +149,16 @@ jobs:
           cd soroban/rust/gui
           "$SALPA" --version "${{ needs.version.outputs.version }}" build
           "$SALPA" --version "${{ needs.version.outputs.version }}" publish
+          # Stable cross-platform download alias for the landing page. GitHub has
+          # ONE repo-wide "latest" release, so releases/latest/download is
+          # unreliable per track (v* vs rust-v*); the site resolves this track's
+          # tag via the Releases API and links this FIXED name. Soroban-cross.dmg
+          # (universal) is distinct from the Swift track's native Soroban.dmg.
+          VERSION="${{ needs.version.outputs.version }}"
+          DMG=$(find . -name "Soroban-$VERSION.dmg" -type f | head -1)
+          gh release upload "rust-v$VERSION" \
+            "$DMG#Soroban-cross.dmg" \
+            --repo "${{ github.repository }}" --clobber
 
   # Portable legs — Linux + Windows, three arches. NO signing secrets reach
   # these runners. salpa builds the bare binary named soroban-gui-<os>-<arch>
@@ -205,3 +215,13 @@ jobs:
           cd soroban/rust/gui
           "$SALPA" --version "${{ needs.version.outputs.version }}" build
           "$SALPA" --version "${{ needs.version.outputs.version }}" publish
+          # Stable per-platform download alias for the landing page (drops the
+          # -gui infix for a clean public name); the site links a fixed URL per
+          # OS/arch and resolves this track's tag via the Releases API. Cargo's
+          # output path is deterministic (gui has its own target/ dir).
+          VERSION="${{ needs.version.outputs.version }}"
+          EXT=""; case "${{ matrix.name }}" in windows-*) EXT=".exe";; esac
+          BIN="target/release/soroban-gui$EXT"
+          gh release upload "rust-v$VERSION" \
+            "$BIN#soroban-${{ matrix.name }}$EXT" \
+            --repo "${{ github.repository }}" --clobber

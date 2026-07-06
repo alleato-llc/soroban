@@ -26,18 +26,23 @@ from ghcr as an OCI artifact):
 ## Rust track — `release-rust.yml`
 
 Triggered by `rust/**` or `spec/**` changes. The Rust/iced app (`rust/gui`) is
-cross-platform, so this ships **portable, unsigned** binaries for Linux, Windows,
-and macOS — the signed native macOS app is the Swift DMG above.
+cross-platform, so this ships a **signed + notarized universal macOS DMG** plus
+**portable, unsigned** binaries for Linux and Windows. (The Swift DMG above is the
+separate *native*-macOS track — same app family, different implementation.)
 
 1. a **test gate** runs the Rust unit tests + the shared Gherkin suite,
 2. **its own version sequence** — `rust-vX.Y.Z` tags, computed in-workflow by
    bumping the latest `rust-v*` tag (patch default; `#minor`/`#major` in the head
    commit bumps bigger; a HEAD already tagged `rust-v*` re-releases it). The
    `v*` and `rust-v*` namespaces are independent and never collide,
-3. a **6-target matrix** (Linux / Windows / macOS × x86_64 / arm64; macOS
-   arm64 native + x86_64 cross-compiled on Apple Silicon) builds `rust/gui`,
-4. each binary attaches to the `rust-vX.Y.Z` GitHub Release under a versionless
-   name (`soroban-gui-<target>[.exe]`, `--clobber`).
+3. a **macOS leg** (universal lipo binary, hardened-runtime codesign, notarize +
+   staple → `Soroban-X.Y.Z.dmg`) and a **portable matrix** (Linux / Windows ×
+   x86_64 / arm64) build `rust/gui`,
+4. each artifact attaches to the `rust-vX.Y.Z` GitHub Release, and a second
+   `gh release upload --clobber` step also attaches it under a **stable,
+   version-free public name** the landing page links to: `Soroban-cross.dmg`
+   (the universal macOS DMG) and `soroban-<os>-<arch>[.exe]` (the portable
+   binaries, `-gui` infix dropped). These names never change across releases.
 
 The Rust track needs **no secrets** (binaries are unsigned; the `rime` sibling
 repo is public). It checks out `soroban` and `rime` as siblings so `rust/gui`'s
@@ -46,9 +51,15 @@ repo is public). It checks out `soroban` and `rime` as siblings so `rust/gui`'s
 ## Common notes
 
 The **GitHub Release is the point of truth** for downloads; neither release
-workflow touches any cloud. Because GitHub exposes one repo-wide "latest"
-release, `releases/latest/download/...` resolves to whichever track released most
-recently — per-track stable links are a landing-page concern (deferred).
+workflow touches any cloud. GitHub exposes only one repo-wide "latest" release,
+so `releases/latest/download/...` resolves to whichever track released most
+recently — it is **not** a reliable per-track link. Instead each track carries
+**stable, version-free asset names** (Swift: `Soroban.dmg`; Rust:
+`Soroban-cross.dmg` + `soroban-<os>-<arch>[.exe]`), and the landing page resolves
+**each track's newest tag** (`v*` / `rust-v*`) via the GitHub Releases API at
+build time, then links those fixed names under the resolved tag. A
+`release: published` trigger on `deploy-site.yml` redeploys the site so the
+resolved URLs stay fresh.
 
 **Changelogs are split per ecosystem** — `swift/CHANGELOG.md` (dated `v*`),
 `rust/CHANGELOG.md` (`rust-v*`), and the repo-root `CHANGELOG.md` for

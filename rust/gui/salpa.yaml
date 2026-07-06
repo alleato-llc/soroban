@@ -33,3 +33,6 @@ publish:
   github: true # attach each leg's artifact to the rust-v<version> GitHub release
   # No `latest:` alias — the versionless Soroban.dmg belongs to the Swift track;
   # the Rust dmg stays versioned (Soroban-<version>.dmg) to avoid any confusion.
+  # Stable cross-platform download names (Soroban-cross.dmg, soroban-<os>-<arch>)
+  # are attached at the WORKFLOW level in release-rust.yml (gh release upload
+  # --clobber), not here — salpa's only alias surface is the colliding `latest:`.

@@ -25,6 +25,15 @@ still suppresses all release workflows regardless of the paths it touches — se
 
 ### Added
 
+- **Stable, version-free download names for the Rust track.** `release-rust.yml`
+  now attaches each `rust-v*` release under fixed public names via a
+  `gh release upload --clobber` step: `Soroban-cross.dmg` (the signed, notarized
+  universal macOS DMG) and `soroban-<os>-<arch>[.exe]` (the portable
+  Linux/Windows binaries, `-gui` infix dropped). These names never change across
+  releases, so the landing page can link a fixed URL per platform — resolving
+  each track's newest tag (`v*` / `rust-v*`) via the GitHub Releases API at build
+  time, since GitHub's one repo-wide "latest" can't be trusted per track. This
+  is the release-side half of the platform-aware download experience.
 - **Cross-ecosystem `.soroban` interchange is now proven both ways.** A new
   Rust-authored fixture `examples/interchange.soroban` (regenerate with `cargo
   run -p soroban-engine --example author_interchange`) is opened and computed by
@@ -55,9 +64,10 @@ still suppresses all release workflows regardless of the paths it touches — se
   push to `main` and also runs on manual `workflow_dispatch`; a `spec/**` change
   releases both. Previously *every* push to `main` cut a single macOS release
   (with the Rust binaries attached to it); the Rust binaries now have their own
-  versioned track. The `releases/latest/download/...` stable link is now
-  per-track (whichever track released most recently is GitHub's repo-wide
-  "latest").
+  versioned track. Because GitHub exposes only one repo-wide "latest" release,
+  `releases/latest/download/...` is not a reliable per-track link — stable
+  per-track download URLs come from fixed asset names + build-time tag resolution
+  on the landing page (see the "stable download names" entry above).
 - **CI actions bumped to Node 24.** `actions/upload-artifact@v4` (Node 20, which
   GitHub was force-migrating) → `@v7` (Node 24) across the CI/release workflows,
   clearing the deprecation warning.
