@@ -1,0 +1,525 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Soroban engine performance — Rust vs Swift</title>
+<script>
+  // Resolve the theme before first paint, matching the website: a stored choice
+  // (localStorage["soroban-theme"], shared when served from the site) wins, otherwise
+  // follow the system and keep following it until the user picks.
+  (() => {
+    const saved = localStorage.getItem("soroban-theme");
+    const media = matchMedia("(prefers-color-scheme: dark)");
+    const apply = (m) => (document.documentElement.dataset.theme = m);
+    apply(saved || (media.matches ? "dark" : "light"));
+    media.addEventListener("change", (e) => {
+      if (!localStorage.getItem("soroban-theme")) apply(e.matches ? "dark" : "light");
+    });
+  })();
+</script>
+<!--
+  Gota report template. report.py substitutes three things into this file and writes a
+  finished, self-contained report.html: the report title, the embedded results.json
+  (a JS object literal, or null for an empty viewer), and the generation date. The
+  placeholder tokens are intentionally not written out here, so the substitution does
+  not pollute this comment. Everything else is static; edit this file to restyle the
+  report, and the script does not need to change.
+-->
+<style>
+  /* Palette shared with the gota website: Solarized light / Dracula dark, selected by
+     the `data-theme` attribute (set before first paint by the inline script in <head>).
+     Served from the site's own origin, the report shares its `soroban-theme` choice. */
+  :root,
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --accent: #268bd2;
+    --accent2: #2aa198;
+    --accent-strong: #b58900;
+    --bg: #fdf6e3;
+    --card: #eee8d5;
+    --border: rgba(7, 54, 66, 0.14);
+    --text: #073642;
+    --muted: #657b83;
+    --header-grad: linear-gradient(135deg, #268bd2, #2aa198);
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --accent: #ff79c6;
+    --accent2: #bd93f9;
+    --accent-strong: #ffb86c;
+    --bg: #282a36;
+    --card: #343746;
+    --border: rgba(248, 248, 242, 0.12);
+    --text: #f8f8f2;
+    --muted: #bd93f9;
+    --header-grad: linear-gradient(135deg, #ff79c6, #bd93f9);
+  }
+  * { box-sizing: border-box; }
+  body {
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    margin: 0; padding: 2rem 1.25rem; max-width: 62rem; margin-inline: auto;
+    color: var(--text); background: var(--bg);
+  }
+  h1 {
+    font-size: 1.6rem; margin: 0 0 .35rem; letter-spacing: -0.01em;
+    background: var(--header-grad); -webkit-background-clip: text;
+    background-clip: text; color: transparent; display: inline-block;
+  }
+  .muted { color: var(--muted); font-size: .9rem; }
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 1rem 1.25rem; margin: 1.25rem 0;
+    box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 8px 24px rgba(40,40,90,.04);
+  }
+  .controls { display: flex; gap: .75rem; align-items: center; flex-wrap: wrap; }
+  input[type=file] { font: inherit; }
+  input[type=file]::file-selector-button {
+    font: inherit; border: 0; border-radius: 8px; padding: .4rem .8rem; cursor: pointer;
+    color: #fff; background: var(--header-grad); margin-right: .6rem;
+  }
+  table { border-collapse: separate; border-spacing: 0; width: 100%; }
+  th, td { padding: .55rem .8rem; text-align: right; white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  thead th {
+    background: var(--header-grad); color: #fff; cursor: pointer; user-select: none;
+    position: sticky; top: 0; font-weight: 600;
+  }
+  thead th:first-child { border-top-left-radius: 10px; }
+  thead th:last-child { border-top-right-radius: 10px; }
+  thead th:hover { filter: brightness(1.06); }
+  th .arrow { opacity: .55; font-size: .8em; margin-left: .25rem; }
+  th.sorted .arrow { opacity: 1; }
+  tbody tr:nth-child(even) td { background: color-mix(in srgb, var(--card) 92%, var(--accent)); }
+  tbody tr:hover td { background: color-mix(in srgb, var(--card) 84%, var(--accent)); }
+  td { border-bottom: 1px solid var(--border); }
+  .pill {
+    display: inline-block; padding: .12rem .6rem; border-radius: 999px;
+    font-weight: 600; font-size: .85rem; color: #fff;
+  }
+  .cell { position: relative; display: flex; justify-content: flex-end; align-items: center; min-width: 130px; }
+  .bar {
+    position: absolute; left: 0; top: 3px; bottom: 3px; border-radius: 5px;
+    background: var(--row, var(--accent)); opacity: .20;
+  }
+  .val { position: relative; z-index: 1; font-variant-numeric: tabular-nums; }
+  td.best .bar { opacity: .42; }
+  td.best .val { font-weight: 700; }
+  td.best .val::after { content: " ★"; color: var(--accent-strong); font-size: .8em; }
+  .meta-grid { display: grid; grid-template-columns: auto 1fr; gap: .2rem 1rem; font-size: .9rem; }
+  .meta-grid dt { color: var(--muted); }
+  .meta-grid dd { margin: 0; }
+  code { background: color-mix(in srgb, var(--card) 70%, var(--accent)); border-radius: 5px; padding: .05rem .35rem; }
+  .legend { display: flex; gap: .5rem 1rem; flex-wrap: wrap; align-items: center; margin-top: .6rem; }
+  .legend .pill { font-size: .8rem; }
+  .chead { font-size: 1.05rem; margin: .1rem 0 .7rem; }
+  .chead .muted { font-size: .85rem; font-weight: 400; }
+  .warn { color: #b45309; font-size: .85rem; margin: .1rem 0 .5rem; }
+  @media (prefers-color-scheme: dark) { .warn { color: #fbbf24; } }
+  .delta { margin-left: .5rem; font-size: .82rem; font-variant-numeric: tabular-nums; opacity: .85; }
+  .tag { font-size: .75rem; color: var(--muted); }
+  select { font: inherit; padding: .2rem .45rem; border-radius: 6px; border: 1px solid var(--border); background: var(--card); color: var(--text); }
+  .unit-btn {
+    font: inherit; font-size: .85rem; cursor: pointer; padding: .15rem .6rem;
+    border: 1px solid var(--border); background: var(--card); color: var(--muted);
+    border-radius: 6px; margin-right: .35rem;
+  }
+  .unit-btn.on { background: var(--header-grad); color: var(--bg); border-color: transparent; font-weight: 600; }
+  .theme-toggle {
+    position: fixed; top: 1rem; right: 1rem; z-index: 20;
+    border: 1px solid var(--border); background: var(--card); color: var(--muted);
+    border-radius: 8px; width: 2rem; height: 2rem; font-size: .95rem; cursor: pointer; line-height: 1;
+  }
+  .theme-toggle:hover { color: var(--text); }
+  footer { margin-top: 1.5rem; }
+</style>
+</head>
+<body>
+  <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme" title="Toggle light/dark theme">◐</button>
+  <h1 id="title">Soroban engine performance — Rust vs Swift</h1>
+  <div class="muted" id="subtitle"></div>
+
+  <div class="card" id="honesty">
+    <strong>Same-box, same-run.</strong> Rust engine vs. Swift engine, measured
+    back-to-back on one machine — the <em>relative</em> ratio is the deliverable and
+    holds anywhere. Absolute evaluations/sec are hardware- and toolchain-specific (and
+    noisy on shared CI runners), so read them as a trend, not a fixed number.
+  </div>
+
+  <div class="card">
+    <div class="controls">
+      <label><strong>Load results.json:</strong> <input type="file" id="file" multiple accept=".json,application/json"></label>
+      <span class="muted">pick two or more to compare against a baseline</span>
+      <span class="muted" id="status"></span>
+    </div>
+  </div>
+
+  <div id="report"></div>
+
+  <footer class="muted">
+    Generated by <code>gota/report.py</code> on 2026-07-06. Bars show each value
+    relative to the best in its column; ★ marks the best. The metric determines the
+    headline (MB/s, ops/sec, or latency) and whether higher or lower is better. The
+    page only shows what the loaded results.json holds.
+  </footer>
+
+<script>
+const EMBEDDED = {"machine": "Apple M4 Max", "os": "Darwin arm64", "date": "2026-07-06", "git_commit": "1e1ab78", "toolchains": {"rust": "rustc 1.96.1 (31fca3adb 2026-06-26)", "swift": "Apple Swift version 6.3.2 (swiftlang-6.3.2.1.108 clang-2100.1.1.101)"}, "params": {"buffer_bytes": 1000000, "warmup_s": 0.5, "measure_s": 2.0}, "metric": "op_throughput", "units": "evaluations/sec (peak of batches)", "results": [{"impl": "rust-engine", "bench": "arith", "mbps": 342996.81, "mbps_median": 339712.62, "iters": 720896}, {"impl": "rust-engine", "bench": "fib", "mbps": 74.32, "mbps_median": 73.39, "iters": 152}, {"impl": "rust-engine", "bench": "reduce", "mbps": 3555.29, "mbps_median": 3520.74, "iters": 7168}, {"impl": "rust-engine", "bench": "transcendental", "mbps": 254069.91, "mbps_median": 251216.45, "iters": 524288}, {"impl": "rust-engine", "bench": "finance", "mbps": 826.84, "mbps_median": 815.64, "iters": 1664}, {"impl": "swift-engine", "bench": "arith", "mbps": 37192.31, "mbps_median": 36689.98, "iters": 73728}, {"impl": "swift-engine", "bench": "fib", "mbps": 84.26, "mbps_median": 83.08, "iters": 176}, {"impl": "swift-engine", "bench": "reduce", "mbps": 1504.39, "mbps_median": 1474.55, "iters": 3072}, {"impl": "swift-engine", "bench": "transcendental", "mbps": 25622.39, "mbps_median": 25432.49, "iters": 53248}, {"impl": "swift-engine", "bench": "finance", "mbps": 43.99, "mbps_median": 43.34, "iters": 88}], "label": "results"};
+
+// A small, distinct, colorblind-friendly-ish palette assigned per implementation.
+const PALETTE = ["#6366f1", "#06b6d4", "#10b981", "#f59e0b", "#f43f5e", "#8b5cf6", "#14b8a6", "#f97316", "#0ea5e9", "#84cc16"];
+
+const fmt = (n, unit) =>
+  n.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) +
+  (unit ? " " + unit : "");
+
+// Viewer-level override of the displayed unit: null = follow the run's metric,
+// "mbps" = force MB/s, "ops" = force ops/sec. MB/s and ops/sec are the same rate scaled
+// by the per-op payload, so this is a pure relabel/rescale — order, bars, and best are
+// identical, only the numbers change. The toggle in the meta card sets it.
+let unitMode = null;
+
+// The headline quantity. Rows always carry `mbps` (bytes/sec); ops/sec derives from it
+// and the per-op payload size, latency reads p50. For throughput runs, `unitMode` can
+// flip between MB/s and ops/sec (`toggle` is true when the payload size is known).
+// Returns the value extractor, the unit label, smaller-is-better, and the toggle state.
+function headline(doc) {
+  const metric = doc.metric || "byte_throughput";
+  const p = doc.params || {};
+  const bytes = p.buffer_bytes != null ? p.buffer_bytes : p.buf;
+  const label = (doc.units || "").split(/\s+/)[0];
+  if (metric === "latency") {
+    return { val: r => (r.p50 != null ? r.p50 : r.mbps), unit: label || "ms", lowerBetter: true, toggle: false };
+  }
+  const mode = unitMode || (metric === "op_throughput" ? "ops" : "mbps");
+  const canToggle = bytes != null;
+  if (mode === "ops") {
+    return {
+      val: r => (bytes ? (r.mbps * 1e6) / bytes : r.mbps),
+      unit: metric === "op_throughput" && label ? label : "ops/sec",
+      lowerBetter: false, toggle: canToggle, mode: "ops",
+    };
+  }
+  return {
+    val: r => r.mbps,
+    unit: metric === "byte_throughput" && label ? label : "MB/s",
+    lowerBetter: false, toggle: canToggle, mode: "mbps",
+  };
+}
+
+// Best value in a column: the max, or the min when smaller is better (latency).
+const bestOf = (vals, lowerBetter) =>
+  vals.length ? (lowerBetter ? Math.min(...vals) : Math.max(...vals)) : null;
+
+// Bar fill as a fraction of the column's best (so the best is always full).
+const barPct = (v, best, lowerBetter) =>
+  best ? Math.max(2, Math.min(100, (lowerBetter ? best / v : v / best) * 100)) : 0;
+
+function pivot(doc) {
+  const rows = doc.results || [];
+  const h = headline(doc);
+  const impls = [], benches = [];
+  const by = {};
+  for (const r of rows) {
+    if (!impls.includes(r.impl)) impls.push(r.impl);
+    if (!benches.includes(r.bench)) benches.push(r.bench);
+    (by[r.impl] = by[r.impl] || {})[r.bench] = h.val(r);
+  }
+  return { impls, benches, by, unit: h.unit, lowerBetter: h.lowerBetter };
+}
+
+let state = null;
+
+// Loaded runs accumulate here; one run renders the single-run view, two or more render
+// the comparison view. `baselineLabel`/`tolerance` come from a report.py-embedded
+// comparison wrapper, or default, and the in-page baseline picker can change them.
+let loadedRuns = [];
+let baselineLabel = null;
+let tolerance = 0.02;
+
+function ingest(docs, opts) {
+  opts = opts || {};
+  for (const d of docs) {
+    if (!d) continue;
+    if (!d.label) d.label = "run " + (loadedRuns.length + 1);
+    const i = loadedRuns.findIndex(r => r.label === d.label);
+    if (i >= 0) loadedRuns[i] = d; else loadedRuns.push(d);
+  }
+  if (opts.tolerance != null) tolerance = opts.tolerance;
+  if (opts.baseline) baselineLabel = opts.baseline;
+  if (!baselineLabel && loadedRuns.length) baselineLabel = loadedRuns[0].label;
+  show();
+}
+
+function show() {
+  const status = document.getElementById("status");
+  if (!loadedRuns.length) {
+    document.getElementById("report").innerHTML =
+      '<div class="card muted">No data loaded. Choose a results.json above.</div>';
+    document.getElementById("subtitle").textContent = "";
+    status.textContent = "";
+    return;
+  }
+  if (loadedRuns.length === 1) renderSingle(loadedRuns[0]);
+  else renderComparison();
+}
+
+function renderSingle(doc) {
+  const status = document.getElementById("status");
+  const h = headline(doc);
+  const { impls, benches, by, unit, lowerBetter } = pivot(doc);
+  const color = {};
+  impls.forEach((i, k) => color[i] = PALETTE[k % PALETTE.length]);
+  state = { impls, benches, by, unit, color, lowerBetter, sortBench: null, asc: false };
+
+  const bits = [];
+  if (doc.machine) bits.push(doc.machine);
+  if (doc.os) bits.push(doc.os);
+  if (doc.date) bits.push(doc.date);
+  if (doc.git_commit && doc.git_commit !== "unknown") bits.push("commit " + doc.git_commit);
+  document.getElementById("subtitle").textContent = bits.join("  ·  ");
+  status.textContent = impls.length + " implementations, " + benches.length + " benchmarks";
+
+  const p = doc.params || {};
+  const paramRows = Object.keys(p).map(k => `<dt>${k}</dt><dd><code>${p[k]}</code></dd>`).join("");
+  const legend = impls.map(i =>
+    `<span class="pill" style="background:${color[i]}">${i}</span>`).join("");
+  // For a throughput run with a known payload size, offer a MB/s <-> ops/sec toggle:
+  // same rate, two units. (Same numbers as two separate metric runs, in one report.)
+  const toggle = h.toggle ? `<dt>show</dt><dd>
+    <button class="unit-btn${h.mode === "mbps" ? " on" : ""}" data-unit="mbps">MB/s</button>
+    <button class="unit-btn${h.mode === "ops" ? " on" : ""}" data-unit="ops">ops/sec</button>
+  </dd>` : "";
+  const metaCard = `<div class="card"><div class="meta-grid">
+    ${paramRows}<dt>metric</dt><dd><code>${doc.metric || "byte_throughput"}</code></dd>${doc.units ? `<dt>units</dt><dd>${doc.units}</dd>` : ""}${toggle}
+  </div><div class="legend">${legend}</div></div>`;
+
+  document.getElementById("report").innerHTML = metaCard + '<div class="card" id="tablecard"></div>';
+  document.querySelectorAll(".unit-btn").forEach(btn => btn.addEventListener("click", () => {
+    unitMode = btn.dataset.unit;
+    show();
+  }));
+  drawTable();
+}
+
+function drawTable() {
+  const { impls, benches, by, unit, color, lowerBetter, sortBench, asc } = state;
+
+  const best = {};
+  for (const b of benches) {
+    best[b] = bestOf(impls.map(i => (by[i] || {})[b]).filter(v => v != null), lowerBetter);
+  }
+
+  let order = impls.slice();
+  if (sortBench === "__impl__") {
+    order.sort((x, y) => asc ? x.localeCompare(y) : y.localeCompare(x));
+  } else if (sortBench !== null) {
+    order.sort((x, y) => {
+      const a = (by[x] || {})[sortBench] ?? -Infinity, b = (by[y] || {})[sortBench] ?? -Infinity;
+      return asc ? a - b : b - a;
+    });
+  }
+
+  const arrow = key => `<span class="arrow">${sortBench === key && asc ? "▲" : "▼"}</span>`;
+
+  let html = "<table><thead><tr>";
+  html += `<th data-key="__impl__" class="${sortBench === "__impl__" ? "sorted" : ""}">Implementation ${arrow("__impl__")}</th>`;
+  for (const b of benches) {
+    html += `<th data-key="${b}" class="${sortBench === b ? "sorted" : ""}">${b} ${arrow(b)}</th>`;
+  }
+  html += "</tr></thead><tbody>";
+  for (const i of order) {
+    html += `<tr style="--row:${color[i]}"><td><span class="pill" style="background:${color[i]}">${i}</span></td>`;
+    for (const b of benches) {
+      const v = (by[i] || {})[b];
+      if (v == null) { html += `<td class="num">—</td>`; continue; }
+      const p = barPct(v, best[b], lowerBetter);
+      const cls = "num" + (v === best[b] ? " best" : "");
+      html += `<td class="${cls}"><div class="cell"><div class="bar" style="width:${p}%"></div><span class="val">${fmt(v, unit)}</span></div></td>`;
+    }
+    html += "</tr>";
+  }
+  html += "</tbody></table>";
+  document.getElementById("tablecard").innerHTML = html;
+
+  document.querySelectorAll("th[data-key]").forEach(th => {
+    th.addEventListener("click", () => {
+      const key = th.dataset.key;
+      if (state.sortBench === key) state.asc = !state.asc;
+      else { state.sortBench = key; state.asc = false; }
+      drawTable();
+    });
+  });
+}
+
+// --- Comparison view: a baseline run plus one or more candidate runs ---------------
+
+function indexDoc(doc) {
+  const by = {};
+  const h = headline(doc);
+  for (const r of (doc.results || [])) (by[r.impl] = by[r.impl] || {})[r.bench] = h.val(r);
+  return by;
+}
+
+// Surface differences that make a numeric delta misleading, rather than hiding them.
+function provenanceWarnings(base, cand) {
+  const w = [];
+  if (base.machine && cand.machine && base.machine !== cand.machine)
+    w.push(`machine differs (${base.machine} vs ${cand.machine}) — deltas are not comparable`);
+  if (base.os && cand.os && base.os !== cand.os)
+    w.push(`OS differs (${base.os} vs ${cand.os})`);
+  const bp = base.params || {}, cp = cand.params || {};
+  for (const k of [...new Set([...Object.keys(bp), ...Object.keys(cp)])].sort())
+    if (String(bp[k]) !== String(cp[k]))
+      w.push(`param ${k} differs (${bp[k]} vs ${cp[k]}) — runs measure different work`);
+  const bm = base.metric || "byte_throughput", cm = cand.metric || "byte_throughput";
+  if (bm !== cm)
+    w.push(`metric kind differs (${bm} vs ${cm}) — runs measure different things, not comparable`);
+  return w;
+}
+
+// `improve` is the change signed so positive is always better (for latency, where
+// smaller is better, the caller flips the sign). Green for better, red for worse.
+function deltaStyle(improve) {
+  const band = tolerance * 100;
+  if (improve >= band || improve <= -band) {
+    const a = Math.min(0.42, 0.06 + Math.abs(improve) / 40 * 0.42);
+    return `background: rgba(${improve > 0 ? "16,185,129" : "244,63,94"},${a.toFixed(3)})`;
+  }
+  return "";
+}
+
+function valuesTable(impls, benches, by, color, unit, lowerBetter) {
+  const best = {};
+  for (const b of benches) best[b] = bestOf(impls.map(i => (by[i] || {})[b]).filter(v => v != null), lowerBetter);
+  let h = "<table><thead><tr><th>Implementation</th>" + benches.map(b => `<th>${b}</th>`).join("") + "</tr></thead><tbody>";
+  for (const i of impls) {
+    h += `<tr style="--row:${color[i]}"><td><span class="pill" style="background:${color[i]}">${i}</span></td>`;
+    for (const b of benches) {
+      const v = (by[i] || {})[b];
+      if (v == null) { h += "<td>—</td>"; continue; }
+      const p = barPct(v, best[b], lowerBetter);
+      h += `<td class="${v === best[b] ? "best" : ""}"><div class="cell"><div class="bar" style="width:${p}%"></div><span class="val">${fmt(v, unit)}</span></div></td>`;
+    }
+    h += "</tr>";
+  }
+  return h + "</tbody></table>";
+}
+
+function deltaTable(impls, benches, baseBy, candBy, color, unit, lowerBetter) {
+  let h = "<table><thead><tr><th>Implementation</th>" + benches.map(b => `<th>${b}</th>`).join("") + "</tr></thead><tbody>";
+  for (const i of impls) {
+    h += `<tr style="--row:${color[i]}"><td><span class="pill" style="background:${color[i]}">${i}</span></td>`;
+    for (const b of benches) {
+      const base = (baseBy[i] || {})[b], cand = (candBy[i] || {})[b];
+      if (base == null && cand == null) { h += "<td>—</td>"; continue; }
+      if (base == null) { h += `<td><div class="cell"><span class="val">${fmt(cand, unit)}</span><span class="tag">&nbsp;new</span></div></td>`; continue; }
+      if (cand == null) { h += `<td><span class="tag">gone</span></td>`; continue; }
+      const pct = (cand / base - 1) * 100;
+      const improve = lowerBetter ? -pct : pct; // signed so positive is better
+      h += `<td style="${deltaStyle(improve)}"><div class="cell"><span class="val" title="${fmt(base, unit)} → ${fmt(cand, unit)}">${fmt(cand, unit)}</span><span class="delta">${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%</span></div></td>`;
+    }
+    h += "</tr>";
+  }
+  return h + "</tbody></table>";
+}
+
+function renderComparison() {
+  let base = loadedRuns.find(r => r.label === baselineLabel);
+  if (!base) { base = loadedRuns[0]; baselineLabel = base.label; }
+  const cands = loadedRuns.filter(r => r !== base);
+  const bh = headline(base);
+  const unit = bh.unit, lowerBetter = bh.lowerBetter;
+
+  const impls = [], benches = [];
+  for (const d of [base, ...cands]) for (const r of (d.results || [])) {
+    if (!impls.includes(r.impl)) impls.push(r.impl);
+    if (!benches.includes(r.bench)) benches.push(r.bench);
+  }
+  const color = {};
+  impls.forEach((i, k) => color[i] = PALETTE[k % PALETTE.length]);
+
+  document.getElementById("subtitle").textContent = "comparison · baseline " + base.label;
+  document.getElementById("status").textContent =
+    `${loadedRuns.length} runs · ${impls.length} implementations · ${benches.length} benchmarks`;
+
+  const opts = loadedRuns.map(r => `<option ${r.label === baselineLabel ? "selected" : ""}>${r.label}</option>`).join("");
+  const legend = impls.map(i => `<span class="pill" style="background:${color[i]}">${i}</span>`).join("");
+  // Unit toggle: delta % is unit-invariant (MB/s and ops/sec differ by a constant), so
+  // this only relabels the absolute numbers, not the deltas or their colors.
+  const toggle = bh.toggle ? `<dt>show</dt><dd>
+    <button class="unit-btn${bh.mode === "mbps" ? " on" : ""}" data-unit="mbps">MB/s</button>
+    <button class="unit-btn${bh.mode === "ops" ? " on" : ""}" data-unit="ops">ops/sec</button>
+  </dd>` : "";
+  let html = `<div class="card"><div class="meta-grid">
+    <dt>baseline</dt><dd><select id="baseline">${opts}</select></dd>
+    ${base.machine ? `<dt>machine</dt><dd>${base.machine}</dd>` : ""}
+    <dt>metric</dt><dd><code>${base.metric || "byte_throughput"}</code></dd>
+    ${base.units ? `<dt>units</dt><dd>${base.units}</dd>` : ""}${toggle}
+    <dt>tolerance</dt><dd>±${(tolerance * 100).toFixed(1)}% — changes within the band are not flagged</dd>
+  </div><div class="legend">${legend}</div></div>`;
+
+  const baseBy = indexDoc(base);
+  html += `<div class="card"><div class="chead">${base.label} <span class="muted">(baseline)</span></div>`
+        + valuesTable(impls, benches, baseBy, color, unit, lowerBetter) + "</div>";
+
+  for (const c of cands) {
+    const warns = provenanceWarnings(base, c).map(w => `<div class="warn">⚠️ ${w}</div>`).join("");
+    html += `<div class="card"><div class="chead">${c.label} <span class="muted">vs ${base.label}</span></div>${warns}`
+          + deltaTable(impls, benches, baseBy, indexDoc(c), color, unit, lowerBetter) + "</div>";
+  }
+
+  document.getElementById("report").innerHTML = html;
+  const sel = document.getElementById("baseline");
+  if (sel) sel.addEventListener("change", () => { baselineLabel = sel.value; show(); });
+  document.querySelectorAll(".unit-btn").forEach(btn => btn.addEventListener("click", () => {
+    unitMode = btn.dataset.unit;
+    show();
+  }));
+}
+
+document.getElementById("file").addEventListener("change", e => {
+  const files = [...e.target.files];
+  if (!files.length) return;
+  let pending = files.length;
+  const collected = [];
+  files.forEach(f => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(reader.result);
+        if (parsed && parsed.runs) {
+          if (parsed.baseline) baselineLabel = parsed.baseline;
+          if (parsed.tolerance != null) tolerance = parsed.tolerance;
+          collected.push(...parsed.runs);
+        } else {
+          if (!parsed.label) parsed.label = f.name.replace(/\.json$/, "");
+          collected.push(parsed);
+        }
+      } catch (err) {
+        document.getElementById("status").textContent = "Could not parse " + f.name + ": " + err.message;
+      }
+      if (--pending === 0) ingest(collected, {});
+    };
+    reader.readAsText(f);
+  });
+});
+
+// Theme toggle: flips and persists the choice (same key/behavior as the website).
+const themeToggle = document.getElementById("themeToggle");
+const syncThemeIcon = () =>
+  themeToggle.textContent = document.documentElement.dataset.theme === "dark" ? "◑" : "◐";
+syncThemeIcon();
+themeToggle.addEventListener("click", () => {
+  const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+  document.documentElement.dataset.theme = next;
+  localStorage.setItem("soroban-theme", next);
+  syncThemeIcon();
+});
+
+if (EMBEDDED && EMBEDDED.runs) ingest(EMBEDDED.runs, { baseline: EMBEDDED.baseline, tolerance: EMBEDDED.tolerance });
+else if (EMBEDDED) ingest([EMBEDDED], {});
+else show();
+</script>
+</body>
+</html>

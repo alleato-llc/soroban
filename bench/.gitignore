@@ -1,0 +1,6 @@
+# Build artifacts from the two engine runners (the orchestrator builds these on demand).
+rust/target/
+swift/.build/
+rust/runner
+swift/runner
+__pycache__/
