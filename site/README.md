@@ -22,8 +22,10 @@ npm run preview    # serve dist/ locally
 
 ```
 src/
-  pages/index.astro        the landing page; `links` const at the top holds
-                           every external URL (download/source/donate)
+  pages/index.astro        the landing page; `links` const holds the static
+                           external URLs (source/donate/spec); the DOWNLOAD
+                           URLs are resolved at build time (see lib/releases.ts)
+                           and passed to the <Download> island
   pages/anzan.astro        /anzan — renders the Anzan language spec
   content.config.ts        loads ../docs/ANZAN.md via the glob loader (plain
                            fs, so living outside the Vite root is fine) —
@@ -32,10 +34,19 @@ src/
                            script (see Theming)
   components/
     ThemeToggle.tsx        island: light/dark override, persisted
+    Download.tsx           island: detects the visitor's OS/arch and shows the
+                           right download button(s) — on macOS a native (Swift)
+                           vs cross-platform (Rust) choice, elsewhere the
+                           matching portable binary; no-JS falls back to a full
+                           all-platforms list
     Card.astro             one feature card; `scopes={["log"|"grid"|"cli"]}`
                            renders the upper-right badge saying where the
                            feature lives (all three → "everywhere"; omit the
                            prop for app-level features like themes)
+  lib/releases.ts          build-time GitHub Releases API lookup: resolves each
+                           track's newest tag (v* / rust-v*) to its stable asset
+                           URLs; falls back to the Releases page on any error so
+                           the build never breaks
   styles/global.css        all styling; CSS custom properties up top
 public/favicon.svg         one abacus rod (frame, beam, beads)
 public/spec.html           the Living Specification (generated — see below)
@@ -102,9 +113,13 @@ the header nav to its own row.
 - Site-only commits use `[skip ci]` — every push to main otherwise cuts a
   release (see ../docs/RELEASING.md), and a copy tweak shouldn't spend a
   version number.
-- The Download button points at
-  `https://github.com/alleato-llc/soroban/releases/latest/download/Soroban.dmg`
-  — the versionless asset on the latest GitHub Release (stable across versions).
+- The Download buttons resolve their URLs at BUILD time (`lib/releases.ts`):
+  each release track's newest tag (`v*` native macOS / `rust-v*` cross-platform)
+  is looked up via the GitHub Releases API and its stable asset names read off
+  it (`Soroban.dmg`, `Soroban-cross.dmg`, `soroban-<os>-<arch>[.exe]`). GitHub's
+  one repo-wide `releases/latest/download/…` can't be trusted per track, so we
+  don't use it. A `release: published` trigger on `deploy-site.yml` redeploys so
+  the links stay fresh; any lookup failure degrades to the Releases page.
 - Donations: Buy Me a Coffee (`buymeacoffee.com/alleato`).
 
 ## Deploying

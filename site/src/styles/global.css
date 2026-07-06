@@ -196,6 +196,20 @@ header.site nav a {
   gap: 0.75rem;
   justify-content: center;
   flex-wrap: wrap;
+  align-items: center;
+}
+
+/* The <Download> island renders its buttons as a fragment; display:contents
+   makes Astro's <astro-island> wrapper transparent so they participate in the
+   .cta flex row directly. */
+astro-island {
+  display: contents;
+}
+
+/* The build note breaks onto its own line beneath the buttons (flex-wrap). */
+.cta .build-note {
+  flex-basis: 100%;
+  margin: 0.35rem 0 0;
 }
 
 .button {

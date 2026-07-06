@@ -1,12 +1,14 @@
 ---
 import Layout from "../layouts/Layout.astro";
 import Card from "../components/Card.astro";
+import Download from "../components/Download.tsx";
+import { resolveDownloads } from "../lib/releases";
+
+// Resolve each track's newest release → stable asset URLs, at build time.
+// Passed into the <Download> island, which picks the right button per OS/arch.
+const downloads = await resolveDownloads();
 
 const links = {
-    // The notarized dmg, served straight from the latest GitHub Release.
-    // salpa publish attaches a versionless Soroban.dmg, so this URL is stable
-    // across versions (GitHub redirects /latest/ to the newest release).
-    download: "https://github.com/alleato-llc/soroban/releases/latest/download/Soroban.dmg",
     source: "https://github.com/alleato-llc/soroban",
     donate: "https://buymeacoffee.com/alleato",
     // The Anzan language spec — /anzan renders the repo's canonical
@@ -22,7 +24,7 @@ const links = {
 
 <Layout
     title="Soroban・算盤 — an exact calculator with a spreadsheet attached"
-    description="An exact calculator for macOS with a mini-spreadsheet attached, built on a 50-digit exact decimal engine. 0.1 + 0.2 is exactly 0.3. Free and open source."
+    description="An exact calculator with a mini-spreadsheet attached, for macOS, Windows, and Linux — built on a 50-digit exact decimal engine. 0.1 + 0.2 is exactly 0.3. Free and open source."
 >
     <div class="wrap">
         <section class="hero">
@@ -38,13 +40,12 @@ const links = {
                 drift.
             </p>
             <div class="cta">
-                <a class="button primary" href={links.download}
-                    >Download for macOS</a
-                >
+                <Download client:load {...downloads} />
                 <a class="button quiet" href={links.source}>View source</a>
             </div>
             <p class="fine">
-                Free &amp; open source · macOS 14+ · saves plain, diffable files
+                Free &amp; open source · macOS 14+ · Windows · Linux · saves
+                plain, diffable files
             </p>
             <p class="fine">
                 Every behavior is a written, <a href={links.verified}
@@ -417,12 +418,14 @@ const links = {
                 <div>
                     <h2>Open source</h2>
                     <p>
-                        Soroban is developed in the open — the calculation
-                        engine is a standalone, UI-free Swift package with
-                        hundreds of tests and executable Gherkin specs,
-                        including the mathematical identities that certify it
-                        (π via Machin, Nicomachus, the Gregorian leap rule…).
-                        Read it, audit it, build it yourself.
+                        Soroban is developed in the open — and it's
+                        <strong> two engines, one shared spec</strong>: a native
+                        Swift build and a cross-platform Rust build, both
+                        standalone and UI-free, verified against the same
+                        executable Gherkin specification — including the
+                        mathematical identities that certify it (π via Machin,
+                        Nicomachus, the Gregorian leap rule…). Read it, audit
+                        it, build it yourself.
                     </p>
                     <p>
                         <a class="button quiet" href={links.source}

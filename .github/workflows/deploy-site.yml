@@ -20,6 +20,11 @@ on:
       - "scripts/generate-living-spec.sh"
       - "salpa.yaml"
       - ".github/workflows/deploy-site.yml"
+  # A new release on EITHER track (v* or rust-v*) redeploys the site so the
+  # build-time download-link resolution (site/src/lib/releases.ts) picks up the
+  # freshly published assets.
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -84,4 +89,9 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Deploy
+        # GITHUB_TOKEN lifts the Releases-API rate limit for the build-time
+        # download-link resolution (site/src/lib/releases.ts); the build falls
+        # back to the Releases page if the lookup fails, so it's not required.
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: salpa deploy # npm build site/ → publish dist
