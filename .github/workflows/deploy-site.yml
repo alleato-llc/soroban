@@ -8,7 +8,12 @@ name: Deploy site
 # and publishes site/dist. We only regenerate the living spec/report first
 # (it's a soroban-specific pre-step).
 #
-# Auth is short-lived OIDC credentials (no stored keys).
+# Auth is short-lived OIDC credentials (no stored keys). AWS_SITE_ROLE_ARN is a
+# SECRET, not a repo variable: GitHub auto-redacts secrets everywhere in logs,
+# which a variable + a manual ::add-mask:: step does NOT do (the step's own
+# `env:` block still gets echoed in its log preamble before the mask takes
+# effect — that leaked the account id on every run here). Don't revert this to
+# a variable no matter how it's masked downstream.
 on:
   push:
     branches: [main]
@@ -92,18 +97,10 @@ jobs:
           chmod +x salpa-darwin-arm64
           sudo mv salpa-darwin-arm64 /usr/local/bin/salpa
 
-      # Mask the account id (from the deploy role) before it can print — the
-      # Actions logs are public. Read via env so the literal isn't echoed here.
-      - name: Mask account id
-        env:
-          ROLE_ARN: ${{ vars.AWS_SITE_ROLE_ARN }}
-        run: |
-          echo "::add-mask::$(printf '%s' "$ROLE_ARN" | cut -d: -f5)"
-
       - name: Configure deploy credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ vars.AWS_SITE_ROLE_ARN }}
+          role-to-assume: ${{ secrets.AWS_SITE_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Deploy
