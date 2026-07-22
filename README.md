@@ -27,7 +27,8 @@ with **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** for the common design.
 |---|---|
 | **[swift/](swift/README.md)** | Everything Apple — the engine, the macOS + iPad app, the `soroban` CLI, and BinaryEditorKit. This is the shipping product. |
 | **[rust/](rust/README.md)** | A second implementation on [iced](https://iced.rs) + rime — the `anzan`, `soroban-engine`, and `soroban` CLI crates (complete, parity-tested) plus the `gui` desktop app. |
-| **[spec/](spec/README.md)** | The shared Gherkin behavior spec — the cross-ecosystem parity oracle both implementations must keep green. |
+| **[ts/](ts/README.md)** | The `@alleato/anzan` TypeScript package — the verified Rust engine compiled to WebAssembly (via `rust/wasm`), for Node and the browser; powers the site's live REPL. A binding, not a third implementation. |
+| **[spec/](spec/README.md)** | The shared Gherkin behavior spec — the cross-ecosystem parity oracle both implementations must keep green (run by Swift, Rust, and the TS/WASM binding). |
 | **[docs/](docs/README.md)** | Shared language, format, and design docs. |
 | **[site/](site/README.md)** | The landing page (Astro, static) + the living spec/report. |
 

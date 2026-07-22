@@ -53,9 +53,14 @@ covered by the engine/session tests and the shared spec.
 ## Monorepo layout (ecosystem-first)
 
 `swift/` (everything Apple), `rust/` (the cargo workspace + the excluded `gui`
-app), `spec/` (the shared Gherkin behavior spec, owned by neither ecosystem),
-`docs/` (shared language/format/design), `site/` (the landing page + living
-spec). Bare `Engine/`, `App/`, `Kit/` paths in older notes mean
+app and the excluded `wasm` binding crate), `ts/` (the `@alleato/anzan`
+npm package — the Rust engine compiled to WASM; a thin binding, never a
+reimplementation — with its own cucumber-js run of `spec/anzan`), `spec/`
+(the shared Gherkin behavior spec, owned by neither ecosystem), `docs/`
+(shared language/format/design), `site/` (the landing page + living spec +
+the wasm-powered live REPL; `site/src/wasm/` and `ts/wasm/` are VENDORED
+wasm builds — regenerate with `cd ts && npm run build:wasm` after `rust/anzan`
+changes). Bare `Engine/`, `App/`, `Kit/` paths in older notes mean
 `swift/Engine/`, `swift/App/`, `swift/Kit/`. The full design is
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md); the port plan is
 [docs/MIGRATION.md](docs/MIGRATION.md).

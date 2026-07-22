@@ -8,7 +8,7 @@ use rime::theme;
 use rime::widgets::menu;
 use rime::widgets::{button, context_menu, menu_bar_with_trailing, Menu, MenuItem};
 
-use crate::{font_for, App, Message, ViewMode};
+use crate::{examples, font_for, App, Message, ViewMode};
 use crate::{shot, themes};
 
 impl App {
@@ -187,6 +187,35 @@ impl App {
                     MenuItem::action("Reference", Message::ToggleReference),
                     MenuItem::action("Bits", Message::ToggleBinary),
                 ],
+            ),
+            // Example expressions grouped by language component, one flyout
+            // submenu per category — the Swift app's Examples menu. Picking one
+            // shows the log and fills the input bar (not evaluated). The data
+            // mirrors CalculatorSession.welcomeCategories verbatim (see
+            // [`examples`]); long expressions truncate in the label only.
+            Menu::new(
+                "Examples",
+                examples::CATEGORIES
+                    .iter()
+                    .enumerate()
+                    .map(|(index, (name, expressions))| {
+                        let items = expressions
+                            .iter()
+                            .map(|expression| {
+                                MenuItem::action(
+                                    examples::menu_label(expression),
+                                    Message::UseExample(expression),
+                                )
+                            })
+                            .collect();
+                        MenuItem::submenu(
+                            *name,
+                            items,
+                            self.examples_submenu == Some(index),
+                            Message::HoverExampleCategory(Some(index)),
+                        )
+                    })
+                    .collect(),
             ),
         ]
     }
