@@ -236,6 +236,7 @@ fn date_impl(args: &[BigDecimal]) -> Result<BigDecimal, EngineError> {
     Ok(BigDecimal::from_int(serial(year, month, day)))
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn today_impl(_args: &[BigDecimal]) -> Result<BigDecimal, EngineError> {
     // Swift reads the local calendar via Foundation; here the system clock
     // is the one sanctioned impurity (mirroring that Foundation use).
@@ -244,6 +245,14 @@ fn today_impl(_args: &[BigDecimal]) -> Result<BigDecimal, EngineError> {
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
     Ok(BigDecimal::from_int(seconds.div_euclid(86_400)))
+}
+
+#[cfg(target_arch = "wasm32")]
+fn today_impl(_args: &[BigDecimal]) -> Result<BigDecimal, EngineError> {
+    // `SystemTime::now()` PANICS on wasm32-unknown-unknown; the JS host's
+    // clock is the same sanctioned impurity there.
+    let millis = js_sys::Date::now() as i64;
+    Ok(BigDecimal::from_int(millis.div_euclid(86_400_000)))
 }
 
 fn year_impl(args: &[BigDecimal]) -> Result<BigDecimal, EngineError> {

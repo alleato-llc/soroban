@@ -8,7 +8,7 @@ members = ["anzan", "cli", "engine"]
 # libraries on Linux), so a workspace-wide `cargo build`/CI must not touch it.
 # Build it standalone: `cd gui && cargo build`. Phase 4 moves it into a proper
 # CI job (rime vendored/submoduled + platform deps) and back into `members`.
-exclude = ["gui"]
+exclude = ["gui", "wasm"]
 
 # Shared pins so member crates never drift.
 [workspace.dependencies]
