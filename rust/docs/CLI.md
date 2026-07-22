@@ -8,11 +8,12 @@ Port of `swift/Engine/Sources/SorobanCLI/main.swift` (LineNoise → rustyline).
 The crate is package `soroban-cli`, binary `soroban` (`cli/Cargo.toml`
 `[[bin]] name = "soroban"`).
 
-## Three modes, chosen by invocation shape
+## Four modes, chosen by invocation shape
 
 ```sh
 soroban "0.1 + 0.2 == 0.3"     # one-shot: evaluate each argument
-echo "sqrt(2)" | soroban       # pipe: evaluate each stdin line
+soroban change.anzan           # script file: a .anzan argument runs as a script
+echo "sqrt(2)" | soroban       # pipe: evaluate each stdin statement
 soroban                        # REPL (stdin is a terminal)
 ```
 
@@ -20,6 +21,17 @@ One `Calculator` per invocation, so variables, `ans`, and user functions carry
 across arguments/lines exactly like the app's log. The engine does all the work;
 the CLI is argument plumbing + error presentation (the same column-accurate caret
 the app renders).
+
+**Statements are logical lines** (`anzan::StatementAccumulator` — the same
+primitive SDK embedders use): a statement ends at a newline unless a `(` `[`
+`{` is still open, in which case following lines JOIN into one logical line —
+so a pretty-formatted `namespace { … }` block pipes, runs from a file, and
+pastes into the REPL (which shows a `… ` continuation prompt). Script files
+**halt at the first error** (`at file:line`, exit 1) and mix with expression
+arguments in order (`soroban lib.anzan "changeFor(0.95)"`); pipes keep the
+continue-on-error contract. A `#!/usr/bin/env soroban` shebang line is an
+ordinary comment, so `chmod +x` makes a `.anzan` file directly executable.
+Script files don't echo comment-only lines (pipes still do).
 
 ## Modules
 

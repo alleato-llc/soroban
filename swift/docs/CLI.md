@@ -26,7 +26,7 @@ The `soroban` executable is a product of the `Engine` package
 - **Keep it plumbing-thin.** Any behavior worth testing belongs in the engine —
   the CLI target is excluded from the coverage report for exactly that reason.
 
-## Three modes, by shape
+## Four modes, by shape
 
 `main.swift` picks the mode from how it was invoked; one `Calculator` carries
 `ans`, variables, and user functions across all inputs in a run:
@@ -34,8 +34,19 @@ The `soroban` executable is a product of the `Engine` package
 | Invocation | Mode | Behavior |
 |---|---|---|
 | `soroban "x = 3" "x^2 + 1"` | one-shot args | evaluate each argument in one shared session |
-| `echo "sqrt(2)" \| soroban` | piped stdin | evaluate each line; plain output; exit 1 if any line failed |
-| `soroban` (tty) | REPL | linenoise editor; `exit`/`quit`/⌃D to leave |
+| `soroban change.anzan` | script file | a `.anzan` argument runs as a script — statement-aware, **halts at the first error** (`at file:line`, exit 1); mixes with expression args in order |
+| `echo "sqrt(2)" \| soroban` | piped stdin | evaluate each statement; plain output; exit 1 if any line failed |
+| `soroban` (tty) | REPL | linenoise editor; `exit`/`quit`/⌃D to leave; `… ` continuation prompt while a bracket is open |
+
+**Statements are logical lines** (`StatementAccumulator` in the engine — the
+same primitive SDK embedders use): a statement ends at a newline unless a
+`(` `[` `{` is still open, in which case following lines JOIN into one logical
+line — so a pretty-formatted `namespace { … }` block pipes, runs from a file,
+and pastes into the REPL. The first line's trailing `#` comment survives the
+join (multi-line definitions stay documented); an unclosed block at EOF is a
+loud "unterminated" error. A `#!/usr/bin/env soroban` shebang line is an
+ordinary comment, so `chmod +x` makes a `.anzan` file directly executable.
+Script files don't echo comment-only lines (pipes still do).
 
 `-h`/`--help` prints usage; `--version` prints the CLI version.
 

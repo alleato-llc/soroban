@@ -23,6 +23,24 @@ still suppresses all release workflows regardless of the paths it touches — se
 
 ## [Unreleased]
 
+### Added
+
+- **Anzan scripts: `.anzan` files, statement-aware pipes, and a REPL
+  continuation prompt** (`spec/anzan/scripting.feature`, both engines). A
+  statement now ends at a newline *unless* a `( [ {` is still open — following
+  lines join into ONE logical line, so pretty-formatted `namespace { … }`
+  blocks pipe, run from files, and paste into the REPL (`… ` continuation
+  prompt). `soroban change.anzan` runs a script file — halting at the first
+  error with `at file:line` and exit 1 — and mixes with expression arguments
+  in one session (`soroban lib.anzan "changeFor(0.95)"`). A
+  `#!/usr/bin/env soroban` shebang line is an ordinary `#` comment, so
+  `chmod +x` makes scripts directly executable. The splitter is a public
+  engine primitive (`StatementAccumulator`, Swift + Rust) — the SDK piece
+  embedders and (later) the apps' multi-line paste share. The first line's
+  trailing comment survives the join, so multi-line definitions stay
+  documented; an unclosed block at end of input is a loud "unterminated"
+  error. See [docs/ANZAN.md](docs/ANZAN.md) §1 and each ecosystem's CLI doc.
+
 ### Changed
 
 - **The build/CI helper scripts are now Python.** The three `scripts/generate-*.sh`

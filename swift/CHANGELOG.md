@@ -15,6 +15,19 @@ The GitHub Release for each tag is the point of truth for the signed, notarized
 
 ## [Unreleased]
 
+### Added
+
+- **Anzan scripts.** The `soroban` CLI runs `.anzan` files
+  (`soroban change.anzan` — halts at the first error with `at file:line`,
+  exit 1; mixes with expression arguments in one session), pipes are
+  statement-aware, and the REPL grows a `… ` continuation prompt — a statement
+  ends at a newline unless a `( [ {` is still open, in which case lines join
+  into one logical line (`Anzan/Script.swift`'s public
+  `StatementAccumulator`, the SDK primitive). A `#!/usr/bin/env soroban`
+  shebang is an ordinary comment, so `chmod +x` scripts run directly. Shared
+  behavior — see the root [CHANGELOG.md](../CHANGELOG.md) and
+  [docs/CLI.md](docs/CLI.md).
+
 ### Changed
 
 - **Faster exact arithmetic: a custom bignum under `BigDecimal`.** The significand

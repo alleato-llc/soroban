@@ -17,6 +17,7 @@ pub mod lexer;
 pub mod mode;
 pub mod number;
 pub mod parser;
+pub mod script;
 
 pub use calculator::{Calculator, Completion, CompletionKind, EvalOutcome, FunctionDoc};
 pub use documentation::DocCategory;
@@ -37,3 +38,4 @@ pub use eval::value::{FunctionValue, HostObject, MapEntry, RecordValue, Value};
 pub use mode::LanguageMode;
 pub use number::{BigDecimal, PrecisionContext};
 pub use parser::Parser;
+pub use script::{Statement, StatementAccumulator};

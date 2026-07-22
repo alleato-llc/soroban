@@ -51,6 +51,25 @@ struct SorobanSteps: StepDefinitions {
         Self.outcome = Self.calculator.evaluate(match.captures[0])
     }
 
+    /// Runs a multi-line docstring through the statement accumulator + the
+    /// calculator — the engine path behind `.anzan` files and statement-aware
+    /// pipes. `the result is` / `the log echoes` then assert the LAST
+    /// statement's outcome; a split error (unterminated block) or the first
+    /// failing statement becomes the outcome instead.
+    let runScript = StepDefinition.when("I run the script:") { match in
+        guard let source = match.docString else {
+            throw Failure(description: "run-the-script needs a docstring")
+        }
+        do {
+            for statement in try StatementAccumulator.statements(of: source) {
+                Self.outcome = Self.calculator.evaluate(statement.text)
+                if case .failure = Self.outcome! { return } // halt like a script
+            }
+        } catch let error as EngineError {
+            Self.outcome = .failure(error)
+        }
+    }
+
     let setMode = StepDefinition.given("the calculator is in (normal|programmer|finance) mode") { match in
         Self.calculator.mode = LanguageMode(rawValue: match.captures[0])!
     }

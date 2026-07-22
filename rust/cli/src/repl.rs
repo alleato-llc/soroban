@@ -98,33 +98,48 @@ pub(crate) fn run(calculator: Calculator, version: &str) -> ExitCode {
         "Anzan・暗算 {version} — Soroban's exact calculation language. man name (or manual/help) for docs, tab completes, :mode switches dialect; exit to leave."
     );
     let prompt = "> ";
+    // An open ( [ { continues the statement onto the next line (`… ` prompt)
+    // — so pasting a pretty-formatted block just works. ⌃C abandons a
+    // pending statement.
+    let mut accumulator = anzan::StatementAccumulator::new();
     loop {
-        let line = match editor.readline(prompt) {
+        let line = match editor.readline(if accumulator.is_pending() {
+            "… "
+        } else {
+            prompt
+        }) {
             Ok(line) => line,
             Err(ReadlineError::Interrupted) => {
                 println!("^C");
+                accumulator = anzan::StatementAccumulator::new();
                 continue;
             }
             // EOF (⌃D) or a non-recoverable terminal problem.
             Err(_) => break,
         };
         let trimmed = line.trim();
-        if trimmed.is_empty() {
+        if !accumulator.is_pending() {
+            if trimmed.is_empty() {
+                continue;
+            }
+            if trimmed == "exit" || trimmed == "quit" {
+                break;
+            }
+            if trimmed == ":mode" || trimmed.starts_with(":mode ") {
+                handle_mode_command(trimmed, &mut calculator.borrow_mut(), false);
+                continue;
+            }
+        }
+        let Some(statement) = accumulator.push(&line) else {
             continue;
-        }
-        if trimmed == "exit" || trimmed == "quit" {
-            break;
-        }
-        if trimmed == ":mode" || trimmed.starts_with(":mode ") {
-            handle_mode_command(trimmed, &mut calculator.borrow_mut(), false);
-            continue;
-        }
-        let _ = editor.add_history_entry(&line);
+        };
+        // The joined one-line form recalls from history.
+        let _ = editor.add_history_entry(&statement.text);
         if let Some(path) = &history_file {
             let _ = editor.save_history(path);
         }
         evaluate(
-            &line,
+            &statement.text,
             &mut calculator.borrow_mut(),
             true,
             false,

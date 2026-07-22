@@ -79,6 +79,32 @@ fn calculate(world: &mut AnzanWorld, expression: String) {
     world.outcome = Some(world.calculator.borrow_mut().evaluate(&expression));
 }
 
+/// Runs a multi-line docstring through the statement accumulator + the
+/// calculator — the engine path behind `.anzan` files and statement-aware
+/// pipes. `the result is` / `the log echoes` then assert the LAST statement's
+/// outcome; a split error (unterminated block) or the first failing statement
+/// becomes the outcome instead.
+#[when(regex = r"^I run the script:$")]
+fn run_script(world: &mut AnzanWorld, step: &Step) {
+    let source = step
+        .docstring
+        .as_ref()
+        .expect("run-the-script needs a docstring");
+    match soroban_engine::StatementAccumulator::statements(source) {
+        Ok(statements) => {
+            for statement in statements {
+                let outcome = world.calculator.borrow_mut().evaluate(&statement.text);
+                let failed = outcome.is_err();
+                world.outcome = Some(outcome);
+                if failed {
+                    return; // halt like a script
+                }
+            }
+        }
+        Err(error) => world.outcome = Some(Err(error)),
+    }
+}
+
 #[given(regex = r"^the calculator is in (normal|programmer|finance) mode$")]
 fn set_mode(world: &mut AnzanWorld, mode: String) {
     world.calculator.borrow_mut().mode =
