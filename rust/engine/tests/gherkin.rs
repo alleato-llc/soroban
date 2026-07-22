@@ -96,6 +96,21 @@ fn result_is(world: &mut AnzanWorld, expected: String) {
     }
 }
 
+/// The human-facing ECHO (`display_description`) rather than the canonical
+/// `to_string` — how the log and CLI show a result. Distinct from `the result
+/// is` for tagged types whose display differs from their canonical form (a
+/// currency amount shows `$10.00`, recalls as `Money(10, "USD")`).
+#[then(regex = r#"^the log echoes "(.*)"$"#)]
+fn log_echoes(world: &mut AnzanWorld, expected: String) {
+    match &world.outcome {
+        Some(Ok(outcome)) => {
+            let echo = outcome.display_description();
+            assert_eq!(echo, expected, "expected echo {expected}, got {echo}");
+        }
+        other => panic!("expected a result, got {other:?}"),
+    }
+}
+
 #[then(regex = r#"^the result is within "(.*)" of "(.*)"$"#)]
 fn result_near_target(world: &mut AnzanWorld, bound: String, target: String) {
     near(world, &bound, &target);

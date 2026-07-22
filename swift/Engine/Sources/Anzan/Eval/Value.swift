@@ -31,6 +31,17 @@ public enum Value: Sendable {
     /// typed arithmetic; the mixing matrix lives in the evaluator.
     case fixedDecimal(FixedDecimal)
 
+    /// A finance-mode number carrying how it was written — a currency symbol
+    /// (`$10`), thousands grouping (`138,561`), or both. Coerces to its plain
+    /// value outside tagged arithmetic; the mixing matrix lives in `Money`.
+    case money(Money)
+
+    /// A plain number written with thousands grouping (`138,561`) in finance
+    /// mode. PRESENTATION ONLY — equal to the same ungrouped number in every
+    /// way; it carries so the grouping echoes through a calculation. See
+    /// `Grouped` for the (rule-free) propagation.
+    case grouped(BigDecimal)
+
     /// An opaque, HOST-implemented handle navigated through a uniform protocol
     /// (`.member`/`[…]`/`.method(…)`). Anzan never knows what it is — the host
     /// (e.g. the spreadsheet's Workbook/Worksheet/Cell reflection) provides the
@@ -91,6 +102,8 @@ public enum Value: Sendable {
         case .record(let record): return "a \(record.typeName)"
         case .fixedInt(let f): return "a \(f.typeName)"
         case .fixedDecimal(let d): return "a \(d.typeName)"
+        case .money(let m): return "a \(m.typeName)"
+        case .grouped: return "a grouped number"
         case .host(let object): return "a \(object.typeName)"
         }
     }
@@ -112,6 +125,8 @@ public enum Value: Sendable {
         // mixing matrix + checked overflow — is intercepted in the evaluator.
         case .fixedInt(let f): return f.decimal
         case .fixedDecimal(let d): return d.value
+        case .money(let m): return m.value
+        case .grouped(let n): return n
         default:
             throw EngineError.domainError(
                 message: "expected a number for \(context), got \(kindName)")
@@ -129,6 +144,10 @@ public enum Value: Sendable {
             return [f.decimal]
         case .fixedDecimal(let d):
             return [d.value]
+        case .money(let m):
+            return [m.value]
+        case .grouped(let n):
+            return [n]
         case .array(let items):
             var numbers: [BigDecimal] = []
             numbers.reserveCapacity(items.count)
@@ -185,6 +204,20 @@ extension Value: Equatable {
         case (.fixedDecimal(let a), .fixedDecimal(let b)): return a.value == b.value
         case (.fixedDecimal(let a), .number(let b)): return a.value == b
         case (.number(let a), .fixedDecimal(let b)): return a == b.value
+        // Money compares by numeric value too — `$5 == 5` is true (it's 5). The
+        // symbol is presentation, not identity; refusing to mix currencies is
+        // an ARITHMETIC rule, and equality does no arithmetic.
+        case (.money(let a), .money(let b)): return a.value == b.value
+        case (.money(let a), .number(let b)): return a.value == b
+        case (.number(let a), .money(let b)): return a == b.value
+        // A grouped number is just its value — equal to the same plain number,
+        // and to a money amount of equal value (grouping/currency are
+        // presentation; == does no arithmetic, so it never mixes currencies).
+        case (.grouped(let a), .grouped(let b)): return a == b
+        case (.grouped(let a), .number(let b)): return a == b
+        case (.number(let a), .grouped(let b)): return a == b
+        case (.grouped(let a), .money(let b)): return a == b.value
+        case (.money(let a), .grouped(let b)): return a.value == b
         default:
             return false
         }
@@ -249,6 +282,12 @@ extension Value: CustomStringConvertible {
             return f.description
         case .fixedDecimal(let d):
             return d.description
+        case .money(let m):
+            return m.description
+        case .grouped(let n):
+            // Grouping is presentation — the canonical form is the plain number,
+            // which re-parses in any mode (unlike the finance-only `138,561`).
+            return n.description
         case .host(let object):
             return object.description
         }
@@ -276,6 +315,10 @@ extension Value: CustomStringConvertible {
             return f.value.description
         case .fixedDecimal(let d):
             return d.text
+        case .money(let m):
+            return m.text
+        case .grouped(let n):
+            return n.groupedText
         }
     }
 
@@ -297,7 +340,7 @@ extension Value: CustomStringConvertible {
         case .host: return true
         case .array(let items): return items.contains { $0.containsHost }
         case .map(let entries): return entries.contains { $0.value.containsHost }
-        case .number, .string, .function, .record, .fixedInt, .fixedDecimal: return false
+        case .number, .string, .function, .record, .fixedInt, .fixedDecimal, .money, .grouped: return false
         }
     }
 
@@ -346,6 +389,10 @@ extension Value {
         switch expression {
         case .number(let value):
             return .number(value)
+        case .money(let value, let currency):
+            return .money(Money(value: value, currency: currency))
+        case .grouped(let value):
+            return .grouped(value)
         case .stringLiteral(let text):
             return .string(text)
         case .unaryMinus(.number(let value)):

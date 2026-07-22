@@ -18,6 +18,14 @@ extension Expression {
         switch self {
         case .number(let value):
             return value.description
+        case .money(let value, let currency):
+            // The currency literal re-parses in finance mode, the only mode that
+            // produces it; the symbol is part of the value, so it always renders.
+            let magnitude = value.isNegative ? -value : value
+            return (value.isNegative ? "-" : "") + currency.symbol + magnitude.description
+        case .grouped(let value):
+            // Grouping is presentation; source renders the plain number.
+            return value.description
         case .stringLiteral(let text):
             return Value.quoted(text)
         case .variable(let name):

@@ -23,6 +23,28 @@ still suppresses all release workflows regardless of the paths it touches — se
 
 ## [Unreleased]
 
+### Added
+
+- **Finance mode gains a first-class currency type and thousands grouping**
+  (`spec/anzan/modes.feature`, both engines). Finance is no longer grammatically
+  identical to Normal. **Currency** is a genuine tagged type — a peer of
+  `Int32(…)`/`Decimal(…)` — with a curated set (USD/EUR/GBP/JPY/CNY/INR/KRW/RUB/
+  CHF/BTC) and a mode-agnostic constructor `Money(value, "USD")` whose call is
+  the canonical form; `$10` / `€10` literals are sugar for it, and an unsupported
+  currency glyph is a lex error. The currency propagates through arithmetic —
+  `$10 * 5%` is `$0.50`, `$10,000 + ($15,000 * 5%)` is `$10,750.00` — and
+  survives all four operators (`$10 * $2` is `$20.00`; a display contract, not a
+  unit system). Mixing two currencies errors; `%` on a currency errors. Money
+  renders grouped at 2 decimals, symbol outside the sign (`-$1,234.50`);
+  `Money(v,"CODE")` is what recalls. **Thousands grouping** (`138,561`) is a
+  *separate*, presentation-only value with no arithmetic rules: it canonicalizes
+  to the plain number but echoes through a calculation (`138,561 * 9%` →
+  `12,470.49`). Both literal forms are **Finance-only**, so nothing existing
+  changes meaning: `$` before a letter is still the cell-column pin (`$A:1`), and
+  `,` is still the argument separator — grouping is suppressed inside a call's
+  argument list and inside `[…]`/`{…}`, so `max(138,561)` is unchanged. The
+  constructor works in any mode. See [docs/MODES.md](docs/MODES.md).
+
 ### Changed
 
 - **The build/CI helper scripts are now Python.** The three `scripts/generate-*.sh`

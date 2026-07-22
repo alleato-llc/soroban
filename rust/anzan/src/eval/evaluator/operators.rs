@@ -6,6 +6,8 @@ use crate::ast::{BinaryOperator, ComparisonOperator};
 use crate::eval::environment::EvaluationEnvironment;
 use crate::eval::fixed_decimal::FixedDecimal;
 use crate::eval::fixed_int::FixedInt;
+use crate::eval::grouped::Grouped;
+use crate::eval::money::Money;
 use crate::eval::value::Value;
 use crate::EngineError;
 use std::rc::Rc;
@@ -82,12 +84,15 @@ impl Evaluator<'_> {
                 })
             }
 
-            Value::Number(_) | Value::FixedInt(_) | Value::FixedDecimal(_) | Value::Function(_) => {
-                Err(EngineError::domain(format!(
-                    "{} can't be indexed",
-                    base.kind_name()
-                )))
-            }
+            Value::Number(_)
+            | Value::FixedInt(_)
+            | Value::FixedDecimal(_)
+            | Value::Money(_)
+            | Value::Grouped(_)
+            | Value::Function(_) => Err(EngineError::domain(format!(
+                "{} can't be indexed",
+                base.kind_name()
+            ))),
         }
     }
 
@@ -116,6 +121,16 @@ impl Evaluator<'_> {
         // Fixed-precision decimal arithmetic — the money-type mixing matrix.
         if FixedDecimal::is_involved(lhs, rhs) {
             return FixedDecimal::apply_binary(op, lhs, rhs);
+        }
+        // Finance-mode currency (docs/MODES.md) — the currency propagates and a
+        // plain (or grouped) Number is absorbed, so `$10 * 5%` is `$0.50`. Money
+        // runs before Grouped, so money + grouped → money.
+        if Money::is_involved(lhs, rhs) {
+            return Money::apply_binary(op, lhs, rhs);
+        }
+        // Grouped plain numbers — formatting only; the grouping echoes through.
+        if Grouped::is_involved(lhs, rhs) {
+            return Grouped::apply_binary(op, lhs, rhs);
         }
         let a = lhs.as_number(op.symbol())?;
         let b = rhs.as_number(op.symbol())?;

@@ -85,44 +85,12 @@ public enum NumberFormat: Equatable, Sendable {
     }
 
     /// Sign + grouped integer part + fraction padded/rounded to exactly
-    /// `decimals` places (banker's, via `rounded(toPlaces:)`).
+    /// `decimals` places (banker's). Lives on `BigDecimal` in `Anzan` because
+    /// finance-mode literals echo the same grouping — sharing the one
+    /// implementation is what keeps a formatted cell and a finance-mode result
+    /// from ever drifting apart.
     private static func fixed(_ value: BigDecimal, decimals: Int) -> String {
-        let rounded = value.rounded(toPlaces: decimals)
-        let digits = rounded.significand.magnitude.description
-        let sign = rounded.isNegative ? "-" : ""
-
-        var integer: String
-        var fraction: String
-        if rounded.exponent >= 0 {
-            integer = digits + String(repeating: "0", count: rounded.exponent)
-            fraction = ""
-        } else {
-            let pointPosition = digits.count + rounded.exponent
-            if pointPosition <= 0 {
-                integer = "0"
-                fraction = String(repeating: "0", count: -pointPosition) + digits
-            } else {
-                let index = digits.index(digits.startIndex, offsetBy: pointPosition)
-                integer = String(digits[..<index])
-                fraction = String(digits[index...])
-            }
-        }
-        if fraction.count < decimals {
-            fraction += String(repeating: "0", count: decimals - fraction.count)
-        }
-        let grouped = Self.grouped(integer)
-        return decimals > 0 ? "\(sign)\(grouped).\(fraction)" : "\(sign)\(grouped)"
-    }
-
-    /// "1234567" → "1,234,567".
-    private static func grouped(_ integer: String) -> String {
-        guard integer.count > 3 else { return integer }
-        var out: [Character] = []
-        for (offset, ch) in integer.reversed().enumerated() {
-            if offset > 0, offset.isMultiple(of: 3) { out.append(",") }
-            out.append(ch)
-        }
-        return String(out.reversed())
+        value.groupedText(decimals: decimals)
     }
 
     private static func padded(_ n: Int, to width: Int) -> String {

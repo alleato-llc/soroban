@@ -24,6 +24,13 @@ extension Value {
         case .record(let record):
             return try Self.jsonObject(record.entries, booleanFields: record.booleanFields,
                                        pretty: pretty, depth: depth)
+        case .money(let m):
+            // Money is a JSON number — the symbol is presentation, and JSON has
+            // no currency notion to carry it.
+            return m.value.description
+        case .grouped(let n):
+            // Grouping is presentation; JSON gets the plain number.
+            return n.description
         case .fixedInt(let f):
             // A bounded integer is a JSON number (its exact value).
             return f.value.description

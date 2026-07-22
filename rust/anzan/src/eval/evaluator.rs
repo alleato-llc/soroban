@@ -16,6 +16,7 @@
 
 use super::data_type::DataType;
 use super::environment::{EvaluationEnvironment, UserFunction};
+use super::money::Money;
 use super::registry::FunctionRegistry;
 use super::value::{FunctionValue, Value};
 use crate::ast::{Expression, TypeAnnotation};
@@ -111,6 +112,12 @@ impl Evaluator<'_> {
     ) -> Result<Value, EngineError> {
         match expression {
             Expression::Number(value) => Ok(Value::Number(value.clone())),
+
+            Expression::Money { value, currency } => {
+                Ok(Value::Money(Money::new(value.clone(), *currency)))
+            }
+
+            Expression::Grouped(value) => Ok(Value::Grouped(value.clone())),
 
             Expression::StringLiteral(text) => Ok(Value::String(text.clone())),
 
@@ -228,16 +235,12 @@ impl Evaluator<'_> {
 
             Expression::UnaryMinus(inner) => {
                 let value = self.evaluate(inner, environment, locals, depth)?;
-                Ok(Value::Number(-&value.as_number("-")?))
+                negate(value)
             }
 
             Expression::Percent(inner) => {
-                // `3%` → 3 × 0.01, exact (× never rounds). Numeric only,
-                // like unary −.
                 let value = self.evaluate(inner, environment, locals, depth)?;
-                Ok(Value::Number(
-                    &value.as_number("%")? * &BigDecimal::new(BigInt::from(1), -2),
-                ))
+                percent(value)
             }
 
             Expression::Binary(op, lhs_expr, rhs_expr) => {
@@ -432,6 +435,39 @@ impl Evaluator<'_> {
                 Ok(Value::Number(BigDecimal::zero()))
             }
         }
+    }
+}
+
+/// Unary minus with the finance tag preserved — `-$1,234.50` stays dollars and
+/// `-138,561` stays grouped. Kept OUT of `evaluate` (`#[inline(never)]`) so its
+/// locals don't inflate the recursive evaluator's stack frame (deep recursion
+/// hops fixed 16 MB segments; a fatter frame overflows the red zone sooner).
+#[inline(never)]
+fn negate(value: Value) -> Result<Value, EngineError> {
+    let negated = -&value.as_number("-")?;
+    match value {
+        Value::Money(m) => Ok(Value::Money(Money::new(negated, m.currency))),
+        Value::Grouped(_) => Ok(Value::Grouped(negated)),
+        _ => Ok(Value::Number(negated)),
+    }
+}
+
+/// `x%` → `x × 0.01`, exact. A currency amount is refused (a percent scales a
+/// plain number, so "$9 as a percent" is a category error — and since the
+/// symbol never changes the number, `$9%` would otherwise be indistinguishable
+/// from `9%`). Grouping is presentation and echoes through the scale. Kept out
+/// of `evaluate` for the same stack-frame reason as `negate`.
+#[inline(never)]
+fn percent(value: Value) -> Result<Value, EngineError> {
+    if let Value::Money(_) = &value {
+        return Err(EngineError::domain(
+            "can't apply % to a currency amount — % scales a plain number (e.g. $10 * 5%)",
+        ));
+    }
+    let scaled = &value.as_number("%")? * &BigDecimal::new(BigInt::from(1), -2);
+    match value {
+        Value::Grouped(_) => Ok(Value::Grouped(scaled)),
+        _ => Ok(Value::Number(scaled)),
     }
 }
 

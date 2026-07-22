@@ -4,7 +4,7 @@ use super::*;
 use TokenKind::*;
 
 fn kinds(source: &str) -> Vec<TokenKind> {
-    Lexer::tokenize(source)
+    Lexer::tokenize(source, LanguageMode::Normal)
         .unwrap_or_else(|e| panic!("'{source}' should lex: {e}"))
         .into_iter()
         .map(|t| t.kind)
@@ -72,7 +72,7 @@ fn tokenizes_identifiers() {
 
 #[test]
 fn records_positions() {
-    let tokens = Lexer::tokenize("12 + ab").unwrap();
+    let tokens = Lexer::tokenize("12 + ab", LanguageMode::Normal).unwrap();
     let ranges: Vec<_> = tokens.into_iter().map(|t| t.range).collect();
     assert_eq!(ranges, vec![0..2, 3..4, 5..7, 7..7]);
 }
@@ -81,7 +81,7 @@ fn records_positions() {
 fn rejects_unknown_characters() {
     // '#' became the comment marker — '@' is still illegal.
     assert_eq!(
-        Lexer::tokenize("1 @ 2"),
+        Lexer::tokenize("1 @ 2", LanguageMode::Normal),
         Err(EngineError::LexError {
             message: "unexpected character '@'".to_string(),
             position: 2
@@ -97,7 +97,7 @@ fn comments_run_to_end_of_line() {
 
 #[test]
 fn rejects_malformed_numbers() {
-    assert!(Lexer::tokenize("1.2.3").is_err());
+    assert!(Lexer::tokenize("1.2.3", LanguageMode::Normal).is_err());
 }
 
 // MARK: split_comment (the string-aware splitter both hosts use)
@@ -148,8 +148,8 @@ fn cell_references_and_pins() {
     // A ':' not followed by digits keeps the identifier and the colon apart.
     assert_eq!(kinds("a: b"), vec![ident("a"), Colon, ident("b"), End]);
     // A dangling '$' is a loud lex error.
-    assert!(Lexer::tokenize("$ 5").is_err());
-    assert!(Lexer::tokenize("$A + 1").is_err());
+    assert!(Lexer::tokenize("$ 5", LanguageMode::Normal).is_err());
+    assert!(Lexer::tokenize("$A + 1", LanguageMode::Normal).is_err());
 }
 
 #[test]
@@ -159,8 +159,8 @@ fn string_literals_and_escapes() {
         kinds(r#""a\tb\n\"q\"""#),
         vec![String("a\tb\n\"q\"".to_string()), End]
     );
-    assert!(Lexer::tokenize(r#""open"#).is_err());
-    assert!(Lexer::tokenize(r#""bad \q escape""#).is_err());
+    assert!(Lexer::tokenize(r#""open"#, LanguageMode::Normal).is_err());
+    assert!(Lexer::tokenize(r#""bad \q escape""#, LanguageMode::Normal).is_err());
 }
 
 #[test]
@@ -168,9 +168,9 @@ fn radix_literals() {
     assert_eq!(kinds("0xFF"), vec![num("255"), End]);
     assert_eq!(kinds("0b1010"), vec![num("10"), End]);
     assert_eq!(kinds("0xDEAD_BEEF"), vec![num("3735928559"), End]);
-    assert!(Lexer::tokenize("0xFG").is_err());
-    assert!(Lexer::tokenize("0x1.5").is_err());
-    assert!(Lexer::tokenize("0x").is_err());
+    assert!(Lexer::tokenize("0xFG", LanguageMode::Normal).is_err());
+    assert!(Lexer::tokenize("0x1.5", LanguageMode::Normal).is_err());
+    assert!(Lexer::tokenize("0x", LanguageMode::Normal).is_err());
 }
 
 #[test]
@@ -243,7 +243,7 @@ fn two_char_operators_win() {
             End
         ]
     );
-    assert!(Lexer::tokenize("1..2").is_err());
+    assert!(Lexer::tokenize("1..2", LanguageMode::Normal).is_err());
     assert_eq!(
         kinds("Geo::Pt"),
         vec![ident("Geo"), ColonColon, ident("Pt"), End]
@@ -270,5 +270,5 @@ fn quoted_names() {
             End
         ]
     );
-    assert!(Lexer::tokenize("'unterminated").is_err());
+    assert!(Lexer::tokenize("'unterminated", LanguageMode::Normal).is_err());
 }

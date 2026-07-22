@@ -15,6 +15,39 @@ The GitHub Release for each tag is the point of truth for the signed, notarized
 
 ## [Unreleased]
 
+### Added
+
+- **Finance-mode currency as a first-class type, plus thousands grouping.**
+  Currency is a genuine tagged type (`Value.money`, `Anzan/Eval/Money.swift`) —
+  a peer of `Int32(…)`/`Decimal(…)` — with a curated `Currency` enum
+  (`Anzan/Eval/Currency.swift`: USD/EUR/GBP/JPY/CNY/INR/KRW/RUB/CHF/BTC) and a
+  mode-agnostic constructor `Money(value, "USD")` whose call *is* the canonical
+  form; the finance-mode literals `$10`/`€10` are sugar for it. An unsupported
+  currency glyph is a loud lex error; CNY/CHF (no unambiguous glyph) are
+  constructor-only. The currency propagates through arithmetic the way
+  `FixedDecimal`'s type does — `$10 * 5%` is `$0.50`,
+  `$10,000 + ($15,000 * 5%)` is `$10,750.00`, and it survives all four operators
+  (`$10 * $2` is `$20.00` — a display contract, not a unit system). Mixing
+  currencies errors; `%` on a currency errors (`$9%` is a category error;
+  `$10 * 5%` still works). **Thousands grouping** (`138,561`) is now a *separate*,
+  presentation-only value (`Value.grouped`, `Anzan/Eval/Grouped.swift`) with no
+  arithmetic rules: it canonicalizes to the plain number but echoes through a
+  calculation (`138,561 * 9%` shows `12,470.49`). The grouping helpers live on
+  `BigDecimal` (`Number/BigDecimal+Format.swift`) so a formatted cell and a
+  finance-mode result share one implementation. Both literal forms are
+  Finance-only: `$A:1` and `max(138,561)` are unchanged. Shared behavior — see
+  [docs/MODES.md](../docs/MODES.md) and the root [CHANGELOG.md](../CHANGELOG.md).
+
+### Fixed
+
+- **The shared-spec runner was passing vacuously.** `GherkinTests` loaded its
+  features from the test bundle, but `Features` is a symlink to `spec/anzan` and
+  SwiftPM copies the *link* — whose relative target no longer resolves once
+  inside the bundle. The loader therefore found **zero** feature files and the
+  suite reported success without executing a single scenario, which is
+  indistinguishable from a real pass. It now resolves the spec directory from
+  `#filePath`, and the Swift side runs all 552 shared scenarios again.
+
 ### Changed
 
 - **Faster exact arithmetic: a custom bignum under `BigDecimal`.** The significand

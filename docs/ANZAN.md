@@ -312,8 +312,13 @@ parse the canonical dialect. The full glyph tables are in
   comparison). Power becomes the `pow(a, b)` function. A glyph a mode lacks is
   always written longhand (`pow` in Programmer, `bitXor` in Normal), so nothing
   is unreachable — only re-spelled.
-- **Finance**: grammatically identical to Normal today; reserved as the home
-  for future finance *display* defaults (e.g. currency formatting).
+- **Finance**: Normal's arithmetic core plus a first-class **currency** type
+  (`$10`, `€10`; the mode-agnostic constructor `Money(v, "USD")` is the canonical
+  form) and separate presentation-only **thousands grouping** (`138,561`). The
+  currency rides the value through arithmetic, so `$10 * 5%` is `$0.50` and
+  `$10,000 + ($15,000 * 5%)` is `$10,750.00`; mixing two currencies is a hard
+  error. Both literal forms are refused outside Finance (`$` stays the
+  cell-column pin, `,` stays the argument separator). See [MODES.md](docs/MODES.md).
 
 **Out-of-mode glyphs are loud, never silent**: a bare `&` in Normal, or `<<` in
 Finance, is a clear error, not a misparse. Because only the canonical (Normal)

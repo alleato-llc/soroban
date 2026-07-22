@@ -1,6 +1,12 @@
 /// Expression tree produced by the parser.
 public indirect enum Expression: Equatable, Sendable {
     case number(BigDecimal)
+    /// A finance-mode currency literal — `$10`, `€10`, `$10,000`. The currency
+    /// propagates through arithmetic (see `Money`), so it is part of the value.
+    case money(BigDecimal, currency: Currency)
+    /// A finance-mode grouped plain number — `138,561`. Presentation only; the
+    /// grouping echoes through a calculation (see `Grouped`).
+    case grouped(BigDecimal)
     case variable(String)
     /// `A:1` or `Budget!A:1` / `'Q1 Budget'!A:1` — nil sheet means the sheet
     /// that owns the formula (or the active sheet, from the log).
@@ -166,7 +172,7 @@ extension Expression {
         switch self {
         case .cellReference, .cellRange:
             return true
-        case .number, .variable:
+        case .number, .money, .grouped, .variable:
             return false
         case .unaryMinus(let inner), .percent(let inner):
             return inner.containsCellReference

@@ -4,8 +4,10 @@
 //! Margin/markup conventions:
 //!   markup is relative to COST, margin is relative to PRICE.
 
+use crate::eval::currency::Currency;
 use crate::eval::evaluator::require_int;
 use crate::eval::fixed_decimal::{DecimalRounding, FixedDecimal, MAX_PRECISION};
+use crate::eval::money::Money;
 use crate::eval::registry::{BuiltinFunction, FunctionCategory, Implementation};
 use crate::eval::value::Value;
 use crate::{BigDecimal, EngineError};
@@ -66,7 +68,35 @@ pub(crate) fn list() -> Vec<BuiltinFunction> {
             arity: 1..=4,
             implementation: Implementation::Values(make_fixed_decimal),
         },
+        BuiltinFunction {
+            name: "Money",
+            category: FunctionCategory::Accounting,
+            signature: "Money(value, code)",
+            summary: "A currency amount — the mode-agnostic form of the finance-mode $10 literal. `code` is an ISO currency code string (case-insensitive): USD, EUR, GBP, JPY, CNY, INR, KRW, RUB, CHF, BTC. Renders grouped to 2 decimals with the currency symbol (Money(1234.5, \"USD\") → $1,234.50). The currency propagates through arithmetic; mixing two currencies is an error.",
+            examples: &["Money(10, \"USD\")", "Money(1234.5, \"EUR\")"],
+            arity: 2..=2,
+            implementation: Implementation::Values(make_money),
+        },
     ]
+}
+
+/// Builds a `Value::Money` for the `Money(value, code)` constructor — a number
+/// and a currency code string. Unknown code → error.
+fn make_money(arguments: &[Value]) -> Result<Value, EngineError> {
+    let value = arguments[0].as_number("Money's value")?;
+    let Value::String(code) = &arguments[1] else {
+        return Err(EngineError::domain(
+            "Money's 2nd argument is a currency code string — e.g. Money(10, \"USD\")",
+        ));
+    };
+    let Some(currency) = Currency::from_code(code) else {
+        let codes: Vec<&str> = Currency::ALL.iter().map(|c| c.code()).collect();
+        return Err(EngineError::domain(format!(
+            "unknown currency '{code}' — use one of {}",
+            codes.join(", ")
+        )));
+    };
+    Ok(Value::Money(Money::new(value, currency)))
 }
 
 // MARK: - Implementations

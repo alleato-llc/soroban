@@ -157,53 +157,13 @@ impl NumberFormat {
 
     /// Sign + grouped integer part + fraction padded/rounded to exactly
     /// `decimals` places (banker's, via `rounded_to_places`).
+    /// Sign + grouped integer part + fraction padded/rounded to exactly
+    /// `decimals` places (banker's). Lives on `BigDecimal` in `anzan` because
+    /// finance-mode literals echo the same grouping — sharing the one
+    /// implementation is what keeps a formatted cell and a finance-mode result
+    /// from ever drifting apart.
     fn fixed(value: &BigDecimal, decimals: i64) -> String {
-        let rounded = value.rounded_to_places(decimals);
-        let digits = rounded.significand().magnitude().to_string();
-        let sign = if rounded.is_negative() { "-" } else { "" };
-        let exponent = rounded.exponent();
-
-        let (integer, mut fraction) = if exponent >= 0 {
-            (
-                format!("{digits}{}", "0".repeat(exponent as usize)),
-                String::new(),
-            )
-        } else {
-            let point_position = digits.len() as i64 + exponent;
-            if point_position <= 0 {
-                (
-                    "0".to_string(),
-                    format!("{}{digits}", "0".repeat((-point_position) as usize)),
-                )
-            } else {
-                let index = point_position as usize;
-                (digits[..index].to_string(), digits[index..].to_string())
-            }
-        };
-        if (fraction.len() as i64) < decimals {
-            fraction.push_str(&"0".repeat((decimals - fraction.len() as i64) as usize));
-        }
-        let grouped = Self::grouped(&integer);
-        if decimals > 0 {
-            format!("{sign}{grouped}.{fraction}")
-        } else {
-            format!("{sign}{grouped}")
-        }
-    }
-
-    /// "1234567" → "1,234,567".
-    fn grouped(integer: &str) -> String {
-        if integer.len() <= 3 {
-            return integer.to_string();
-        }
-        let mut out: Vec<char> = Vec::with_capacity(integer.len() + integer.len() / 3);
-        for (offset, ch) in integer.chars().rev().enumerate() {
-            if offset > 0 && offset % 3 == 0 {
-                out.push(',');
-            }
-            out.push(ch);
-        }
-        out.iter().rev().collect()
+        value.grouped_text(decimals)
     }
 
     fn padded(n: i64, width: usize) -> String {

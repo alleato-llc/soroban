@@ -43,6 +43,11 @@ fn json_text_at(value: &Value, pretty: bool, depth: usize) -> Result<String, Eng
         Value::FixedInt(fixed) => Ok(fixed.value.to_string()),
         // A JSON number, kept at the declared scale (e.g. 10.50).
         Value::FixedDecimal(decimal) => Ok(decimal.text()),
+        // Money is a JSON number — the symbol is presentation, and JSON has no
+        // currency notion to carry it.
+        Value::Money(m) => Ok(m.value.to_string()),
+        // Grouping is presentation; JSON gets the plain number.
+        Value::Grouped(n) => Ok(n.to_string()),
         Value::Function(_) => Err(EngineError::domain("toJson() can't serialize a function")),
         Value::Host(object) => Err(EngineError::domain(format!(
             "toJson() can't serialize a {}",

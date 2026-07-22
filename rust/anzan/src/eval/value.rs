@@ -9,6 +9,7 @@
 
 use super::fixed_decimal::FixedDecimal;
 use super::fixed_int::FixedInt;
+use super::money::Money;
 use crate::ast::{key_literal, quoted, Expression};
 use crate::{BigDecimal, EngineError, LanguageMode, Parser};
 use std::collections::HashSet;
@@ -40,6 +41,16 @@ pub enum Value {
     /// Coerces to its decimal value outside typed arithmetic; the mixing
     /// matrix lives in the evaluator.
     FixedDecimal(FixedDecimal),
+
+    /// A finance-mode currency amount (`$10`, `Money(10, "USD")`) — a
+    /// first-class tagged type. Coerces to its plain value outside tagged
+    /// arithmetic; the mixing matrix lives in `Money`.
+    Money(Money),
+    /// A plain number written with thousands grouping (`138,561`) in finance
+    /// mode. PRESENTATION ONLY — equal to the same ungrouped number in every
+    /// way; it carries so the grouping echoes through a calculation. See
+    /// `Grouped` for the (rule-free) propagation.
+    Grouped(BigDecimal),
     /// An opaque, HOST-implemented handle navigated through a uniform
     /// protocol (`.member`/`[…]`/`.method(…)`). Anzan never knows what it is
     /// — the host (e.g. the spreadsheet's Workbook/Worksheet/Cell reflection)
@@ -117,6 +128,8 @@ impl Value {
             Self::Record(record) => format!("a {}", record.type_name),
             Self::FixedInt(f) => format!("a {}", f.type_name()),
             Self::FixedDecimal(d) => format!("a {}", d.type_name()),
+            Self::Money(m) => format!("a {}", m.type_name()),
+            Self::Grouped(_) => "a grouped number".to_string(),
             Self::Host(object) => format!("a {}", object.type_name()),
         }
     }
@@ -138,6 +151,8 @@ impl Value {
             // intercepted in the evaluator.
             Self::FixedInt(f) => Ok(f.decimal()),
             Self::FixedDecimal(d) => Ok(d.value.clone()),
+            Self::Money(m) => Ok(m.value.clone()),
+            Self::Grouped(n) => Ok(n.clone()),
             _ => Err(EngineError::domain(format!(
                 "expected a number for {context}, got {}",
                 self.kind_name()
@@ -153,6 +168,8 @@ impl Value {
             Self::Number(value) => Ok(vec![value.clone()]),
             Self::FixedInt(f) => Ok(vec![f.decimal()]),
             Self::FixedDecimal(d) => Ok(vec![d.value.clone()]),
+            Self::Money(m) => Ok(vec![m.value.clone()]),
+            Self::Grouped(n) => Ok(vec![n.clone()]),
             Self::Array(items) => {
                 let mut numbers = Vec::with_capacity(items.len());
                 for item in items {
@@ -212,6 +229,21 @@ impl PartialEq for Value {
             (Self::FixedDecimal(a), Self::FixedDecimal(b)) => a.value == b.value,
             (Self::FixedDecimal(a), Self::Number(b)) => a.value == *b,
             (Self::Number(a), Self::FixedDecimal(b)) => *a == b.value,
+            // Money compares by numeric value too — `$5 == 5` is true (it's 5).
+            // The symbol is presentation, not identity; refusing to mix
+            // currencies is an ARITHMETIC rule, and equality does no arithmetic.
+            (Self::Money(a), Self::Money(b)) => a.value == b.value,
+            (Self::Money(a), Self::Number(b)) => a.value == *b,
+            (Self::Number(a), Self::Money(b)) => *a == b.value,
+            // A grouped number is just its value — equal to the same plain
+            // number, and to a money amount of equal value (grouping/currency
+            // are presentation; == does no arithmetic, so it never mixes
+            // currencies).
+            (Self::Grouped(a), Self::Grouped(b)) => a == b,
+            (Self::Grouped(a), Self::Number(b)) => a == b,
+            (Self::Number(a), Self::Grouped(b)) => a == b,
+            (Self::Grouped(a), Self::Money(b)) => *a == b.value,
+            (Self::Money(a), Self::Grouped(b)) => a.value == *b,
             _ => false,
         }
     }
@@ -289,6 +321,10 @@ impl fmt::Display for Value {
             }
             Self::FixedInt(fixed) => write!(f, "{}", fixed.description()),
             Self::FixedDecimal(d) => write!(f, "{}", d.description()),
+            Self::Money(m) => write!(f, "{}", m.description()),
+            // Grouping is presentation — the canonical form is the plain number,
+            // which re-parses in any mode (unlike the finance-only `138,561`).
+            Self::Grouped(n) => write!(f, "{n}"),
             Self::Host(object) => write!(f, "{}", object.description()),
         }
     }
@@ -322,6 +358,11 @@ impl Value {
             }
             Self::FixedInt(f) => f.value.to_string(),
             Self::FixedDecimal(d) => d.text(),
+            // A currency amount shows grouped, 2dp, symbol outside the sign
+            // ($10.00) — the human echo; its canonical is the Money(…) call.
+            Self::Money(m) => m.text(),
+            // Grouped echoes at the value's OWN decimals (138,561 / 12,470.49).
+            Self::Grouped(n) => n.grouped_text_natural(),
         }
     }
 
@@ -350,7 +391,9 @@ impl Value {
             | Self::Function(_)
             | Self::Record(_)
             | Self::FixedInt(_)
-            | Self::FixedDecimal(_) => false,
+            | Self::FixedDecimal(_)
+            | Self::Money(_)
+            | Self::Grouped(_) => false,
         }
     }
 }
@@ -374,6 +417,10 @@ impl Value {
     pub(crate) fn literal(expression: &Expression) -> Option<Value> {
         match expression {
             Expression::Number(value) => Some(Self::Number(value.clone())),
+            Expression::Money { value, currency } => {
+                Some(Self::Money(Money::new(value.clone(), *currency)))
+            }
+            Expression::Grouped(value) => Some(Self::Grouped(value.clone())),
             Expression::StringLiteral(text) => Some(Self::String(text.clone())),
             Expression::UnaryMinus(inner) => {
                 if let Expression::Number(value) = inner.as_ref() {

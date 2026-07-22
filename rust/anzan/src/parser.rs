@@ -53,7 +53,7 @@ fn parse_error(message: impl Into<String>, position: usize) -> EngineError {
 impl Parser {
     pub fn parse(source: &str, mode: LanguageMode) -> Result<Expression, EngineError> {
         let mut parser = Parser {
-            tokens: Lexer::tokenize(source)?,
+            tokens: Lexer::tokenize(source, mode)?,
             mode,
             index: 0,
         };

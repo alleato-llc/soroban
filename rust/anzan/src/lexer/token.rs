@@ -1,11 +1,21 @@
 //! A lexical token with its half-open character range in the source line.
 
+use crate::eval::currency::Currency;
 use crate::BigDecimal;
 use std::ops::Range;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind {
     Number(BigDecimal),
+    /// A finance-mode currency literal ($10, €10) — the glyph resolved to a
+    /// `Currency`. Thousands grouping rides the value. Lexed only in finance
+    /// mode.
+    Money {
+        value: BigDecimal,
+        currency: Currency,
+    },
+    /// A finance-mode grouped plain number (138,561) — presentation only.
+    Grouped(BigDecimal),
     Identifier(String),
     /// "…" — double-quoted string literal, escapes applied.
     String(String),

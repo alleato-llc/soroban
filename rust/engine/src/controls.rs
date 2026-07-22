@@ -9,6 +9,7 @@ use crate::cell::{Cell, Content, DefinitionKind};
 use crate::spreadsheet::CellDisplay;
 use anzan::ast::Expression;
 use anzan::lexer::{Lexer, TokenKind};
+use anzan::LanguageMode;
 use anzan::{BigDecimal, Value};
 
 /// Everything the grid needs to draw and drag one slider (or stepper).
@@ -218,7 +219,7 @@ impl Control {
     /// `# comments` — intact. `literal` is the replacement source text
     /// (`0.11`, `true`, `"US"`). Token-precise via the lexer's ranges.
     pub fn rewriting(raw: &str, literal: &str) -> Option<String> {
-        let tokens = Lexer::tokenize(raw).ok()?;
+        let tokens = Lexer::tokenize(raw, LanguageMode::Normal).ok()?;
         for (index, token) in tokens.iter().enumerate() {
             let TokenKind::Identifier(name) = &token.kind else {
                 continue;

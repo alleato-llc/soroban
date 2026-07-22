@@ -64,6 +64,19 @@ struct SorobanSteps: StepDefinitions {
         }
     }
 
+    /// The human-facing ECHO (`displayDescription`) rather than the canonical
+    /// `description` — how the log and CLI show a result. Distinct from `the
+    /// result is` for tagged types whose display differs from their canonical
+    /// form (a currency amount shows `$10.00`, recalls as `Money(10, "USD")`).
+    let logEchoes = StepDefinition.then("the log echoes \"(.*)\"") { match in
+        guard case .success(let outcome)? = Self.outcome else {
+            throw Failure(description: "expected a result, got \(String(describing: Self.outcome))")
+        }
+        guard outcome.displayDescription == match.captures[0] else {
+            throw Failure(description: "expected echo \(match.captures[0]), got \(outcome.displayDescription)")
+        }
+    }
+
     let resultNearTarget = StepDefinition.then("the result is within \"(.*)\" of \"(.*)\"") { match in
         guard case .success(let outcome)? = Self.outcome,
               let value = outcome.numericValue,
