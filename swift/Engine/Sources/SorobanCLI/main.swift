@@ -19,8 +19,11 @@ soroban — Anzan, the exact calculation language (50 significant digits;
 + − × and integer ^ exact). The same engine that powers the Soroban app.
 
 usage:
-  soroban [expression ...]     evaluate arguments in one shared session
-  ... | soroban                evaluate each line of stdin
+  soroban [arg ...]            evaluate arguments in one shared session;
+                               an argument ending in .anzan runs as a script
+                               file (halts at its first error)
+  ... | soroban                evaluate stdin, one statement per line — an
+                               open ( [ { continues the statement across lines
   soroban                      interactive REPL (exit / quit / ⌃D to leave)
 
 options:
@@ -31,7 +34,13 @@ examples:
   soroban "0.1 + 0.2 == 0.3"             # 1 — exactly, no float drift
   soroban "pmt(0.05/12, 360, 200000)"    # spreadsheet-grade finance
   soroban "x = 3" "x^2 + 1"              # arguments share one session
+  soroban change.anzan                   # run a script file
+  soroban lib.anzan "changeFor(0.95)"    # load a script, then evaluate
   soroban "man pmt"                      # built-in documentation
+
+scripts: one statement per line; inside an unclosed ( [ { the statement
+continues onto the next line. `#` comments; a `#!/usr/bin/env soroban`
+shebang line makes a chmod +x .anzan file directly executable.
 """
 
 func eprint(_ message: String) {
@@ -123,13 +132,60 @@ func handleModeCommand(_ line: String, on calculator: Calculator, quiet: Bool = 
 let calculator = Calculator()
 let prettyOutput = isatty(STDOUT_FILENO) == 1
 
-// One-shot: every argument is a line; first failure poisons the exit code
-// but later arguments still run (their results may not depend on it).
+/// Runs a `.anzan` script file: statements split by the engine's accumulator
+/// (an open bracket continues a statement across lines), evaluated in the
+/// shared session, HALTING at the first error (script semantics — the caret
+/// error gains a trailing `at file:line`). Comment-only statements (including
+/// a `#!` shebang) are for the file's reader, not the output. Returns false
+/// on the first failure — the caller exits 1.
+func runScriptFile(_ path: String, on calculator: Calculator, pretty: Bool) -> Bool {
+    guard let source = try? String(contentsOfFile: path, encoding: .utf8) else {
+        eprint("error: can't read '\(path)'")
+        return false
+    }
+    var accumulator = StatementAccumulator()
+    func run(_ statement: StatementAccumulator.Statement) -> Bool {
+        let text = statement.text
+        if text.hasPrefix("#") { return true } // shebang / comment: not output
+        if text == ":mode" || text.hasPrefix(":mode ") {
+            return handleModeCommand(text, on: calculator, quiet: true)
+        }
+        if !evaluate(text, on: calculator, pretty: pretty,
+                     echoInputOnError: true, caretIndent: 0) {
+            eprint("at \(path):\(statement.line)")
+            return false
+        }
+        return true
+    }
+    for line in source.split(separator: "\n", omittingEmptySubsequences: false) {
+        if let statement = accumulator.push(String(line)), !run(statement) {
+            return false
+        }
+    }
+    let pending = accumulator.pendingText
+    do {
+        try accumulator.finish()
+    } catch {
+        report(error, input: pending, echoInput: true, caretIndent: 0)
+        eprint("at \(path)")
+        return false
+    }
+    return true
+}
+
+// One-shot: every argument is a line — except a `.anzan` argument, which runs
+// as a script file. Expression failures poison the exit code but later
+// arguments still run; a script failure HALTS the whole invocation (its
+// remaining statements didn't run, so later arguments can't trust the session).
 if !arguments.isEmpty {
     var allSucceeded = true
-    for line in arguments {
-        if !evaluate(line, on: calculator, pretty: prettyOutput,
-                     echoInputOnError: true, caretIndent: 0) {
+    for argument in arguments {
+        if argument.hasSuffix(".anzan") {
+            if !runScriptFile(argument, on: calculator, pretty: prettyOutput) {
+                exit(1)
+            }
+        } else if !evaluate(argument, on: calculator, pretty: prettyOutput,
+                            echoInputOnError: true, caretIndent: 0) {
             allSucceeded = false
         }
     }
@@ -166,44 +222,65 @@ if isatty(STDIN_FILENO) == 1 {
     }
 
     print("Anzan・暗算 \(cliVersion) — Soroban's exact calculation language. man name (or manual/help) for docs, tab completes, :mode switches dialect; exit to leave.")
+    // An open ( [ { continues the statement onto the next line (`… ` prompt) —
+    // so pasting a pretty-formatted block just works. ⌃C abandons a pending
+    // statement.
+    var accumulator = StatementAccumulator()
     while true {
         let line: String
         do {
-            line = try lineNoise.getLine(prompt: prompt)
+            line = try lineNoise.getLine(prompt: accumulator.isPending ? "… " : prompt)
             print() // linenoise leaves the cursor on the input line
         } catch LinenoiseError.CTRL_C {
             print("^C")
+            accumulator = StatementAccumulator()
             continue
         } catch {
             break // EOF (⌃D) or a non-recoverable terminal problem
         }
         let trimmed = line.trimmingCharacters(in: .whitespaces)
-        if trimmed.isEmpty { continue }
-        if trimmed == "exit" || trimmed == "quit" { break }
-        if trimmed == ":mode" || trimmed.hasPrefix(":mode ") {
-            handleModeCommand(trimmed, on: calculator)
-            continue
+        if !accumulator.isPending {
+            if trimmed.isEmpty { continue }
+            if trimmed == "exit" || trimmed == "quit" { break }
+            if trimmed == ":mode" || trimmed.hasPrefix(":mode ") {
+                handleModeCommand(trimmed, on: calculator)
+                continue
+            }
         }
-        lineNoise.addHistory(line)
+        guard let statement = accumulator.push(line) else { continue }
+        lineNoise.addHistory(statement.text) // the joined one-line form recalls
         try? lineNoise.saveHistory(toFile: historyFile)
-        evaluate(line, on: calculator, pretty: true,
+        evaluate(statement.text, on: calculator, pretty: true,
                  echoInputOnError: false, caretIndent: prompt.count)
     }
 } else {
-    // Pipe: keep going on errors (stderr carries them), exit 1 if any failed.
+    // Pipe: statement-aware (an open bracket continues onto the next line —
+    // streaming, one statement out as soon as it closes), keep going on errors
+    // (stderr carries them), exit 1 if any failed.
     var allSucceeded = true
+    var accumulator = StatementAccumulator()
     while let line = readLine(strippingNewline: true) {
         let trimmed = line.trimmingCharacters(in: .whitespaces)
-        if trimmed.isEmpty { continue }
-        if trimmed == ":mode" || trimmed.hasPrefix(":mode ") {
-            // Mode switches work in piped scripts too — silent (not a result line).
-            if !handleModeCommand(trimmed, on: calculator, quiet: true) { allSucceeded = false }
-            continue
+        if !accumulator.isPending {
+            if trimmed.isEmpty { continue }
+            if trimmed == ":mode" || trimmed.hasPrefix(":mode ") {
+                // Mode switches work in piped scripts too — silent (not a result line).
+                if !handleModeCommand(trimmed, on: calculator, quiet: true) { allSucceeded = false }
+                continue
+            }
         }
-        if !evaluate(line, on: calculator, pretty: false,
+        guard let statement = accumulator.push(line) else { continue }
+        if !evaluate(statement.text, on: calculator, pretty: false,
                      echoInputOnError: true, caretIndent: 0) {
             allSucceeded = false
         }
+    }
+    let pending = accumulator.pendingText
+    do {
+        try accumulator.finish()
+    } catch {
+        report(error, input: pending, echoInput: true, caretIndent: 0)
+        allSucceeded = false
     }
     exit(allSucceeded ? 0 : 1)
 }

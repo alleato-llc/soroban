@@ -23,8 +23,11 @@ soroban — Anzan, the exact calculation language (50 significant digits;
 + − × and integer ^ exact). The same engine that powers the Soroban app.
 
 usage:
-  soroban [expression ...]     evaluate arguments in one shared session
-  ... | soroban                evaluate each line of stdin
+  soroban [arg ...]            evaluate arguments in one shared session;
+                               an argument ending in .anzan runs as a script
+                               file (halts at its first error)
+  ... | soroban                evaluate stdin, one statement per line — an
+                               open ( [ { continues the statement across lines
   soroban                      interactive REPL (exit / quit / ⌃D to leave)
 
 options:
@@ -35,7 +38,13 @@ examples:
   soroban \"0.1 + 0.2 == 0.3\"             # 1 — exactly, no float drift
   soroban \"pmt(0.05/12, 360, 200000)\"    # spreadsheet-grade finance
   soroban \"x = 3\" \"x^2 + 1\"              # arguments share one session
-  soroban \"man pmt\"                      # built-in documentation";
+  soroban change.anzan                   # run a script file
+  soroban lib.anzan \"changeFor(0.95)\"    # load a script, then evaluate
+  soroban \"man pmt\"                      # built-in documentation
+
+scripts: one statement per line; inside an unclosed ( [ { the statement
+continues onto the next line. `#` comments; a `#!/usr/bin/env soroban`
+shebang line makes a chmod +x .anzan file directly executable.";
 
 fn eprint_line(message: &str) {
     eprintln!("{message}");
@@ -177,13 +186,19 @@ fn main() -> ExitCode {
     let mut calculator = Calculator::new();
     let pretty_output = std::io::stdout().is_terminal();
 
-    // One-shot: every argument is a line; first failure poisons the exit
-    // code but later arguments still run (their results may not depend on
-    // it).
+    // One-shot: every argument is a line — except a `.anzan` argument, which
+    // runs as a script file. Expression failures poison the exit code but
+    // later arguments still run; a script failure HALTS the whole invocation
+    // (its remaining statements didn't run, so later arguments can't trust
+    // the session).
     if !arguments.is_empty() {
         let mut all_succeeded = true;
-        for line in &arguments {
-            if !evaluate(line, &mut calculator, pretty_output, true, 0) {
+        for argument in &arguments {
+            if argument.ends_with(".anzan") {
+                if !run_script_file(argument, &mut calculator, pretty_output) {
+                    return ExitCode::FAILURE;
+                }
+            } else if !evaluate(argument, &mut calculator, pretty_output, true, 0) {
                 all_succeeded = false;
             }
         }
@@ -194,29 +209,83 @@ fn main() -> ExitCode {
         return repl::run(calculator, CLI_VERSION);
     }
 
-    // Pipe: keep going on errors (stderr carries them), exit 1 if any
-    // failed.
+    // Pipe: statement-aware (an open bracket continues onto the next line —
+    // streaming, one statement out as soon as it closes), keep going on
+    // errors (stderr carries them), exit 1 if any failed.
     let mut all_succeeded = true;
+    let mut accumulator = anzan::StatementAccumulator::new();
     let stdin = std::io::stdin();
     for line in stdin.lock().lines() {
         let Ok(line) = line else { break };
         let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        if trimmed == ":mode" || trimmed.starts_with(":mode ") {
-            // Mode switches work in piped scripts too — silent (not a
-            // result line).
-            if !handle_mode_command(trimmed, &mut calculator, true) {
-                all_succeeded = false;
+        if !accumulator.is_pending() {
+            if trimmed.is_empty() {
+                continue;
             }
-            continue;
+            if trimmed == ":mode" || trimmed.starts_with(":mode ") {
+                // Mode switches work in piped scripts too — silent (not a
+                // result line).
+                if !handle_mode_command(trimmed, &mut calculator, true) {
+                    all_succeeded = false;
+                }
+                continue;
+            }
         }
-        if !evaluate(&line, &mut calculator, false, true, 0) {
+        let Some(statement) = accumulator.push(&line) else {
+            continue;
+        };
+        if !evaluate(&statement.text, &mut calculator, false, true, 0) {
             all_succeeded = false;
         }
     }
+    let pending = accumulator.pending_text();
+    if let Err(error) = accumulator.finish() {
+        report(&error, &pending, true, 0);
+        all_succeeded = false;
+    }
     exit_code(all_succeeded)
+}
+
+/// Runs a `.anzan` script file: statements split by the engine's accumulator
+/// (an open bracket continues a statement across lines), evaluated in the
+/// shared session, HALTING at the first error (script semantics — the caret
+/// error gains a trailing `at file:line`). Comment-only statements (including
+/// a `#!` shebang) are for the file's reader, not the output. Returns false
+/// on the first failure — the caller exits 1.
+fn run_script_file(path: &str, calculator: &mut Calculator, pretty: bool) -> bool {
+    let Ok(source) = std::fs::read_to_string(path) else {
+        eprint_line(&format!("error: can't read '{path}'"));
+        return false;
+    };
+    let mut accumulator = anzan::StatementAccumulator::new();
+    let run = |statement: &anzan::Statement, calculator: &mut Calculator| -> bool {
+        let text = statement.text.as_str();
+        if text.starts_with('#') {
+            return true; // shebang / comment: not output
+        }
+        if text == ":mode" || text.starts_with(":mode ") {
+            return handle_mode_command(text, calculator, true);
+        }
+        if !evaluate(text, calculator, pretty, true, 0) {
+            eprint_line(&format!("at {path}:{}", statement.line));
+            return false;
+        }
+        true
+    };
+    for line in source.split('\n') {
+        if let Some(statement) = accumulator.push(line) {
+            if !run(&statement, calculator) {
+                return false;
+            }
+        }
+    }
+    let pending = accumulator.pending_text();
+    if let Err(error) = accumulator.finish() {
+        report(&error, &pending, true, 0);
+        eprint_line(&format!("at {path}"));
+        return false;
+    }
+    true
 }
 
 fn exit_code(all_succeeded: bool) -> ExitCode {

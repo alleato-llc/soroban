@@ -211,6 +211,20 @@ a comment. Comments come in three roles:
   `ans`. In a grid cell, a comment-only cell is a note: dim, holds no value,
   skipped in ranges, and an error to reference numerically (like text).
 
+### Statements and scripts
+
+One statement per **logical line**. In multi-line sources — `.anzan` script
+files, pipes, and REPL paste — a statement ends at a newline **unless** a `(`
+`[` `{` is still open, in which case the following lines continue it (they
+join into one logical line, so carets, echoes, and trailing-comment docs
+behave exactly as if it had been typed on one line; the first physical line's
+trailing comment is the statement's). An unclosed bracket at end of input is a
+loud "unterminated" error. Newlines inside a statement are ordinary
+whitespace; the continuation rule only decides where statements *end*. Because
+`#` comments cover `#!`, a `#!/usr/bin/env soroban` shebang line is a note —
+`chmod +x` makes a `.anzan` file directly executable. Script files halt at
+their first error (exit 1); see each ecosystem's CLI doc.
+
 ### Mathematical symbols
 
 First-class spellings: `×` `÷` `−` `·` (operators), `√` (prefix square
