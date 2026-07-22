@@ -1069,7 +1069,7 @@ footer.site .wrap {
   align-items: center;
 }
 .repl-modes { display: flex; gap: 4px; }
-.repl-tools { display: flex; gap: 4px; }
+.repl-tools { display: flex; gap: 4px; margin-left: auto; }
 .repl-tool {
   font: inherit;
   font-size: 0.78rem;

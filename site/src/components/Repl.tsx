@@ -238,6 +238,18 @@ export default function Repl() {
     ]);
   }
 
+  // Examples are written in the canonical (normal) grammar — running one
+  // under another dialect misreads its glyphs (in programmer mode `^` is
+  // XOR, so `(1+r)^n` becomes a bitXor error). Snap the mode badge to
+  // normal first: visible on the badge, never a silent switch.
+  function runExample(example: string) {
+    if (mode !== "normal" && calc.current) {
+      calc.current.mode = "normal";
+      setModeState("normal");
+    }
+    run(example);
+  }
+
   function onSubmit(event: Event) {
     event.preventDefault();
     run(draft);
@@ -330,7 +342,7 @@ export default function Repl() {
                       role="menuitem"
                       onClick={() => {
                         setExamplesOpen(false);
-                        run(example);
+                        runExample(example);
                       }}
                     >
                       {example}
@@ -341,27 +353,6 @@ export default function Repl() {
             </div>
           )}
         </div>
-        <input
-          ref={fileRef}
-          type="file"
-          accept=".anzan,text/plain"
-          hidden
-          onChange={(e) => {
-            const file = (e.target as HTMLInputElement).files?.[0];
-            if (file) openFile(file);
-            (e.target as HTMLInputElement).value = "";
-          }}
-        />
-      </div>
-      <div class="repl-toolbar">
-        <button
-          class="repl-mode is-active"
-          onClick={cycleMode}
-          disabled={!ready}
-          title="Cycle the language mode — # normal · $ finance · </> programmer"
-        >
-          {MODE_BADGE[mode]} {mode}
-        </button>
         <div class="repl-tools">
           <button
             class={`repl-tool ${panel === "env" ? "is-active" : ""}`}
@@ -382,6 +373,17 @@ export default function Repl() {
             ?
           </button>
         </div>
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".anzan,text/plain"
+          hidden
+          onChange={(e) => {
+            const file = (e.target as HTMLInputElement).files?.[0];
+            if (file) openFile(file);
+            (e.target as HTMLInputElement).value = "";
+          }}
+        />
       </div>
       <div class="repl-body">
         <div class="repl-log" ref={logRef} aria-live="polite">
@@ -394,7 +396,7 @@ export default function Repl() {
               </p>
               {ready &&
                 welcome.map((example) => (
-                  <button key={example} class="repl-welcome-line" onClick={() => run(example)}>
+                  <button key={example} class="repl-welcome-line" onClick={() => runExample(example)}>
                     {example}
                   </button>
                 ))}
@@ -493,6 +495,15 @@ export default function Repl() {
           spellcheck={false}
           aria-label="Anzan expression"
         />
+        <button
+          type="button"
+          class="repl-mode is-active"
+          onClick={cycleMode}
+          disabled={!ready}
+          title="Cycle the language mode — # normal · $ finance · </> programmer"
+        >
+          {MODE_BADGE[mode]} {mode}
+        </button>
       </form>
       {(examplesOpen || aboutOpen) && (
         <button
