@@ -1041,23 +1041,6 @@ footer.site .wrap {
   background: transparent;
   color: var(--text);
 }
-.repl-examples {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 0 14px 12px;
-}
-.repl-chip {
-  font: inherit;
-  font-size: 0.78rem;
-  padding: 4px 10px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--bg);
-  color: var(--muted);
-  cursor: pointer;
-}
-.repl-chip:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
 .repl-fallback { text-align: center; color: var(--muted); }
 
 /* The hero's LIVE build — the REPL island inside the carousel frame. It
@@ -1158,3 +1141,108 @@ footer.site .wrap {
 /* Outside the hero frame the log keeps a fixed height; inside .shot-live the
    flex column already sizes it. */
 .repl:not(.shot-live *) > .repl-body { }
+
+/* Menu bar (About / Open / Save As / Examples) + welcome picks + about. */
+.repl-menubar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  position: relative;
+}
+.repl-menu-btn {
+  font: inherit;
+  font-size: 0.78rem;
+  padding: 3px 9px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.repl-menu-btn:hover:not(:disabled), .repl-menu-btn.is-active {
+  background: var(--bg);
+  color: var(--text);
+}
+.repl-menu-wrap { position: relative; }
+.repl-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 30;
+  width: 340px;
+  max-width: 80vw;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px var(--shadow);
+  padding: 8px 10px;
+  text-align: left;
+}
+.repl-dropdown h3 {
+  margin: 8px 0 2px;
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.repl-dropdown h3:first-child { margin-top: 0; }
+.repl-dropdown-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  font-size: 0.78rem;
+  color: var(--accent);
+  background: none;
+  border: none;
+  padding: 2px 0;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.repl-dropdown-item:hover { text-decoration: underline; }
+.repl-welcome { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+.repl-welcome-line {
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--accent);
+  background: none;
+  border: none;
+  padding: 1px 0;
+  cursor: pointer;
+  text-align: left;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.repl-welcome-line::before { content: "› "; color: var(--faint); }
+.repl-welcome-line:hover { text-decoration: underline; }
+.repl-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  background: transparent;
+  border: none;
+  cursor: default;
+}
+.repl-about {
+  position: absolute;
+  inset: 15% 10% auto 10%;
+  z-index: 30;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 16px 48px var(--shadow);
+  padding: 18px 20px;
+  font-size: 0.85rem;
+  text-align: left;
+}
+.repl-about h3 { margin: 0 0 8px; font-size: 0.95rem; }
+.repl-about a { color: var(--accent); }
+.repl { position: relative; }

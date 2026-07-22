@@ -1,16 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { ensureWasm, WasmCalculator, reference } from "../lib/anzan";
 
-// The live REPL — the real engine (Rust → WASM), not a lookalike. One
-// stateful calculator per page visit: `ans`, variables, functions, and the
-// mode persist across lines exactly like the app's log. The toolbar mirrors
-// the desktop apps' affordances: mode picker, environment inspector, help.
+// The live REPL — the real engine (Rust → WASM), shaped like the desktop
+// apps: a menu bar (About / Open / Save As / Examples), the mode badge
+// cycler (# normal · $ finance · </> programmer — the app's input-bar
+// affordance), and the ENV / ? companion panels. One stateful calculator
+// per page visit; `ans`, variables, functions, and the mode persist.
 
 interface Line {
   input: string;
   ok: boolean;
-  text: string; // displayDescription, or the error message
-  position?: number; // error caret column, when the engine gives one
+  text: string;
+  position?: number;
 }
 
 interface Outcome {
@@ -20,6 +21,11 @@ interface Outcome {
   rawBlock?: string;
   error?: string;
   position?: number;
+}
+
+interface ScriptResult {
+  results: (Outcome & { statement?: string; line?: number })[];
+  halted: boolean;
 }
 
 interface Env {
@@ -39,21 +45,118 @@ interface RefEntry {
 type Mode = "normal" | "finance" | "programmer";
 type Panel = "none" | "env" | "help";
 
-// Click-to-run starters — each shows off something a float calculator can't.
-const EXAMPLES: { label: string; mode: Mode; lines: string[] }[] = [
-  { label: "0.1 + 0.2 == 0.3", mode: "normal", lines: ["0.1 + 0.2 == 0.3"] },
+// The app's input-bar mode affordance: # Normal · $ Finance · </> Programmer.
+const MODE_CYCLE: Mode[] = ["normal", "finance", "programmer"];
+const MODE_BADGE: Record<Mode, string> = {
+  normal: "#",
+  finance: "$",
+  programmer: "</>",
+};
+
+// The Swift app's Examples menu, verbatim (CalculatorSession.welcomeCategories)
+// — grouped for the menu; the flattened pool feeds the shuffled welcome picks.
+const EXAMPLE_CATEGORIES: { name: string; examples: string[] }[] = [
   {
-    label: "$10,000 + ($15,000 * 5%)",
-    mode: "finance",
-    lines: ["$10,000 + ($15,000 * 5%)"],
+    // The flagship: data types + recursion + namespaces + finance, one line.
+    name: "Showcase",
+    examples: [
+      "namespace Cash { data Change { quarters: Number, dimes: Number, nickels: Number, pennies: Number }; coins(c, d) = if(c < d, 0, 1 + coins(c - d, d)); makeChange(c) = Change(quarters: coins(c, 25), dimes: coins(mod(c, 25), 10), nickels: coins(mod(mod(c, 25), 10), 5), pennies: coins(mod(mod(mod(c, 25), 10), 5), 1)); changeForDollar(cost) = makeChange((1 - cost) * 100) }",
+      "Cash::changeForDollar(0.95)",
+    ],
   },
   {
-    label: "fact(20)",
-    mode: "normal",
-    lines: ["fact(n) = if(n <= 1, 1, n * fact(n - 1))", "fact(20)"],
+    name: "Higher-order",
+    examples: [
+      "map(n -> n * n, filter(x -> mod(x, 2) == 0, seq(1, 20)))",
+      "reduce((a, b) -> a * b, seq(1, 10), 1)",
+      "sum(map(x -> x^2, seq(1, 10)))",
+      "len(filter(x -> x > 5, [3, 7, 2, 9, 5, 11]))",
+    ],
   },
-  { label: "man pmt", mode: "normal", lines: ["man pmt"] },
+  {
+    name: "Reductions",
+    examples: ["∑_i=1^100(1 / i^2)", "∏_i=1^10(i)"],
+  },
+  {
+    name: "Finance",
+    examples: [
+      "pmt(0.0425/12, 360, 450000)",
+      "round(100000 * (1 + 0.05/12)^(12 * 10), 2)",
+      "npv(0.1, -1000, 300, 400, 500, 600)",
+      "fv(0.06, 10, -1200)",
+      "ipmt(0.05/12, 1, 360, 200000)",
+    ],
+  },
+  {
+    name: "Statistics",
+    examples: [
+      "stdev(82, 91, 77, 88, 64, 95)",
+      "percentile(seq(1, 100), 0.9)",
+      "median(seq(1, 99))",
+      "forecast(8, 1, 2, 3, 4, 2, 4, 6, 8)",
+    ],
+  },
+  {
+    name: "Combinatorics",
+    examples: [
+      "fact(52) / (fact(5) * fact(47))",
+      "choose(52, 5)",
+      "perm(10, 3)",
+      "lcm(12, 18)",
+    ],
+  },
+  {
+    name: "Structures",
+    examples: [
+      "sort([5, 2, 8, 1, 9, 3])",
+      "unique([3, 1, 4, 1, 5, 9, 2, 6, 5, 3])",
+      "keys({alpha: 1, beta: 2, gamma: 3})",
+      "concat([1, 2, 3], [4, 5, 6])",
+      '{name: "Ada", born: 1815}.born',
+    ],
+  },
+  {
+    name: "JSON & data types",
+    examples: [
+      'toJson({name: "Ada", scores: [91, 88, 95]})',
+      'fromJson("{\\"x\\": 3, \\"y\\": 4}")',
+      "data Point { x: Number, y: Number }",
+    ],
+  },
+  {
+    name: "Definitions & logic",
+    examples: [
+      "compound(p, r, n) = p * (1 + r)^n",
+      'if(gcd(17, 5) == 1, "coprime", "shares a factor")',
+    ],
+  },
+  {
+    name: "Programmer",
+    examples: ["0xFF + 0b1010", 'fromBase("FF", 16)', "bitXor(12, 10)", "log(2, 1024)"],
+  },
+  {
+    name: "Dates",
+    examples: ["edate(today(), 6)", "networkdays(today(), today() + 30)"],
+  },
+  {
+    name: "Scientific",
+    examples: ["atan2(1, 1) * 4", "exp(1)"],
+  },
+  {
+    name: "Simple",
+    examples: ["sqrt(3^2 + 4^2)", "2 ^ 64", "x = 12 * 80.5", "ans * 1.0825"],
+  },
 ];
+const EXAMPLE_POOL = EXAMPLE_CATEGORIES.flatMap((c) => c.examples);
+
+function shuffled<T>(items: T[]): T[] {
+  const copy = [...items];
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
 
 export default function Repl() {
   const [lines, setLines] = useState<Line[]>([]);
@@ -62,9 +165,15 @@ export default function Repl() {
   const [panel, setPanel] = useState<Panel>("none");
   const [env, setEnv] = useState<Env | null>(null);
   const [search, setSearch] = useState("");
+  const [examplesOpen, setExamplesOpen] = useState(false);
+  const [aboutOpen, setAboutOpen] = useState(false);
   const [status, setStatus] = useState<"loading" | "ready" | "failed">("loading");
   const calc = useRef<WasmCalculator | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  // The welcome picks — the app shuffles its pool on launch; ten here.
+  const welcome = useMemo(() => shuffled(EXAMPLE_POOL).slice(0, 10), []);
 
   useEffect(() => {
     let alive = true;
@@ -91,7 +200,7 @@ export default function Repl() {
     }
   }, [panel, lines]);
 
-  // The reference is static — load once, on first open.
+  // The reference is static — parse once when ready.
   const refEntries = useMemo<RefEntry[]>(
     () => (status === "ready" ? (JSON.parse(reference()) as RefEntry[]) : []),
     [status],
@@ -104,8 +213,9 @@ export default function Repl() {
     );
   }, [refEntries, search]);
 
-  function setMode(next: Mode) {
+  function cycleMode() {
     if (!calc.current) return;
+    const next = MODE_CYCLE[(MODE_CYCLE.indexOf(mode) + 1) % MODE_CYCLE.length];
     calc.current.mode = next;
     setModeState(next);
   }
@@ -124,11 +234,6 @@ export default function Repl() {
     ]);
   }
 
-  function runExample(example: (typeof EXAMPLES)[number]) {
-    setMode(example.mode);
-    for (const line of example.lines) run(line);
-  }
-
   function onSubmit(event: Event) {
     event.preventDefault();
     run(draft);
@@ -139,55 +244,157 @@ export default function Repl() {
     setPanel((current) => (current === which ? "none" : which));
   }
 
+  // Open — run a local .anzan script through the session (halts at the
+  // first error, like the CLIs).
+  function openFile(file: File) {
+    file.text().then((source) => {
+      const engine = calc.current;
+      if (!engine) return;
+      const script = JSON.parse(engine.runScript(source)) as ScriptResult;
+      setLines((prev) => [
+        ...prev,
+        ...script.results
+          .filter((r) => !(r.statement ?? "").startsWith("#"))
+          .map((r) => ({
+            input: r.statement ?? "",
+            ok: r.ok,
+            text: r.ok
+              ? (r.rawBlock ?? r.displayDescription ?? "")
+              : (r.error ?? "error"),
+            position: r.position,
+          })),
+      ]);
+    });
+  }
+
+  // Save As — the session's inputs as a runnable .anzan script.
+  function saveAs() {
+    const source =
+      "#!/usr/bin/env soroban\n# Saved from soroban.alleato.dev\n" +
+      lines.map((l) => l.input).join("\n") +
+      "\n";
+    const blob = new Blob([source], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "session.anzan";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   if (status === "failed") {
     return <p class="repl-fallback">The live demo needs WebAssembly — try the downloads above instead.</p>;
   }
 
+  const ready = status === "ready";
+
   return (
     <div class="repl" data-status={status}>
-      <div class="repl-toolbar">
-        <div role="tablist" aria-label="Language mode" class="repl-modes">
-          {(["normal", "finance", "programmer"] as Mode[]).map((m) => (
-            <button
-              key={m}
-              role="tab"
-              class={`repl-mode ${mode === m ? "is-active" : ""}`}
-              onClick={() => setMode(m)}
-              disabled={status !== "ready"}
-            >
-              {m}
-            </button>
-          ))}
+      <div class="repl-menubar">
+        <button class="repl-menu-btn" onClick={() => setAboutOpen(true)} disabled={!ready}>
+          About
+        </button>
+        <button class="repl-menu-btn" onClick={() => fileRef.current?.click()} disabled={!ready}>
+          Open…
+        </button>
+        <button
+          class="repl-menu-btn"
+          onClick={saveAs}
+          disabled={!ready || lines.length === 0}
+          title="Download the session as a runnable .anzan script"
+        >
+          Save As…
+        </button>
+        <div class="repl-menu-wrap">
+          <button
+            class={`repl-menu-btn ${examplesOpen ? "is-active" : ""}`}
+            onClick={() => setExamplesOpen((open) => !open)}
+            disabled={!ready}
+            aria-expanded={examplesOpen}
+          >
+            Examples ▾
+          </button>
+          {examplesOpen && (
+            <div class="repl-dropdown" role="menu">
+              {EXAMPLE_CATEGORIES.map((group) => (
+                <div key={group.name}>
+                  <h3>{group.name}</h3>
+                  {group.examples.map((example) => (
+                    <button
+                      key={example}
+                      class="repl-dropdown-item"
+                      role="menuitem"
+                      onClick={() => {
+                        setExamplesOpen(false);
+                        run(example);
+                      }}
+                    >
+                      {example}
+                    </button>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".anzan,text/plain"
+          hidden
+          onChange={(e) => {
+            const file = (e.target as HTMLInputElement).files?.[0];
+            if (file) openFile(file);
+            (e.target as HTMLInputElement).value = "";
+          }}
+        />
+      </div>
+      <div class="repl-toolbar">
+        <button
+          class="repl-mode is-active"
+          onClick={cycleMode}
+          disabled={!ready}
+          title="Cycle the language mode — # normal · $ finance · </> programmer"
+        >
+          {MODE_BADGE[mode]} {mode}
+        </button>
         <div class="repl-tools">
           <button
             class={`repl-tool ${panel === "env" ? "is-active" : ""}`}
             onClick={() => togglePanel("env")}
-            disabled={status !== "ready"}
+            disabled={!ready}
             aria-pressed={panel === "env"}
             title="The session's variables, functions, and data types"
           >
-            𝑥 environment
+            ENV
           </button>
           <button
             class={`repl-tool ${panel === "help" ? "is-active" : ""}`}
             onClick={() => togglePanel("help")}
-            disabled={status !== "ready"}
+            disabled={!ready}
             aria-pressed={panel === "help"}
             title="Every built-in function, searchable"
           >
-            ? help
+            ?
           </button>
         </div>
       </div>
       <div class="repl-body">
         <div class="repl-log" ref={logRef} aria-live="polite">
           {lines.length === 0 && (
-            <p class="repl-hint">
-              {status === "loading"
-                ? "Loading the engine…"
-                : "This is the real engine — the same Rust core the desktop app ships, compiled to WebAssembly. Try an example:"}
-            </p>
+            <div class="repl-welcome">
+              <p class="repl-hint">
+                {status === "loading"
+                  ? "Loading the engine…"
+                  : "This is the real engine — the same Rust core the desktop apps ship, compiled to WebAssembly. Try one:"}
+              </p>
+              {ready &&
+                welcome.map((example) => (
+                  <button key={example} class="repl-welcome-line" onClick={() => run(example)}>
+                    {example}
+                  </button>
+                ))}
+            </div>
           )}
           {lines.map((line, i) => (
             <div class="repl-entry" key={i}>
@@ -275,26 +482,43 @@ export default function Repl() {
           class="repl-input"
           value={draft}
           onInput={(e) => setDraft((e.target as HTMLInputElement).value)}
-          placeholder={status === "ready" ? "Type an expression — Enter to evaluate" : "Loading…"}
-          disabled={status !== "ready"}
+          placeholder={ready ? "Type an expression — Enter to evaluate" : "Loading…"}
+          disabled={!ready}
           autocomplete="off"
           autocapitalize="off"
           spellcheck={false}
           aria-label="Anzan expression"
         />
       </form>
-      <div class="repl-examples">
-        {EXAMPLES.map((example) => (
-          <button
-            key={example.label}
-            class="repl-chip"
-            onClick={() => runExample(example)}
-            disabled={status !== "ready"}
-          >
-            {example.label}
+      {(examplesOpen || aboutOpen) && (
+        <button
+          class="repl-backdrop"
+          aria-label="Close"
+          onClick={() => {
+            setExamplesOpen(false);
+            setAboutOpen(false);
+          }}
+        />
+      )}
+      {aboutOpen && (
+        <div class="repl-about" role="dialog" aria-label="About">
+          <h3>Soroban・算盤 in the browser</h3>
+          <p>
+            This REPL runs the <strong>same exact-decimal Rust engine</strong>{" "}
+            the desktop apps ship, compiled to WebAssembly — 50 significant
+            digits, no floating-point drift. Sessions live in your tab;
+            nothing is sent anywhere.
+          </p>
+          <p>
+            <a href="/anzan">Language spec</a> ·{" "}
+            <a href="https://github.com/alleato-llc/soroban">Source</a> ·{" "}
+            <a href="#top">Downloads</a>
+          </p>
+          <button class="repl-menu-btn" onClick={() => setAboutOpen(false)}>
+            Close
           </button>
-        ))}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
