@@ -19,6 +19,13 @@ export class WasmCalculator {
      */
     documentation(name: string): string;
     /**
+     * The session's ENVIRONMENT — what the apps' inspector shows. JSON:
+     * `{"ans":{"description":…,"display":…}?, "variables":[{name,display,
+     * canonical}], "functions":[{name,source}], "dataTypes":[{name,
+     * declaration}]}`, each list sorted by name.
+     */
+    environment(): string;
+    /**
      * Evaluate one statement. Returns a JSON string:
      * `{"ok":true,"kind":"value|function|data|documentation|comment",
      *   "description":…,"displayDescription":…,"rawBlock":…?}` or
@@ -56,6 +63,13 @@ export class WasmStatementAccumulator {
     pendingText(): string;
     push(line: string): string;
 }
+
+/**
+ * The full builtin REFERENCE — what the apps' help browser (⌘/) lists. JSON
+ * `[{"name":…,"category":…,"signature":…,"summary":…,"examples":[…]}]` in
+ * registry order (categories arrive grouped).
+ */
+export function reference(): string;
 
 /**
  * The CLI display heuristics, for the ts CLI's pretty mode.

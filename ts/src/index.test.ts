@@ -5,6 +5,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  reference,
   Calculator,
   StatementAccumulator,
   runScript,
@@ -177,5 +178,27 @@ describe("display heuristics", () => {
   it("detects programmer notation", () => {
     expect(usesProgrammerNotation("0x10 + 1")).toBe(true);
     expect(usesProgrammerNotation("1 + 1")).toBe(false);
+  });
+});
+
+describe("environment & reference", () => {
+  it("lists variables, functions, and ans", () => {
+    const calc = new Calculator();
+    calc.evaluate("rate = 0.05");
+    calc.evaluate("double(x) = x * 2  # twice");
+    const env = calc.environment();
+    expect(env.variables).toEqual([
+      { name: "rate", display: "0.05", canonical: "0.05" },
+    ]);
+    expect(env.functions[0]?.source).toContain("double(x) = x * 2");
+    expect(env.ans.display).toBe("0.05");
+  });
+
+  it("exposes the full builtin reference", () => {
+    const entries = reference();
+    expect(entries.length).toBeGreaterThan(100);
+    const pmt = entries.find((e) => e.name === "pmt");
+    expect(pmt?.signature).toContain("pmt(rate, nper, pv");
+    expect(pmt?.category.length).toBeGreaterThan(0);
   });
 });

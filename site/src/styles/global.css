@@ -975,6 +975,8 @@ footer.site .wrap {
 /* ---- The live REPL (#try) — the wasm engine island ---------------------- */
 .repl {
   text-align: left; /* the hero centers; the log must not */
+  display: flex;
+  flex-direction: column;
   max-width: 720px;
   margin: 0 auto;
   border: 1px solid var(--border);
@@ -1006,7 +1008,7 @@ footer.site .wrap {
   color: var(--bg);
 }
 .repl-log {
-  height: 260px;
+  min-height: 260px;
   overflow-y: auto;
   padding: 12px 14px;
   font-size: 0.9rem;
@@ -1073,11 +1075,86 @@ footer.site .wrap {
 .shot-live .repl {
   max-width: none;
   height: 100%;
-  display: flex;
-  flex-direction: column;
 }
 .shot-live .repl-log {
-  flex: 1;
-  height: auto;
   min-height: 0;
 }
+
+/* Toolbar split: modes left, tool buttons (environment/help) right. */
+.repl-toolbar {
+  justify-content: space-between;
+  align-items: center;
+}
+.repl-modes { display: flex; gap: 4px; }
+.repl-tools { display: flex; gap: 4px; }
+.repl-tool {
+  font: inherit;
+  font-size: 0.78rem;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.repl-tool.is-active {
+  background: var(--surface);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* The log + optional side panel (inspector / help), like the app's layout. */
+.repl-body {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+}
+.repl-body .repl-log { flex: 1; min-width: 0; }
+.repl-panel {
+  width: 46%;
+  max-width: 340px;
+  border-left: 1px solid var(--border);
+  overflow-y: auto;
+  padding: 10px 12px;
+  font-size: 0.8rem;
+}
+.repl-panel h3 {
+  margin: 10px 0 4px;
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.repl-panel h3:first-child { margin-top: 0; }
+.repl-row { color: var(--text); padding: 1px 0; word-break: break-word; }
+.repl-row.mono { font-family: inherit; }
+.repl-empty { color: var(--faint); font-style: italic; }
+.repl-search {
+  width: 100%;
+  font: inherit;
+  font-size: 0.8rem;
+  padding: 5px 8px;
+  margin-bottom: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  outline: none;
+}
+.repl-ref-sig {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.8rem;
+  padding: 1px 0;
+}
+.repl-ref-sig:hover { text-decoration: underline; }
+
+/* Outside the hero frame the log keeps a fixed height; inside .shot-live the
+   flex column already sizes it. */
+.repl:not(.shot-live *) > .repl-body { }

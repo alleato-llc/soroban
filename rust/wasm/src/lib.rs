@@ -100,6 +100,49 @@ impl WasmCalculator {
         json!(names).to_string()
     }
 
+    /// The session's ENVIRONMENT — what the apps' inspector shows. JSON:
+    /// `{"ans":{"description":…,"display":…}?, "variables":[{name,display,
+    /// canonical}], "functions":[{name,source}], "dataTypes":[{name,
+    /// declaration}]}`, each list sorted by name.
+    pub fn environment(&self) -> String {
+        let env = self.inner.environment();
+        let mut variables: Vec<_> = env
+            .user_variables()
+            .iter()
+            .map(|(name, value)| {
+                json!({
+                    "name": name,
+                    "display": value.display_description(),
+                    "canonical": value.to_string(),
+                })
+            })
+            .collect();
+        variables.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+        let mut functions: Vec<_> = env
+            .all_user_functions()
+            .iter()
+            .map(|f| json!({ "name": f.name, "source": f.source }))
+            .collect();
+        functions.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+        let mut data_types: Vec<_> = env
+            .user_data_types()
+            .iter()
+            .map(|(name, t)| json!({ "name": name, "declaration": t.source }))
+            .collect();
+        data_types.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+        let ans = env.ans();
+        json!({
+            "ans": {
+                "description": ans.to_string(),
+                "display": ans.display_description(),
+            },
+            "variables": variables,
+            "functions": functions,
+            "dataTypes": data_types,
+        })
+        .to_string()
+    }
+
     /// Documentation for a name — JSON
     /// `{"signature":…,"summary":…,"examples":[…]}` or `null`.
     pub fn documentation(&self, name: &str) -> String {
@@ -170,6 +213,27 @@ impl Default for WasmStatementAccumulator {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// The full builtin REFERENCE — what the apps' help browser (⌘/) lists. JSON
+/// `[{"name":…,"category":…,"signature":…,"summary":…,"examples":[…]}]` in
+/// registry order (categories arrive grouped).
+#[wasm_bindgen]
+pub fn reference() -> String {
+    let entries: Vec<_> = anzan::FunctionRegistry::standard()
+        .all()
+        .iter()
+        .map(|f| {
+            json!({
+                "name": f.name,
+                "category": f.category.heading(),
+                "signature": f.signature,
+                "summary": f.summary,
+                "examples": f.examples,
+            })
+        })
+        .collect();
+    json!(entries).to_string()
 }
 
 /// The CLI display heuristics, for the ts CLI's pretty mode.

@@ -5,7 +5,7 @@
 //
 // `ensureWasm()` memoizes init into a single promise (the dorado pattern):
 // components await it before constructing calculators.
-import init, { WasmCalculator } from "../wasm/anzan_wasm.js";
+import init, { WasmCalculator, reference } from "../wasm/anzan_wasm.js";
 import wasmUrl from "../wasm/anzan_wasm_bg.wasm?url";
 
 let ready: Promise<unknown> | null = null;
@@ -15,4 +15,4 @@ export function ensureWasm(): Promise<unknown> {
   return ready;
 }
 
-export { WasmCalculator };
+export { WasmCalculator, reference };

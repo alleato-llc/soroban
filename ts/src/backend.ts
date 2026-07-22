@@ -25,6 +25,9 @@ export interface BackendSession {
   setMode(mode: string): void;
   /** JSON: `[{name}]`. */
   completions(prefix: string): string;
+  /** JSON: `{ans, variables, functions, dataTypes}` — the session's
+   * environment, what the apps' inspector shows. */
+  environment(): string;
   /** JSON: `{signature, summary, examples}` or `"null"`. */
   documentation(name: string): string;
 }
@@ -47,6 +50,9 @@ export interface EngineBackend {
   trailingComment(line: string): string | undefined;
   /** Whether a line speaks programmer notation (0x/0b, bit functions). */
   usesProgrammerNotation(line: string): boolean;
+  /** JSON: every builtin — `[{name, category, signature, summary,
+   * examples}]` — the apps' help/reference browser. */
+  reference(): string;
 }
 
 // The wasm-pack `--target nodejs` surface (see ../wasm/node/anzan_wasm.d.ts).
@@ -56,6 +62,7 @@ interface WasmCalculatorInstance {
   mode: string;
   completions(prefix: string): string;
   documentation(name: string): string;
+  environment(): string;
 }
 
 interface WasmAccumulatorInstance {
@@ -70,6 +77,7 @@ interface WasmExports {
   WasmStatementAccumulator: new () => WasmAccumulatorInstance;
   trailingComment(line: string): string | undefined;
   usesProgrammerNotation(line: string): boolean;
+  reference(): string;
 }
 
 const require = createRequire(import.meta.url);
@@ -104,6 +112,7 @@ export const wasmBackend: EngineBackend = {
       },
       completions: (prefix) => session.completions(prefix),
       documentation: (name) => session.documentation(name),
+      environment: () => session.environment(),
     };
   },
   createAccumulator() {
@@ -111,6 +120,7 @@ export const wasmBackend: EngineBackend = {
   },
   trailingComment: (line) => loadWasm().trailingComment(line),
   usesProgrammerNotation: (line) => loadWasm().usesProgrammerNotation(line),
+  reference: () => loadWasm().reference(),
 };
 
 export const defaultBackend: EngineBackend = wasmBackend;

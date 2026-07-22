@@ -56,6 +56,25 @@ class WasmCalculator {
         }
     }
     /**
+     * The session's ENVIRONMENT — what the apps' inspector shows. JSON:
+     * `{"ans":{"description":…,"display":…}?, "variables":[{name,display,
+     * canonical}], "functions":[{name,source}], "dataTypes":[{name,
+     * declaration}]}`, each list sorted by name.
+     * @returns {string}
+     */
+    environment() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.wasmcalculator_environment(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
      * Evaluate one statement. Returns a JSON string:
      * `{"ok":true,"kind":"value|function|data|documentation|comment",
      *   "description":…,"displayDescription":…,"rawBlock":…?}` or
@@ -219,6 +238,26 @@ class WasmStatementAccumulator {
 }
 if (Symbol.dispose) WasmStatementAccumulator.prototype[Symbol.dispose] = WasmStatementAccumulator.prototype.free;
 exports.WasmStatementAccumulator = WasmStatementAccumulator;
+
+/**
+ * The full builtin REFERENCE — what the apps' help browser (⌘/) lists. JSON
+ * `[{"name":…,"category":…,"signature":…,"summary":…,"examples":[…]}]` in
+ * registry order (categories arrive grouped).
+ * @returns {string}
+ */
+function reference() {
+    let deferred1_0;
+    let deferred1_1;
+    try {
+        const ret = wasm.reference();
+        deferred1_0 = ret[0];
+        deferred1_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+    }
+}
+exports.reference = reference;
 
 /**
  * The CLI display heuristics, for the ts CLI's pretty mode.

@@ -71,6 +71,39 @@ export interface Completion {
   name: string;
 }
 
+export interface EnvironmentVariable {
+  name: string;
+  display: string;
+  canonical: string;
+}
+
+export interface EnvironmentFunction {
+  name: string;
+  source: string;
+}
+
+export interface EnvironmentDataType {
+  name: string;
+  declaration: string;
+}
+
+/** The session's environment — what the apps' inspector shows. */
+export interface Environment {
+  ans: { description: string; display: string };
+  variables: EnvironmentVariable[];
+  functions: EnvironmentFunction[];
+  dataTypes: EnvironmentDataType[];
+}
+
+/** One builtin in the full reference (the apps' help browser). */
+export interface ReferenceEntry {
+  name: string;
+  category: string;
+  signature: string;
+  summary: string;
+  examples: string[];
+}
+
 export interface FunctionDoc {
   signature: string;
   summary: string;
@@ -114,6 +147,11 @@ export class Calculator {
   /** Documentation for a builtin, special form, or user function. */
   documentation(name: string): FunctionDoc | null {
     return JSON.parse(this.session.documentation(name)) as FunctionDoc | null;
+  }
+
+  /** The session's environment — variables, functions, data types, `ans`. */
+  environment(): Environment {
+    return JSON.parse(this.session.environment()) as Environment;
   }
 }
 
@@ -173,6 +211,12 @@ export function trailingComment(line: string): string | undefined {
 }
 
 /** Whether a line speaks programmer notation (0x/0b, bit functions). */
+/** Every builtin, for a help/reference browser — name, category, signature,
+ * summary, examples. */
+export function reference(backend: EngineBackend = defaultBackend): ReferenceEntry[] {
+  return JSON.parse(backend.reference()) as ReferenceEntry[];
+}
+
 export function usesProgrammerNotation(line: string): boolean {
   return defaultBackend.usesProgrammerNotation(line);
 }

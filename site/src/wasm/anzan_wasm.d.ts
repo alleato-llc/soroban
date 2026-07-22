@@ -19,6 +19,13 @@ export class WasmCalculator {
      */
     documentation(name: string): string;
     /**
+     * The session's ENVIRONMENT — what the apps' inspector shows. JSON:
+     * `{"ans":{"description":…,"display":…}?, "variables":[{name,display,
+     * canonical}], "functions":[{name,source}], "dataTypes":[{name,
+     * declaration}]}`, each list sorted by name.
+     */
+    environment(): string;
+    /**
      * Evaluate one statement. Returns a JSON string:
      * `{"ok":true,"kind":"value|function|data|documentation|comment",
      *   "description":…,"displayDescription":…,"rawBlock":…?}` or
@@ -58,6 +65,13 @@ export class WasmStatementAccumulator {
 }
 
 /**
+ * The full builtin REFERENCE — what the apps' help browser (⌘/) lists. JSON
+ * `[{"name":…,"category":…,"signature":…,"summary":…,"examples":[…]}]` in
+ * registry order (categories arrive grouped).
+ */
+export function reference(): string;
+
+/**
  * The CLI display heuristics, for the ts CLI's pretty mode.
  */
 export function trailingComment(line: string): string | undefined;
@@ -70,10 +84,12 @@ export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly __wbg_wasmcalculator_free: (a: number, b: number) => void;
     readonly __wbg_wasmstatementaccumulator_free: (a: number, b: number) => void;
+    readonly reference: () => [number, number];
     readonly trailingComment: (a: number, b: number) => [number, number];
     readonly usesProgrammerNotation: (a: number, b: number) => number;
     readonly wasmcalculator_completions: (a: number, b: number, c: number) => [number, number];
     readonly wasmcalculator_documentation: (a: number, b: number, c: number) => [number, number];
+    readonly wasmcalculator_environment: (a: number) => [number, number];
     readonly wasmcalculator_evaluate: (a: number, b: number, c: number) => [number, number];
     readonly wasmcalculator_mode: (a: number) => [number, number];
     readonly wasmcalculator_new: () => number;
@@ -85,9 +101,9 @@ export interface InitOutput {
     readonly wasmstatementaccumulator_pendingText: (a: number) => [number, number];
     readonly wasmstatementaccumulator_push: (a: number, b: number, c: number) => [number, number];
     readonly __wbindgen_externrefs: WebAssembly.Table;
+    readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
-    readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __externref_table_dealloc: (a: number) => void;
     readonly __wbindgen_start: () => void;
 }

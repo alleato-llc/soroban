@@ -13,6 +13,12 @@ published (nothing publishes it).
 
 ### Added
 
+- **`environment()` and `reference()`** — the session's inspector data
+  (variables, functions, data types, `ans`) and the full builtin reference
+  (name/category/signature/summary/examples), mirroring the desktop apps'
+  environment inspector and help browser. Exposed on `Calculator` /
+  the backend seam; the site's REPL toolbar consumes both.
+
 - **`@alleato/anzan` 0.1.0 — Anzan for JS hosts.** The Rust engine compiled to
   WebAssembly (`rust/wasm`, vendored under `wasm/` for both the nodejs and web
   targets — no Rust toolchain needed to install or CI) behind a typed SDK:
