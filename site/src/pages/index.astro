@@ -1,6 +1,7 @@
 ---
 import Layout from "../layouts/Layout.astro";
 import Card from "../components/Card.astro";
+import Repl from "../components/Repl.tsx";
 import Download from "../components/Download.tsx";
 import { resolveDownloads } from "../lib/releases";
 
@@ -522,6 +523,17 @@ const links = {
                     </Fragment>
                 </Card>
             </div>
+        </section>
+
+        <section id="try">
+            <h2>Try it, right here</h2>
+            <p class="section-lede">
+                This is the real engine — the same exact-decimal Rust core the
+                desktop apps ship, compiled to WebAssembly. Variables,
+                functions, and the mode persist as you type, just like the
+                app's log.
+            </p>
+            <Repl client:only="preact" />
         </section>
 
         <section class="support" id="source">
