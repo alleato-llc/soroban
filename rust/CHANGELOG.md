@@ -17,6 +17,19 @@ DMG.
 
 ### Added
 
+- **`anzan-wasm` — the engine compiled for JS hosts.** A new workspace-excluded
+  binding crate (`rust/wasm`, mirroring `gui`'s exclusion): a thin `cdylib`
+  over `anzan` exposing stateful `WasmCalculator` sessions and the statement
+  accumulator to WebAssembly, JSON across the boundary — the engine behind the
+  `@alleato/anzan` npm package (`ts/`) and the site's live REPL. Never
+  reimplements language logic. Two wasm32-only cfg shims land in `anzan`
+  (native builds untouched): `today()` reads the JS clock
+  (`SystemTime::now()` panics on wasm32), and `MAX_CALL_DEPTH` drops to 200 —
+  the wasm stack can't grow (`stacker` no-ops), and default Node/browser
+  stacks trap near ~500 minimal frames, so the engine's clean
+  missing-base-case error must always fire first. Proper tail recursion is
+  unaffected (constant stack).
+
 - **Anzan scripts.** The `soroban` CLI runs `.anzan` files
   (`soroban change.anzan` — halts at the first error with `at file:line`,
   exit 1; mixes with expression arguments in one session), pipes are
