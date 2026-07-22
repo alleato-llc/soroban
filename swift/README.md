@@ -35,7 +35,7 @@ cd swift && open "$(xcodebuild -project Soroban.xcodeproj -scheme Soroban \
   -configuration Release -showBuildSettings 2>/dev/null \
   | awk '/ BUILT_PRODUCTS_DIR/{print $3}')/Soroban.app"
 
-# The soroban CLI (one-shot args / pipe / REPL) — depends on Anzan only
+# The soroban CLI (one-shot args / .anzan script files / pipe / REPL) — depends on Anzan only
 cd swift/Engine && swift build -c release --product soroban
 install -m 755 .build/release/soroban ~/.local/bin/
 ```

@@ -5,6 +5,13 @@ The Rust implementation of the Anzan language: `lexer` → `parser` → `eval`
 fronted by the `Calculator` facade. Knows **nothing** about grids or files —
 hosts wire cells, reflection, and mutation in through resolver closures.
 
+**Embedding** is `Calculator` + `script::StatementAccumulator` (splits
+multi-line source into logical statements — the same primitive behind `.anzan`
+files, statement-aware pipes, and REPL continuation): split, then `evaluate`
+each statement. The CLI (`rust/cli`) is a two-file demonstration of exactly
+that surface. The crate is consumable as a cargo **git dependency** by package
+name (`anzan = { git = "…" }`); it is not on crates.io.
+
 > **This is a doc about the CRATE**, not the language. For the language itself —
 > grammar, precedence, the number lexicon, functions, `data` types, reflection —
 > read the shared spec [../../docs/ANZAN.md](../../docs/ANZAN.md) and its

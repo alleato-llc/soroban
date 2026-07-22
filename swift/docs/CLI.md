@@ -26,7 +26,7 @@ The `soroban` executable is a product of the `Engine` package
 - **Keep it plumbing-thin.** Any behavior worth testing belongs in the engine —
   the CLI target is excluded from the coverage report for exactly that reason.
 
-## Three modes, by shape
+## Four modes, by shape
 
 `main.swift` picks the mode from how it was invoked; one `Calculator` carries
 `ans`, variables, and user functions across all inputs in a run:

@@ -42,6 +42,14 @@ reason. Cross-module internals use the `package` access level.
 
 ## Anzan
 
+**Embedding** is `Calculator` + `StatementAccumulator` (`Script.swift` —
+splits multi-line source into logical statements, the same primitive behind
+`.anzan` files, statement-aware pipes, and REPL continuation): split, then
+`evaluate` each statement. The CLI ([CLI.md](CLI.md)) is a one-file
+demonstration of exactly that surface. Note the package manifest lives at
+`swift/Engine/`, not the repo root, so external consumption is by local path
+dependency.
+
 ### BigDecimal — the core invariant
 
 `BigDecimal` (`Number/BigDecimal.swift`) = `BigInt` significand × 10^exponent,
