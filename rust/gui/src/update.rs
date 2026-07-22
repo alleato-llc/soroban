@@ -17,14 +17,20 @@ impl App {
         // outside click); the toggle itself opens/switches menus, the screenshot
         // harness's background frames must leave it be, and — crucially now that
         // the menu bar auto-hides — plain cursor movement must NOT close it, or
-        // reaching for a submenu item would dismiss the menu before you got there.
+        // reaching for a submenu item would dismiss the menu before you got
+        // there. Hovering an Examples category (which flies out its submenu)
+        // must likewise leave the menu open.
         if self.menu_open.is_some()
             && !matches!(
                 message,
-                Message::ToggleMenu(_) | Message::Shot(_) | Message::PointerMoved(_, _)
+                Message::ToggleMenu(_)
+                    | Message::Shot(_)
+                    | Message::PointerMoved(_, _)
+                    | Message::HoverExampleCategory(_)
             )
         {
             self.menu_open = None;
+            self.examples_submenu = None;
         }
         match message {
             Message::InputChanged(text) => {
@@ -444,7 +450,10 @@ impl App {
                     self.load_draft();
                 }
             }
-            Message::ToggleMenu(next) => self.menu_open = next,
+            Message::ToggleMenu(next) => {
+                self.menu_open = next;
+                self.examples_submenu = None; // a fresh menu starts unexpanded
+            }
             // Inspector row → jump: select the cell and show the grid.
             Message::JumpTo(address) => {
                 self.grid_selection = Some(GridSelection::cell(address.row, address.column));
@@ -456,6 +465,16 @@ impl App {
                 self.session.set_input(sample);
                 return operation::focus(log_input_id());
             }
+            // An Examples-menu pick: like the Swift app's `useExample` — show
+            // the log and fill the input bar with the FULL expression (the menu
+            // label may be truncated); the user presses Enter to evaluate. The
+            // guard above already closed the menu.
+            Message::UseExample(example) => {
+                self.mode = ViewMode::Log;
+                self.session.set_input(example.to_string());
+                return operation::focus(log_input_id());
+            }
+            Message::HoverExampleCategory(which) => self.examples_submenu = which,
             Message::SuggestionPicked(index) => return self.accept_suggestion(index),
             Message::AcceptSuggestion => {
                 // Tab accepts the highlighted row, or the top one; inert when the

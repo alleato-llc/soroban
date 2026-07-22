@@ -128,6 +128,13 @@ pub(crate) enum Message {
     JumpTo(CellAddress),
     /// Insert a sample expression from the empty-state into the log input.
     SampleClicked(String),
+    /// An Examples-menu pick: show the log and fill the input bar with the
+    /// expression (not evaluated — the user presses Enter). Mirrors the Swift
+    /// app's `useExample`; the entries are `examples::CATEGORIES` statics.
+    UseExample(&'static str),
+    /// Fly out the Examples-menu category at this index (`Some(i)`, emitted on
+    /// row hover) or retract any open one (`None`).
+    HoverExampleCategory(Option<usize>),
     /// Accept the autocomplete row at this index (a click on a popup row).
     SuggestionPicked(usize),
     /// Accept the highlighted autocomplete row, or the first if none is

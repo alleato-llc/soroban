@@ -17,6 +17,14 @@ DMG.
 
 ### Added
 
+- **The GUI gains an Examples menu.** A new top-level menu after View, mirroring
+  the macOS app's: one flyout submenu per category — led by the new Showcase
+  group (the `namespace Cash { … }` one-liner and `Cash::changeForDollar(0.95)`)
+  — with the categories/expressions copied verbatim from the Swift app's
+  `CalculatorSession.welcomeCategories` (the shared vocabulary). Picking an
+  example shows the log and fills the input bar with the full expression (not
+  evaluated — Enter runs it); long expressions truncate in the menu label only.
+
 - **`anzan-wasm` — the engine compiled for JS hosts.** A new workspace-excluded
   binding crate (`rust/wasm`, mirroring `gui`'s exclusion): a thin `cdylib`
   over `anzan` exposing stateful `WasmCalculator` sessions and the statement

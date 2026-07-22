@@ -157,7 +157,9 @@ impl App {
                 .height(Length::Fill)
                 .into()
         };
-        let log = container(log_inner).width(Length::Fill).height(Length::Fill);
+        let log = container(log_inner)
+            .width(Length::Fill)
+            .height(Length::Fill);
 
         // The input is pinned to the BOTTOM, behind a `>` prompt; Enter submits
         // (no `=` button — the original has none). A mode affordance (cycles

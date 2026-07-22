@@ -65,6 +65,51 @@ fn font_for_resolves_bundled_and_falls_back() {
 }
 
 #[test]
+fn examples_menu_is_last_with_one_submenu_per_category() {
+    use rime::widgets::MenuItem;
+    let app = App::default();
+    let menus = app.menus();
+    let examples = menus.last().expect("a menu bar");
+    assert_eq!(examples.title, "Examples");
+    assert_eq!(examples.items.len(), crate::examples::CATEGORIES.len());
+    for (item, (name, expressions)) in examples.items.iter().zip(crate::examples::CATEGORIES) {
+        match item {
+            MenuItem::Submenu { label, items, .. } => {
+                assert_eq!(label, name);
+                assert_eq!(items.len(), expressions.len());
+            }
+            _ => panic!("category {name} is not a submenu"),
+        }
+    }
+}
+
+#[test]
+fn use_example_shows_the_log_and_fills_the_input_without_evaluating() {
+    let mut app = App {
+        mode: ViewMode::Grid,
+        ..App::default()
+    };
+    let entries_before = app.session.entries().len();
+    let _ = app.update(Message::UseExample("sqrt(3^2 + 4^2)"));
+    assert!(app.mode == ViewMode::Log);
+    assert_eq!(app.session.input(), "sqrt(3^2 + 4^2)");
+    // Not evaluated — the user presses Enter.
+    assert_eq!(app.session.entries().len(), entries_before);
+}
+
+#[test]
+fn hovering_an_examples_category_expands_it_without_closing_the_menu() {
+    let mut app = App::default();
+    let _ = app.update(Message::ToggleMenu(Some(4))); // open Examples
+    let _ = app.update(Message::HoverExampleCategory(Some(2)));
+    assert_eq!(app.menu_open, Some(4));
+    assert_eq!(app.examples_submenu, Some(2));
+    // Closing (or switching) the menu retracts the flyout.
+    let _ = app.update(Message::ToggleMenu(None));
+    assert_eq!(app.examples_submenu, None);
+}
+
+#[test]
 fn zoom_font_is_clamped_to_the_slider_range() {
     let mut app = App {
         font_size: 27.0,
