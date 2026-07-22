@@ -26,7 +26,7 @@ package struct Parser {
     }
 
     package static func parse(_ source: String, mode: LanguageMode = .normal) throws(EngineError) -> Expression {
-        var parser = Parser(tokens: try Lexer.tokenize(source), mode: mode)
+        var parser = Parser(tokens: try Lexer.tokenize(source, mode: mode), mode: mode)
         let expr = try parser.statement()
         try parser.expectEnd()
         return expr

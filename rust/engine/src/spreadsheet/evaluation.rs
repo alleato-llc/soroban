@@ -204,6 +204,12 @@ impl Spreadsheet {
             Value::FixedInt(f) => CellDisplay::Value(f.decimal()),
             // Value; CellFormat handles currency padding.
             Value::FixedDecimal(d) => CellDisplay::Value(d.value.clone()),
+            // A finance-mode literal's symbol/grouping is INPUT formatting; a
+            // cell's own NumberFormat is what governs how it displays.
+            // Storing the raw value keeps the two from fighting (and keeps
+            // references numeric).
+            Value::Money(m) => CellDisplay::Value(m.value.clone()),
+            Value::Grouped(n) => CellDisplay::Value(n.clone()),
             Value::String(text) => CellDisplay::Text(text.clone()),
             Value::Array(_) | Value::Map(_) | Value::Record(_) => CellDisplay::Error(format!(
                 "a cell can't hold {} — aggregate it (e.g. sum(…)) or reference a field",

@@ -4,6 +4,7 @@
 //! survive — the same technique control expressions use.
 
 use anzan::lexer::{Lexer, TokenKind};
+use anzan::LanguageMode;
 use std::ops::Range;
 
 pub struct NamedCells;
@@ -27,7 +28,7 @@ impl NamedCells {
         on_owning_sheet: bool,
         replacement: &str,
     ) -> Option<String> {
-        let tokens = Lexer::tokenize(raw).ok()?;
+        let tokens = Lexer::tokenize(raw, LanguageMode::Normal).ok()?;
         let old = old_name.to_lowercase();
         let owning = owning_sheet.map(str::to_lowercase);
 

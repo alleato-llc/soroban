@@ -62,6 +62,19 @@ impl Expression {
         let sub = |e: &Expression| e.source_text_in(mode);
         match self {
             Self::Number(value) => value.to_string(),
+            // The currency literal re-parses in finance mode, the only mode that
+            // produces it; the symbol is part of the value, so it always renders.
+            Self::Money { value, currency } => {
+                let magnitude = if value.is_negative() {
+                    -value
+                } else {
+                    value.clone()
+                };
+                let sign = if value.is_negative() { "-" } else { "" };
+                format!("{sign}{}{magnitude}", currency.symbol())
+            }
+            // Grouping is presentation; source renders the plain number.
+            Self::Grouped(value) => value.to_string(),
             Self::StringLiteral(text) => quoted(text),
             Self::Variable(name) => name.clone(),
             Self::CellReference { sheet, column, row } => {

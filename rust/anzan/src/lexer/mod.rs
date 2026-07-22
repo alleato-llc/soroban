@@ -8,20 +8,95 @@ mod token;
 
 pub use token::{Token, TokenKind};
 
-use crate::{BigDecimal, EngineError};
+use crate::eval::currency::Currency;
+use crate::{BigDecimal, EngineError, LanguageMode};
 use num_bigint::BigInt;
 
 pub struct Lexer {
     chars: Vec<char>,
     index: usize,
+    /// Finance mode adds two literal forms (currency, thousands grouping);
+    /// every other mode lexes identically. See docs/MODES.md.
+    mode: LanguageMode,
+    /// The token before the one being scanned — distinguishes a CALL paren
+    /// (`max(`) from a grouping paren (`(`), which decides whether `,` inside
+    /// it can be a thousands separator.
+    previous_kind: Option<TokenKind>,
+    /// Per-bracket "may `,` group here?". `,` is the argument separator FIRST:
+    /// inside a call's argument list (and inside `[…]`/`{…}`) grouping is off,
+    /// so `max(138,561)` keeps meaning two arguments. Empty means top level,
+    /// where grouping is allowed.
+    grouping_stack: Vec<bool>,
+}
+
+/// True for a Unicode currency symbol (general category Sc) — the finance-mode
+/// money-literal prefix. Mirrors Swift's `Character.isCurrencySymbol`; `char`
+/// has no such predicate in std, so the category's ranges are spelled out.
+fn is_currency_symbol(c: char) -> bool {
+    matches!(c,
+        '\u{0024}'                    // $
+        | '\u{00A2}'..='\u{00A5}'     // ¢ £ ¤ ¥
+        | '\u{058F}'                  // ֏
+        | '\u{060B}'                  // ؋
+        | '\u{07FE}'..='\u{07FF}'
+        | '\u{09F2}'..='\u{09F3}'
+        | '\u{09FB}'
+        | '\u{0AF1}'
+        | '\u{0BF9}'
+        | '\u{0E3F}'                  // ฿
+        | '\u{17DB}'                  // ៛
+        | '\u{20A0}'..='\u{20C0}'     // ₠ … ₿ (includes € U+20AC)
+        | '\u{A838}'
+        | '\u{FDFC}'                  // ﷼
+        | '\u{FE69}'
+        | '\u{FF04}'                  // ＄
+        | '\u{FFE0}'..='\u{FFE1}'
+        | '\u{FFE5}'..='\u{FFE6}'
+        | '\u{11FDD}'..='\u{11FE0}'
+        | '\u{1E2FF}'
+        | '\u{1ECB0}')
 }
 
 impl Lexer {
-    fn new(source: &str) -> Self {
+    fn new(source: &str, mode: LanguageMode) -> Self {
         Self {
             chars: source.chars().collect(),
             index: 0,
+            mode,
+            previous_kind: None,
+            grouping_stack: Vec::new(),
         }
+    }
+
+    /// May a `,` inside a numeric literal group thousands right here?
+    fn grouping_allowed(&self) -> bool {
+        self.mode == LanguageMode::Finance && *self.grouping_stack.last().unwrap_or(&true)
+    }
+
+    /// Maintains `previous_kind` + `grouping_stack` after each token is
+    /// emitted.
+    fn track(&mut self, kind: &TokenKind) {
+        match kind {
+            TokenKind::LeftParen => {
+                // A paren directly after a callee is an ARGUMENT list; a bare
+                // one is grouping, where `,` can't be a separator, so digits
+                // may group.
+                let is_call = matches!(
+                    self.previous_kind,
+                    Some(TokenKind::Identifier(_))
+                        | Some(TokenKind::RightParen)
+                        | Some(TokenKind::RightBracket)
+                );
+                self.grouping_stack.push(!is_call);
+            }
+            // Array/map literals separate with `,`.
+            TokenKind::LeftBracket | TokenKind::LeftBrace => self.grouping_stack.push(false),
+            TokenKind::RightParen | TokenKind::RightBracket | TokenKind::RightBrace => {
+                self.grouping_stack.pop();
+            }
+            _ => {}
+        }
+        self.previous_kind = Some(kind.clone());
     }
 
     /// Splits a source line into its code and its trailing `#` comment,
@@ -57,10 +132,11 @@ impl Lexer {
     }
 
     /// Tokenizes the whole input, appending a final `End` token.
-    pub fn tokenize(source: &str) -> Result<Vec<Token>, EngineError> {
-        let mut lexer = Lexer::new(source);
+    pub fn tokenize(source: &str, mode: LanguageMode) -> Result<Vec<Token>, EngineError> {
+        let mut lexer = Lexer::new(source, mode);
         let mut tokens = Vec::new();
         while let Some(token) = lexer.next_token()? {
+            lexer.track(&token.kind);
             tokens.push(token);
         }
         tokens.push(Token {
@@ -207,6 +283,32 @@ impl Lexer {
 
         if c.is_numeric() {
             return self.number(start).map(Some);
+        }
+
+        // A finance-mode currency literal: any Unicode currency symbol
+        // directly before a number ($10, €10, £1234.56, $10,000). This runs
+        // BEFORE the '$' cell-pin branch, so '$' followed by a DIGIT is money
+        // while '$' followed by a LETTER stays the column pin ($A:1) — the two
+        // never collide. Outside finance mode nothing here applies and '$'
+        // keeps its only meaning.
+        if self.mode == LanguageMode::Finance
+            && is_currency_symbol(c)
+            && self.starts_number(self.index + 1)
+        {
+            let Some(currency) = Currency::from_glyph(c) else {
+                return Err(EngineError::LexError {
+                    message: format!(
+                        "unsupported currency '{c}' — supported symbols are $ € £ ¥ ₹ ₩ ₽ ₿; use Money(value, \"CODE\") for others"
+                    ),
+                    position: start,
+                });
+            };
+            self.index += 1;
+            let (value, _) = self.decimal_value(self.index)?;
+            return Ok(Some(Token {
+                kind: TokenKind::Money { value, currency },
+                range: start..self.index,
+            }));
         }
 
         // '$' pins a cell reference's column ($A:1); the row pin rides the
@@ -356,12 +458,71 @@ impl Lexer {
                 return self.radix_literal(start, radix);
             }
         }
+        let (value, grouped) = self.decimal_value(start)?;
+        // A grouped literal carries its formatting so the grouping echoes into
+        // the answer: 138,561 * 9% → 12,470.49. Presentation only — see Grouped.
+        let kind = if grouped {
+            TokenKind::Grouped(value)
+        } else {
+            TokenKind::Number(value)
+        };
+        Ok(Token {
+            kind,
+            range: start..self.index,
+        })
+    }
+
+    /// True when a plain decimal number starts at `at` — a digit, or a `.`
+    /// followed by one (`.5`). Decides whether a currency symbol is a money
+    /// literal or just an unexpected character.
+    fn starts_number(&self, at: usize) -> bool {
+        match self.char_at(at) {
+            None => false,
+            Some(c) if c.is_numeric() => true,
+            Some('.') => self.char_at(at + 1).is_some_and(|c| c.is_numeric()),
+            Some(_) => false,
+        }
+    }
+
+    /// Scans `123`, `1.5`, `1_000`, `2.5e-3` — and, in finance mode, thousands
+    /// groups (`138,561`, `1,234,567`). Returns the value and whether a group
+    /// separator appeared. The leading sign is not part of the literal — the
+    /// parser handles unary minus.
+    fn decimal_value(&mut self, start: usize) -> Result<(BigDecimal, bool), EngineError> {
+        let malformed_group = || EngineError::LexError {
+            message: "malformed thousands group — write 1,234 or 1,234,567".to_string(),
+            position: start,
+        };
         let mut saw_dot = false;
+        let mut grouped = false;
+        // Digits since the number began or since the last group separator — a
+        // valid group is 1-3 digits, then exactly-3-digit runs.
+        let mut run = 0;
         while let Some(c) = self.current() {
             match c {
-                '0'..='9' | '_' => self.index += 1,
+                '0'..='9' => {
+                    run += 1;
+                    self.index += 1;
+                }
+                '_' => self.index += 1,
+                ',' if self.grouping_allowed() && !saw_dot => {
+                    // Only a well-formed group continues the number. A
+                    // malformed one is a loud error rather than a silent
+                    // two-number misparse — but only where `,` couldn't have
+                    // been a separator anyway.
+                    if !(1..=3).contains(&run) || (grouped && run != 3) {
+                        return Err(malformed_group());
+                    }
+                    grouped = true;
+                    run = 0;
+                    self.index += 1;
+                }
                 '.' if !saw_dot => {
+                    if grouped && run != 3 {
+                        return Err(malformed_group());
+                    }
                     saw_dot = true;
+                    run = 0;
                     self.index += 1;
                 }
                 'e' | 'E' => {
@@ -394,18 +555,24 @@ impl Lexer {
                 position: start,
             });
         }
+        // The run after the LAST separator has to close the grouping: 1,23 and
+        // 1,2345 are as malformed as 1234,567 was at the separator itself.
+        if grouped && !saw_dot && run != 3 {
+            return Err(malformed_group());
+        }
 
-        let text: String = self.chars[start..self.index].iter().collect();
+        // Both separators are formatting; BigDecimal parses the bare digits.
+        let text: String = self.chars[start..self.index]
+            .iter()
+            .filter(|c| **c != ',' && **c != '_')
+            .collect();
         let Some(value) = BigDecimal::parse(&text) else {
             return Err(EngineError::LexError {
                 message: format!("malformed number '{text}'"),
                 position: start,
             });
         };
-        Ok(Token {
-            kind: TokenKind::Number(value),
-            range: start..self.index,
-        })
+        Ok((value, grouped))
     }
 
     /// `0xDEAD_BEEF` / `0b1010_1010` — exact integers at any width. A letter,

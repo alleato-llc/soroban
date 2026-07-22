@@ -2,6 +2,11 @@
 public struct Token: Equatable, Sendable {
     public enum Kind: Equatable, Sendable {
         case number(BigDecimal)
+        // A finance-mode currency literal ($10, €10) — the glyph resolved to a
+        // Currency. Thousands grouping rides the value. Lexed only in finance mode.
+        case money(BigDecimal, currency: Currency)
+        // A finance-mode grouped plain number (138,561) — presentation only.
+        case grouped(BigDecimal)
         case identifier(String)
         case string(String)    // "…" — double-quoted string literal, escapes applied
         // A:1 — column as typed, row 1-based. The pins ($A:$1) are COPY-TIME

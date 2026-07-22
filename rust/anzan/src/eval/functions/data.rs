@@ -176,6 +176,8 @@ fn len(arguments: &[Value]) -> Result<Value, EngineError> {
         Value::Number(_)
         | Value::FixedInt(_)
         | Value::FixedDecimal(_)
+        | Value::Money(_)
+        | Value::Grouped(_)
         | Value::Function(_)
         | Value::Host(_) => Err(EngineError::domain(
             "len() works on arrays, maps, and strings",

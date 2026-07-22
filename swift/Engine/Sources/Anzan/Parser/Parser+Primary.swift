@@ -10,6 +10,12 @@ extension Parser {
         case .number(let value):
             return .number(value)
 
+        case .money(let value, let currency):
+            return .money(value, currency: currency)
+
+        case .grouped(let value):
+            return .grouped(value)
+
         case .cellReference(let column, let row, _, _):
             return try cellReferenceOrRange(sheet: nil, column: column, row: row)
 
@@ -259,6 +265,10 @@ extension Parser {
         switch token.kind {
         case .number(let value):
             return .number(value)
+        case .money(let value, let currency):
+            return .money(value, currency: currency)
+        case .grouped(let value):
+            return .grouped(value)
         case .cellReference(let column, let row, _, _):
             return .cellReference(sheet: nil, column: column, row: row)
         case .identifier(let name):

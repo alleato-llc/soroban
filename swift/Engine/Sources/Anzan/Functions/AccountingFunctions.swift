@@ -50,7 +50,30 @@ let accountingFunctions: [BuiltinFunction] = [
         examples: ["Decimal(0.5)", "Decimal(0.5, 2)", "Decimal(10.5, 5, 2)", "Decimal(1.005, 5, 2, Rounding.HalfUp)"],
         arity: 1...4,
         applyValues: { try makeFixedDecimal($0) }),
+
+    BuiltinFunction(
+        name: "Money", category: .accounting,
+        signature: "Money(value, code)",
+        summary: "A currency amount — the mode-agnostic form of the finance-mode $10 literal. `code` is an ISO currency code string (case-insensitive): USD, EUR, GBP, JPY, CNY, INR, KRW, RUB, CHF, BTC. Renders grouped to 2 decimals with the currency symbol (Money(1234.5, \"USD\") → $1,234.50). The currency propagates through arithmetic; mixing two currencies is an error.",
+        examples: ["Money(10, \"USD\")", "Money(1234.5, \"EUR\")"],
+        arity: 2...2,
+        applyValues: { try makeMoney($0) }),
 ]
+
+/// Builds a `Value.money` for the `Money(value, code)` constructor — a number
+/// and a currency code string. Unknown code → error.
+private func makeMoney(_ arguments: [Value]) throws -> Value {
+    let value = try arguments[0].asNumber(for: "Money's value")
+    guard case .string(let code) = arguments[1] else {
+        throw EngineError.domainError(
+            message: "Money's 2nd argument is a currency code string — e.g. Money(10, \"USD\")")
+    }
+    guard let currency = Currency.fromCode(code) else {
+        throw EngineError.domainError(
+            message: "unknown currency '\(code)' — use one of \(Currency.allCases.map(\.code).joined(separator: ", "))")
+    }
+    return .money(Money(value: value, currency: currency))
+}
 
 /// Builds a `Value.fixedDecimal` for the `Decimal` constructor. The arity drives
 /// the shape:

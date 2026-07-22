@@ -4,9 +4,49 @@ import BigInt
 package struct Lexer {
     private let chars: [Character]
     private var index = 0
+    /// Finance mode adds two literal forms (currency, thousands grouping); every
+    /// other mode lexes identically. See docs/MODES.md.
+    private let mode: LanguageMode
+    /// The token before the one being scanned — distinguishes a CALL paren
+    /// (`max(`) from a grouping paren (`(`), which decides whether `,` inside
+    /// it can be a thousands separator.
+    private var previousKind: Token.Kind?
+    /// Per-bracket "may `,` group here?". `,` is the argument separator FIRST:
+    /// inside a call's argument list (and inside `[…]`/`{…}`) grouping is off,
+    /// so `max(138,561)` keeps meaning two arguments. Empty means top level,
+    /// where grouping is allowed.
+    private var groupingStack: [Bool] = []
 
-    init(_ source: String) {
+    init(_ source: String, mode: LanguageMode = .normal) {
         self.chars = Array(source)
+        self.mode = mode
+    }
+
+    /// May a `,` inside a numeric literal group thousands right here?
+    private var groupingAllowed: Bool {
+        mode == .finance && (groupingStack.last ?? true)
+    }
+
+    /// Maintains `previousKind` + `groupingStack` after each token is emitted.
+    private mutating func track(_ kind: Token.Kind) {
+        switch kind {
+        case .leftParen:
+            // A paren directly after a callee is an ARGUMENT list; a bare one is
+            // grouping, where `,` can't be a separator, so digits may group.
+            let isCall: Bool
+            switch previousKind {
+            case .identifier, .rightParen, .rightBracket: isCall = true
+            default: isCall = false
+            }
+            groupingStack.append(!isCall)
+        case .leftBracket, .leftBrace:
+            groupingStack.append(false) // array/map literals separate with `,`
+        case .rightParen, .rightBracket, .rightBrace:
+            if !groupingStack.isEmpty { groupingStack.removeLast() }
+        default:
+            break
+        }
+        previousKind = kind
     }
 
     /// An ordered pair of characters — the two-char operator lookup key, so the
@@ -74,10 +114,12 @@ package struct Lexer {
     }
 
     /// Tokenizes the whole input, appending a final `.end` token.
-    package static func tokenize(_ source: String) throws(EngineError) -> [Token] {
-        var lexer = Lexer(source)
+    package static func tokenize(_ source: String,
+                                 mode: LanguageMode = .normal) throws(EngineError) -> [Token] {
+        var lexer = Lexer(source, mode: mode)
         var tokens: [Token] = []
         while let token = try lexer.next() {
+            lexer.track(token.kind)
             tokens.append(token)
         }
         tokens.append(Token(kind: .end, range: lexer.index..<lexer.index))
@@ -147,6 +189,23 @@ package struct Lexer {
 
         if c.isNumber {
             return try number(from: start)
+        }
+
+        // A finance-mode currency literal: any Unicode currency symbol directly
+        // before a number ($10, €10, £1234.56, $10,000). This runs BEFORE the
+        // '$' cell-pin branch, so '$' followed by a DIGIT is money while '$'
+        // followed by a LETTER stays the column pin ($A:1) — the two never
+        // collide. Outside finance mode nothing here applies and '$' keeps its
+        // only meaning.
+        if mode == .finance, c.isCurrencySymbol, startsNumber(at: index + 1) {
+            guard let currency = Currency.fromGlyph(c) else {
+                throw EngineError.lexError(
+                    message: "unsupported currency '\(c)' — supported symbols are $ € £ ¥ ₹ ₩ ₽ ₿; use Money(value, \"CODE\") for others",
+                    position: start)
+            }
+            index += 1
+            let scanned = try decimalValue(from: index)
+            return Token(kind: .money(scanned.value, currency: currency), range: start..<index)
         }
 
         // '$' pins a cell reference's column ($A:1); the row pin rides the
@@ -250,13 +309,61 @@ package struct Lexer {
            let radix = ["x": 16, "X": 16, "b": 2, "B": 2][String(chars[index + 1])] {
             return try radixLiteral(from: start, radix: radix)
         }
+        let scanned = try decimalValue(from: start)
+        // A grouped literal carries its formatting so the grouping echoes into
+        // the answer: 138,561 * 9% → 12,470.49. Presentation only — see Grouped.
+        return Token(kind: scanned.grouped ? .grouped(scanned.value)
+                                           : .number(scanned.value),
+                     range: start..<index)
+    }
+
+    /// True when a plain decimal number starts at `at` — a digit, or a `.`
+    /// followed by one (`.5`). Decides whether a currency symbol is a money
+    /// literal or just an unexpected character.
+    private func startsNumber(at: Int) -> Bool {
+        guard at < chars.count else { return false }
+        if chars[at].isNumber { return true }
+        return chars[at] == "." && at + 1 < chars.count && chars[at + 1].isNumber
+    }
+
+    /// Scans `123`, `1.5`, `1_000`, `2.5e-3` — and, in finance mode, thousands
+    /// groups (`138,561`, `1,234,567`). Returns the value and whether a group
+    /// separator appeared. The leading sign is not part of the literal — the
+    /// parser handles unary minus.
+    private mutating func decimalValue(from start: Int)
+        throws(EngineError) -> (value: BigDecimal, grouped: Bool) {
         var sawDot = false
+        var grouped = false
+        // Digits since the number began or since the last group separator —
+        // a valid group is 1-3 digits, then exactly-3-digit runs.
+        var run = 0
         scan: while let c = current {
             switch c {
-            case "0"..."9", "_":
+            case "0"..."9":
+                run += 1
+                index += 1
+            case "_":
+                index += 1
+            case "," where groupingAllowed && !sawDot:
+                // Only a well-formed group continues the number. A malformed
+                // one is a loud error rather than a silent two-number misparse
+                // — but only where `,` couldn't have been a separator anyway.
+                guard run >= 1, run <= 3, !grouped || run == 3 else {
+                    throw EngineError.lexError(
+                        message: "malformed thousands group — write 1,234 or 1,234,567",
+                        position: start)
+                }
+                grouped = true
+                run = 0
                 index += 1
             case "." where !sawDot:
+                if grouped, run != 3 {
+                    throw EngineError.lexError(
+                        message: "malformed thousands group — write 1,234 or 1,234,567",
+                        position: start)
+                }
                 sawDot = true
+                run = 0
                 index += 1
             case "e", "E":
                 // Exponent only counts if followed by digits (with optional sign);
@@ -278,12 +385,22 @@ package struct Lexer {
             throw EngineError.lexError(message: "malformed number '\(String(chars[start...index]))'",
                                        position: start)
         }
+        // The run after the LAST separator has to close the grouping: 1,23 and
+        // 1,2345 are as malformed as 1234,567 was at the separator itself.
+        if grouped, !sawDot, run != 3 {
+            throw EngineError.lexError(
+                message: "malformed thousands group — write 1,234 or 1,234,567",
+                position: start)
+        }
 
+        // Both separators are formatting; BigDecimal parses the bare digits.
         let text = String(chars[start..<index])
+            .replacingOccurrences(of: ",", with: "")
+            .replacingOccurrences(of: "_", with: "")
         guard let value = BigDecimal(string: text) else {
             throw EngineError.lexError(message: "malformed number '\(text)'", position: start)
         }
-        return Token(kind: .number(value), range: start..<index)
+        return (value, grouped)
     }
 
     /// `0xDEAD_BEEF` / `0b1010_1010` — exact integers at any width. A letter,

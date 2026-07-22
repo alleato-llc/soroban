@@ -55,6 +55,12 @@ struct Evaluator {
         case .number(let value):
             return .number(value)
 
+        case .money(let value, let currency):
+            return .money(Money(value: value, currency: currency))
+
+        case .grouped(let value):
+            return .grouped(value)
+
         case .stringLiteral(let text):
             return .string(text)
 
@@ -189,12 +195,29 @@ struct Evaluator {
 
         case .unaryMinus(let inner):
             let value = try evaluate(inner, in: environment, locals: locals, depth: depth)
-            return .number(try -value.asNumber(for: "-"))
+            let negated = try -value.asNumber(for: "-")
+            // Negation keeps the tag — -$1,234.50 is still dollars; -138,561
+            // still echoes grouped.
+            if case .money(let m) = value { return .money(Money(value: negated, currency: m.currency)) }
+            if case .grouped = value { return .grouped(negated) }
+            return .number(negated)
 
         case .percent(let inner):
-            // `3%` → 3 × 0.01, exact (× never rounds). Numeric only, like unary −.
+            // `3%` → 3 × 0.01, exact (× never rounds).
             let value = try evaluate(inner, in: environment, locals: locals, depth: depth)
-            return .number(try value.asNumber(for: "%") * BigDecimal(significand: 1, exponent: -2))
+            // A currency amount has no business being a percent: "$9 as a
+            // percent" is a category error, and because the symbol never changes
+            // the number it would otherwise slip through silently ($9% and 9%
+            // both scale to 0.09). Reject it loudly instead. `$10 * 5%` is
+            // unaffected — there the % applies to the plain 5, never to money.
+            if case .money = value {
+                throw EngineError.domainError(
+                    message: "can't apply % to a currency amount — % scales a plain number (e.g. $10 * 5%)")
+            }
+            let scaled = try value.asNumber(for: "%") * BigDecimal(significand: 1, exponent: -2)
+            // Grouping is presentation and echoes through the scale (138,561%).
+            if case .grouped = value { return .grouped(scaled) }
+            return .number(scaled)
 
         case .binary(let op, let lhsExpr, let rhsExpr):
             let lhs = try evaluate(lhsExpr, in: environment, locals: locals, depth: depth)

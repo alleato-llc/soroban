@@ -14,6 +14,7 @@
 use crate::cell_address::CellAddress;
 use crate::spreadsheet::Spreadsheet;
 use anzan::lexer::{Lexer, TokenKind};
+use anzan::LanguageMode;
 use std::ops::Range;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -204,7 +205,7 @@ impl ReferenceRewriter {
     /// bare when the new name is identifier-shaped, quoted otherwise.
     /// A quoted name NOT followed by `!` is a named cell and stays put.
     pub fn renaming_sheet(raw: &str, old_name: &str, new_name: &str) -> Option<String> {
-        let tokens = Lexer::tokenize(raw).ok()?;
+        let tokens = Lexer::tokenize(raw, LanguageMode::Normal).ok()?;
 
         let old = old_name.to_lowercase();
         let mut splices: Vec<(Range<usize>, String)> = Vec::new();
@@ -248,7 +249,7 @@ impl ReferenceRewriter {
     /// All real reference sites in the raw text, or `None` when it doesn't
     /// lex (plain labels) or holds none.
     fn scan(raw: &str) -> Option<Vec<Site>> {
-        let tokens = Lexer::tokenize(raw).ok()?;
+        let tokens = Lexer::tokenize(raw, LanguageMode::Normal).ok()?;
 
         let mut sites: Vec<Site> = Vec::new();
         let mut brackets: Vec<&TokenKind> = Vec::new(); // innermost-bracket tracking for {b:1}

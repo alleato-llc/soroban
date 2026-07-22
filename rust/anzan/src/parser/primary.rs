@@ -13,6 +13,10 @@ impl Parser {
         match token.kind {
             TokenKind::Number(value) => Ok(Expression::Number(value)),
 
+            TokenKind::Money { value, currency } => Ok(Expression::Money { value, currency }),
+
+            TokenKind::Grouped(value) => Ok(Expression::Grouped(value)),
+
             TokenKind::CellReference { column, row, .. } => {
                 self.cell_reference_or_range(None, column, row)
             }
@@ -328,6 +332,9 @@ impl Parser {
         let token_position = token.position();
         match token.kind {
             TokenKind::Number(value) => Ok(Expression::Number(value)),
+
+            TokenKind::Money { value, currency } => Ok(Expression::Money { value, currency }),
+            TokenKind::Grouped(value) => Ok(Expression::Grouped(value)),
             TokenKind::CellReference { column, row, .. } => Ok(Expression::CellReference {
                 sheet: None,
                 column,

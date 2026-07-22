@@ -6,6 +6,7 @@
 //! round-trip through f64 — deliberately confined to `via_double` in
 //! `math.rs`; route any new inexact function through that seam.
 
+mod format;
 mod math;
 
 use crate::EngineError;

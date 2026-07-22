@@ -45,7 +45,7 @@ extension Evaluator {
             }
             return value
 
-        case .number, .fixedInt, .fixedDecimal, .function:
+        case .number, .fixedInt, .fixedDecimal, .money, .grouped, .function:
             throw EngineError.domainError(message: "\(base.kindName) can't be indexed")
         }
     }
@@ -64,6 +64,16 @@ extension Evaluator {
         // Fixed-precision decimal arithmetic — the money-type mixing matrix.
         if FixedDecimal.isInvolved(lhs, rhs) {
             return try FixedDecimal.applyBinary(op, lhs, rhs)
+        }
+        // Finance-mode currency (docs/MODES.md) — the currency propagates and a
+        // plain (or grouped) Number is absorbed, so `$10 * 5%` is `$0.50`.
+        // Money runs before Grouped, so money + grouped → money.
+        if Money.isInvolved(lhs, rhs) {
+            return try Money.applyBinary(op, lhs, rhs)
+        }
+        // Grouped plain numbers — formatting only; the grouping echoes through.
+        if Grouped.isInvolved(lhs, rhs) {
+            return try Grouped.applyBinary(op, lhs, rhs)
         }
         let a = try lhs.asNumber(for: op.rawValue)
         let b = try rhs.asNumber(for: op.rawValue)

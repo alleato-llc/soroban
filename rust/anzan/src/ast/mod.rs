@@ -4,12 +4,22 @@ mod source;
 
 pub use source::{key_literal, quoted};
 
+use crate::eval::currency::Currency;
 use crate::eval::data_type::DataField;
 use crate::BigDecimal;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expression {
     Number(BigDecimal),
+    /// A finance-mode currency literal — `$10`, `€10`, `$10,000`. The currency
+    /// propagates through arithmetic (see `Money`), so it is part of the value.
+    Money {
+        value: BigDecimal,
+        currency: Currency,
+    },
+    /// A finance-mode grouped plain number — `138,561`. Presentation only; the
+    /// grouping echoes through a calculation (see `Grouped`).
+    Grouped(BigDecimal),
     Variable(String),
     /// `A:1` or `Budget!A:1` / `'Q1 Budget'!A:1` — `None` sheet means the
     /// sheet that owns the formula (or the active sheet, from the log).
@@ -295,7 +305,7 @@ impl Expression {
     pub fn contains_cell_reference(&self) -> bool {
         match self {
             Self::CellReference { .. } | Self::CellRange { .. } => true,
-            Self::Number(_) | Self::Variable(_) => false,
+            Self::Number(_) | Self::Money { .. } | Self::Grouped(_) | Self::Variable(_) => false,
             Self::UnaryMinus(inner) | Self::Percent(inner) => inner.contains_cell_reference(),
             Self::Binary(_, lhs, rhs) => {
                 lhs.contains_cell_reference() || rhs.contains_cell_reference()

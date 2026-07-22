@@ -60,8 +60,49 @@ canonical (Normal) grammar (see *Scope*).
 Whatever a mode has **no glyph for is written longhand** as the canonical
 function: power in Programmer is `pow(a, b)`; XOR in Normal is `bitXor(a, b)`;
 modulo in Normal/Finance is `mod(a, b)`. Nothing is ever unreachable — only
-re-spelled. (Finance is grammatically identical to Normal today; it's the home
-for future finance *display* defaults.)
+re-spelled.
+
+### Finance adds a currency type and grouped numbers
+
+Finance keeps Normal's whole arithmetic core and **adds** two ways to write a
+number. Both are refused outside Finance, so no existing formula changes meaning.
+
+| you type | Finance | Normal |
+| --- | --- | --- |
+| `$10` | `$10.00` — a currency amount | error — `$` pins a cell column (`$A:1`) |
+| `138,561` | `138,561` — grouped | error — `,` is the argument separator |
+
+**Currency is a first-class type** — a peer of `Int32(…)` and `Decimal(…)`.
+Its canonical, mode-agnostic form is the constructor `Money(value, "CODE")`, and
+the finance-mode literal `$10` is sugar for it. A currency **literal** is one of
+a closed, curated set of symbols directly before a number — `$` `€` `£` `¥` `₹`
+`₩` `₽` `₿` (`$`→USD, `¥`→JPY canonically); an *unsupported* currency glyph is a
+loud lex error, and currencies without an unambiguous glyph (CNY, CHF) are
+reachable through the constructor. `$` before a *letter* is still the
+cell-reference column pin, so `$A:1` and `$10` never collide.
+
+The currency is part of the **value**, not just its rendering — it propagates
+through arithmetic the way a `Decimal`'s type does, which is what makes
+`$10 * 5%` answer `$0.50` (`5%` has already become a plain `0.05` by the time the
+multiply sees it). A plain number is absorbed by the currency operand;
+**two different currencies is a hard error** (there is no exchange rate to apply,
+so guessing would be worse than refusing); `%` applied *to* a currency is a
+category error. The currency survives all four operators, so a money input always
+reads back as money — `$10 * $2` is `$20.00`. That is deliberate: the tag is a
+*display contract*, not a unit system, so it never models dimensionality. Money
+renders grouped at 2 decimals with the symbol outside the sign (`-$1,234.50`,
+matching the sheet's currency format). `Money(v, "CODE")` recalls the type; the
+echo (`$10.00`) is only what the log and CLI show.
+
+**Thousands grouping** (`138,561`) is a *separate*, presentation-only concern —
+NOT a type. `,` between digit groups (1-3 digits, then exactly-3-digit runs; a
+malformed group like `1,23` is a loud lex error) marks a plain number as grouped;
+it has no arithmetic rules and canonicalizes to the plain number, but it *echoes*
+through a calculation so `138,561 * 9%` shows `12,470.49`.
+
+**`,` is the argument separator first.** Grouping is suppressed inside a call's
+argument list and inside `[…]`/`{…}` literals, so `max(138,561)` still means two
+arguments. A bare (non-call) paren re-enables it, so `($15,000 * 5%)` groups.
 
 ## Why this is allowed (the principle it must satisfy)
 
