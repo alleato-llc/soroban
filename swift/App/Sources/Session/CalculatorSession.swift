@@ -190,6 +190,11 @@ final class CalculatorSession {
     /// and the Examples menu shows them grouped (always reachable, even
     /// once the persisted log hides the welcome).
     static let welcomeCategories: [(name: String, examples: [String])] = [
+        // The flagship: data types + recursion + namespaces + finance, one line.
+        ("Showcase", [
+            "namespace Cash { data Change { quarters: Number, dimes: Number, nickels: Number, pennies: Number }; coins(c, d) = if(c < d, 0, 1 + coins(c - d, d)); makeChange(c) = Change(quarters: coins(c, 25), dimes: coins(mod(c, 25), 10), nickels: coins(mod(mod(c, 25), 10), 5), pennies: coins(mod(mod(mod(c, 25), 10), 5), 1)); changeForDollar(cost) = makeChange((1 - cost) * 100) }",
+            "Cash::changeForDollar(0.95)",
+        ]),
         ("Higher-order", [
             "map(n -> n * n, filter(x -> mod(x, 2) == 0, seq(1, 20)))",
             "reduce((a, b) -> a * b, seq(1, 10), 1)",
@@ -257,7 +262,9 @@ final class CalculatorSession {
         ]),
     ]
 
-    static let welcomePool: [String] = welcomeCategories.flatMap(\.examples)
+    // Showcase is menu-only — its namespace one-liner is too long for a
+    // welcome suggestion button.
+    static let welcomePool: [String] = welcomeCategories.dropFirst().flatMap(\.examples)
 
     /// Picks an example: fills the input bar (switching to the log, where the
     /// bar lives). Used by the welcome trio and the Examples menu.

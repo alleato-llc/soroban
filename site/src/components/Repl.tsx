@@ -147,7 +147,11 @@ const EXAMPLE_CATEGORIES: { name: string; examples: string[] }[] = [
     examples: ["sqrt(3^2 + 4^2)", "2 ^ 64", "x = 12 * 80.5", "ans * 1.0825"],
   },
 ];
-const EXAMPLE_POOL = EXAMPLE_CATEGORIES.flatMap((c) => c.examples);
+// Showcase is menu-only — its namespace one-liner is too long for a
+// welcome suggestion line.
+const EXAMPLE_POOL = EXAMPLE_CATEGORIES.filter((c) => c.name !== "Showcase").flatMap(
+  (c) => c.examples,
+);
 
 function shuffled<T>(items: T[]): T[] {
   const copy = [...items];
