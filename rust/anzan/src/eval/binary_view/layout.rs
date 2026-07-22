@@ -140,14 +140,13 @@ impl BinaryView {
                             color,
                             ..FieldSpec::new(name, width)
                         });
-                    } else if let Some(width) = bits_width {
+                    } else {
+                        let width = bits_width?;
                         layout.push(FieldSpec {
                             color,
                             base,
                             ..FieldSpec::new(name, width)
                         });
-                    } else {
-                        return None;
                     }
                 }
                 Some(layout)
