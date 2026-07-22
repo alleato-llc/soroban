@@ -468,9 +468,11 @@ astro-island {
 .hero-shot .bt-opt:first-child {
   border-radius: 8px 0 0 8px;
 }
+.hero-shot .bt-opt + .bt-opt {
+  border-left: none;
+}
 .hero-shot .bt-opt:last-child {
   border-radius: 0 8px 8px 0;
-  border-left: none;
 }
 .hero-shot .bt-opt.is-active {
   background: var(--accent);
@@ -972,6 +974,7 @@ footer.site .wrap {
 
 /* ---- The live REPL (#try) — the wasm engine island ---------------------- */
 .repl {
+  text-align: left; /* the hero centers; the log must not */
   max-width: 720px;
   margin: 0 auto;
   border: 1px solid var(--border);
@@ -1054,3 +1057,27 @@ footer.site .wrap {
 }
 .repl-chip:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
 .repl-fallback { text-align: center; color: var(--muted); }
+
+/* The hero's LIVE build — the REPL island inside the carousel frame. It
+   fills the same aspect-ratio box the screenshots reserve; the carousel's
+   click/cycle machinery is disabled for it (see the hero script). */
+.hero-shot .shot-live {
+  position: absolute;
+  inset: 0;
+  display: none;
+}
+.hero-shot[data-build="live"] .shot-live { display: block; }
+.hero-shot[data-build="live"] .shot { display: none; }
+.hero-shot[data-build="live"] .dots { visibility: hidden; }
+.hero-shot[data-build="live"] .shots { cursor: default; }
+.shot-live .repl {
+  max-width: none;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.shot-live .repl-log {
+  flex: 1;
+  height: auto;
+  min-height: 0;
+}
