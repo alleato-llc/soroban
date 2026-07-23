@@ -39,6 +39,18 @@ still suppresses all release workflows regardless of the paths it touches — se
 
 ### Changed
 
+- **CI consolidation: one always-running `ci.yml` with always-reporting
+  checks.** The four CI workflows (Swift `ci.yml`, `rust-ci.yml`, `ts-ci.yml`,
+  `site-ci.yml`) merged into a single workflow whose jobs all start on every
+  PR and push to `main`; a `dorny/paths-filter` `changes` job (the dorado
+  pattern, with a shared `spec` YAML anchor merged into every engine filter)
+  decides real-work-vs-skip per job, and a skipped job satisfies branch
+  protection — so the six required checks always resolve and merges no
+  longer need an admin bypass when a PR misses a workflow's paths. The six
+  required check names are unchanged byte-for-byte; each job's steps,
+  caching, and matrix carried over faithfully. Release workflows
+  (`release.yml`, `release-rust.yml`, `deploy-site.yml`) are untouched.
+
 - **Finance mode is retired; its literals are now core grammar.** Currency
   (`$10`, `€10` — sugar for `Money(v, "CODE")`) and thousands grouping
   (`138,561`) lex in EVERY mode: the `$`-before-a-letter cell pin and the
