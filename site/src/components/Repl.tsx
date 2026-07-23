@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { createPortal } from "preact/compat";
 import { ensureWasm, WasmCalculator, reference } from "../lib/anzan";
 
 // The live REPL — the real engine (Rust → WASM), shaped like the desktop
@@ -400,7 +401,7 @@ export default function Repl() {
     </div>
   ));
 
-  return (
+  const tree = (
     <div
       ref={rootRef}
       class={`repl ${fullscreen ? "is-fullscreen" : ""}`}
@@ -688,4 +689,9 @@ export default function Repl() {
       )}
     </div>
   );
+
+  // In fullscreen, portal the whole tree to <body> — the hero carousel has a
+  // transformed ancestor, which would trap `position: fixed` inside the frame
+  // instead of the viewport. Escaping to body makes the overlay truly full.
+  return fullscreen ? createPortal(tree, document.body) : tree;
 }
