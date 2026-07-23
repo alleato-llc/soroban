@@ -27,7 +27,8 @@ still suppresses all release workflows regardless of the paths it touches — se
 
 - **Scientific mode — the standard calculator trio (normal / scientific /
   programmer) — and the `°` degree literal** (`spec/anzan/modes.feature`,
-  `spec/anzan/mathematics.feature`; Swift landed, Rust/ts mirrors to follow).
+  `spec/anzan/mathematics.feature`; Swift, Rust, and the ts/wasm/site
+  surfaces all land together — Swift 579 / Rust 579 / ts 279 scenarios).
   Scientific keeps Normal's grammar and changes only how a plain NUMERIC
   result echoes: scientific notation at the value's own significant digits
   (`123456 * 2` → `2.46912e5`, never rounded), with an ENG style

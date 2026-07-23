@@ -21,7 +21,6 @@ import {
   trailingComment,
   type AnzanError,
   type EvalSuccess,
-  type Mode,
 } from "../index.js";
 
 const CLI_VERSION = "0.1.0";
@@ -54,8 +53,6 @@ examples:
 scripts: one statement per line; inside an unclosed ( [ { the statement
 continues onto the next line. \`#\` comments; a \`#!/usr/bin/env anzan\`
 shebang line makes a chmod +x .anzan file directly executable.`;
-
-const MODE_NAMES: readonly Mode[] = ["normal", "programmer", "finance"];
 
 /** Error display: the offending line, a caret under the column (when the
  * engine gives one — the same offsets the app's log renders), the message. */
@@ -116,22 +113,34 @@ function evaluateLine(
   return true;
 }
 
-/** `:mode [normal|programmer|finance]` — show or set the input/display
- * dialect (docs/MODES.md). */
+/** The dialect + style, for the `:mode` status line — "scientific eng" when
+ * the ENG variant is on, otherwise just the mode name. */
+function modeText(calculator: Calculator): string {
+  return calculator.mode === "scientific" && calculator.sciStyle === "eng"
+    ? "scientific eng"
+    : calculator.mode;
+}
+
+/** `:mode [normal|programmer|scientific [eng]]` — show or set the
+ * input/display dialect (docs/MODES.md). The parsing itself is the engine's
+ * one shared seam (`setModeParsing`), so the mode list and the unknown-mode
+ * errors (`:mode finance` gets the currency-promotion hint) can't drift from
+ * the native CLIs'. */
 function handleModeCommand(line: string, calculator: Calculator, quiet: boolean): boolean {
   const space = line.indexOf(" ");
   if (space < 0) {
-    if (!quiet) console.log(`mode: ${calculator.mode} — use :mode normal|programmer|finance`);
+    if (!quiet) {
+      console.log(`mode: ${modeText(calculator)} — use :mode normal|programmer|scientific [eng]`);
+    }
     return true;
   }
-  const argument = line.slice(space + 1);
-  const name = argument.trim().toLowerCase() as Mode;
-  if (!MODE_NAMES.includes(name)) {
-    process.stderr.write(`unknown mode '${argument}' — use normal, programmer, or finance\n`);
+  try {
+    calculator.setModeParsing(line.slice(space + 1));
+  } catch (e) {
+    process.stderr.write(`${e instanceof Error ? e.message : String(e)}\n`);
     return false;
   }
-  calculator.mode = name;
-  if (!quiet) console.log(`mode: ${name}`);
+  if (!quiet) console.log(`mode: ${modeText(calculator)}`);
   return true;
 }
 

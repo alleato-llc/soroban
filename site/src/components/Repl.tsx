@@ -3,7 +3,7 @@ import { ensureWasm, WasmCalculator, reference } from "../lib/anzan";
 
 // The live REPL — the real engine (Rust → WASM), shaped like the desktop
 // apps: a menu bar (About / Open / Save As / Examples), the mode badge
-// cycler (# normal · $ finance · </> programmer — the app's input-bar
+// cycler (# normal · π scientific · </> programmer — the app's input-bar
 // affordance), and the ENV / ? companion panels. One stateful calculator
 // per page visit; `ans`, variables, functions, and the mode persist.
 
@@ -42,14 +42,14 @@ interface RefEntry {
   summary: string;
 }
 
-type Mode = "normal" | "finance" | "programmer";
+type Mode = "normal" | "scientific" | "programmer";
 type Panel = "none" | "env" | "help";
 
-// The app's input-bar mode affordance: # Normal · $ Finance · </> Programmer.
-const MODE_CYCLE: Mode[] = ["normal", "finance", "programmer"];
+// The app's input-bar mode affordance: # Normal · π Scientific · </> Programmer.
+const MODE_CYCLE: Mode[] = ["normal", "scientific", "programmer"];
 const MODE_BADGE: Record<Mode, string> = {
   normal: "#",
-  finance: "$",
+  scientific: "π",
   programmer: "</>",
 };
 
@@ -500,7 +500,7 @@ export default function Repl() {
           class="repl-mode is-active"
           onClick={cycleMode}
           disabled={!ready}
-          title="Cycle the language mode — # normal · $ finance · </> programmer"
+          title="Cycle the language mode — # normal · π scientific · </> programmer"
         >
           {MODE_BADGE[mode]} {mode}
         </button>

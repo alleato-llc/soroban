@@ -22,7 +22,12 @@ export {
 } from "./backend.js";
 
 /** The language dialect — see docs/MODES.md. */
-export type Mode = "normal" | "programmer" | "finance";
+export type Mode = "normal" | "programmer" | "scientific";
+
+/** The scientific-mode echo variant: plain SCI (`2.46912e5`) or ENG
+ * (`246.912e3` — the exponent snapped to a multiple of 3). A display style,
+ * not a mode: one `scientific` dialect, two notations. */
+export type SciStyle = "sci" | "eng";
 
 /** What a successful statement produced. */
 export type EvalKind = "value" | "function" | "data" | "documentation" | "comment";
@@ -136,6 +141,25 @@ export class Calculator {
 
   set mode(mode: Mode) {
     this.session.setMode(mode);
+  }
+
+  /** The scientific-mode echo variant (`sci` | `eng`) — display only, ignored
+   * outside scientific mode. */
+  get sciStyle(): SciStyle {
+    return this.session.getSciStyle() as SciStyle;
+  }
+
+  set sciStyle(style: SciStyle) {
+    this.session.setSciStyle(style);
+  }
+
+  /** Apply a `:mode` command argument — `"programmer"`, `"scientific eng"` —
+   * through the engine's one shared parse seam, the same one the native CLIs,
+   * the GUI, and the spec use, so the mode list and errors can't drift.
+   * Throws the engine's own message on an unknown mode/style (`finance` gets
+   * the currency-promotion hint). */
+  setModeParsing(argument: string): void {
+    this.session.setModeParsing(argument);
   }
 
   /** Identifier completions for a prefix — the same engine autocomplete the

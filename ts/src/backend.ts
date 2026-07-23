@@ -21,8 +21,15 @@ export interface BackendSession {
    * the first error, like a `.anzan` script. */
   runScript(source: string): string;
   getMode(): string;
-  /** Throws on an unknown mode name. */
+  /** Throws on an unknown mode name (the engine's own message — `finance`
+   * gets the currency-promotion hint). */
   setMode(mode: string): void;
+  getSciStyle(): string;
+  /** Throws on an unknown style name (`sci` | `eng`). */
+  setSciStyle(style: string): void;
+  /** Applies a `:mode` command argument ("scientific eng") through the
+   * engine's shared parse seam; throws the engine's error text. */
+  setModeParsing(argument: string): void;
   /** JSON: `[{name}]`. */
   completions(prefix: string): string;
   /** JSON: `{ans, variables, functions, dataTypes}` — the session's
@@ -60,6 +67,8 @@ interface WasmCalculatorInstance {
   evaluate(line: string): string;
   runScript(source: string): string;
   mode: string;
+  sciStyle: string;
+  setModeParsing(argument: string): void;
   completions(prefix: string): string;
   documentation(name: string): string;
   environment(): string;
@@ -110,6 +119,11 @@ export const wasmBackend: EngineBackend = {
       setMode: (mode) => {
         session.mode = mode;
       },
+      getSciStyle: () => session.sciStyle,
+      setSciStyle: (style) => {
+        session.sciStyle = style;
+      },
+      setModeParsing: (argument) => session.setModeParsing(argument),
       completions: (prefix) => session.completions(prefix),
       documentation: (name) => session.documentation(name),
       environment: () => session.environment(),

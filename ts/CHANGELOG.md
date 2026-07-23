@@ -13,6 +13,23 @@ published (nothing publishes it).
 
 ### Added
 
+- **Scientific mode replaces finance; currency is core grammar** (the shared
+  spec change — see the root CHANGELOG). `Mode` is now
+  `normal | programmer | scientific`; currency (`$10`) and thousands grouping
+  (`138,561`) work in every mode with no mode switch. New on `Calculator`:
+  `sciStyle` (`"sci" | "eng"` — the scientific-echo variant) and
+  `setModeParsing(":mode"-argument)` — the engine's one shared `:mode` parse
+  seam, so the CLI's mode list and errors (including the `finance`
+  promotion hint) can't drift from the native hosts'. `displayDescription`
+  now honors the session's mode/style across the wasm boundary
+  (`123456 * 2` echoes `2.46912e5` in scientific, `246.912e3` under `eng`),
+  and the mode-agnostic `°` degree literal arrives with the engine
+  (`sin(90°)` is `1`). The CLI speaks `:mode scientific [eng]`; the shared
+  spec run moves **267 → 279 scenarios** (modes.feature +9,
+  mathematics.feature +3, matching the native runners' 567 → 579). The
+  vendor step now refreshes all three wasm locations, including the site's
+  (`site/src/wasm`).
+
 - **`environment()` and `reference()`** — the session's inspector data
   (variables, functions, data types, `ans`) and the full builtin reference
   (name/category/signature/summary/examples), mirroring the desktop apps'
