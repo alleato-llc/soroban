@@ -10,7 +10,7 @@ extension Expression {
     /// Renders under a display dialect. Only the overloaded glyphs differ between
     /// modes (`^ % & | << >>`); everything else is identical. In `.programmer`
     /// the canonical bitwise/mod calls and the power/percent nodes render with
-    /// their infix glyphs; in `.normal`/`.finance` they render as the canonical
+    /// their infix glyphs; in `.normal`/`.scientific` they render as the canonical
     /// function / `^` / `%`. The result re-parses *under the same mode*. See
     /// `docs/MODES.md`.
     public func sourceText(mode: LanguageMode = .normal) -> String {
@@ -19,8 +19,8 @@ extension Expression {
         case .number(let value):
             return value.description
         case .money(let value, let currency):
-            // The currency literal re-parses in finance mode, the only mode that
-            // produces it; the symbol is part of the value, so it always renders.
+            // The currency literal is core grammar — it re-parses in any mode;
+            // the symbol is part of the value, so it always renders.
             let magnitude = value.isNegative ? -value : value
             return (value.isNegative ? "-" : "") + currency.symbol + magnitude.description
         case .grouped(let value):
@@ -42,6 +42,10 @@ extension Expression {
             // Postfix; compound inner expressions self-parenthesize, so `3%`,
             // `x%`, `(a + b)%` all re-parse to the same percent.
             return "\(sub(inner))%"
+        case .degrees(let inner):
+            // `°` is mode-agnostic (no dialect owns another meaning), so it
+            // renders — and re-parses — identically everywhere.
+            return "\(sub(inner))°"
         case .binary(let op, let lhs, let rhs):
             // Power has no `^` glyph in Programmer mode (`^` is XOR) → pow(...).
             if mode == .programmer, case .power = op {

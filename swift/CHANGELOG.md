@@ -17,6 +17,24 @@ The GitHub Release for each tag is the point of truth for the signed, notarized
 
 ### Added
 
+- **Scientific mode + the `°` degree literal; finance mode retired.**
+  `LanguageMode` is now the standard trio — normal / **scientific** /
+  programmer. Scientific keeps Normal's grammar and changes only the echo of
+  a plain numeric result: `BigDecimal.scientificText` / `engineeringText`
+  (pure digit-string math, mantissa at the value's own significant digits)
+  surface through the new `EvalOutcome.displayDescription(mode:style:)` seam,
+  which the app log, the CLI, and the spec's `the log echoes` all render
+  through; `Calculator.sciStyle` (`sci`|`eng`) selects the ENG variant
+  (`:mode scientific eng`). The currency (`$10`) and grouping (`138,561`)
+  literals are un-gated into the CORE lexer (every mode; `$A:1` and
+  `max(138,561)` unchanged), and `:mode` parsing moves to the one shared
+  `Calculator.setMode(parsing:)` seam — `:mode finance` errors with the
+  promotion hint in every host. The postfix `°` literal (lexer token, AST
+  `.degrees`, `× π/180` at 50-digit π) makes `sin(90°)` answer `1` in any
+  mode. App: the Settings picker and input-bar affordance become
+  `#` Normal · `π` Scientific · `</>` Programmer (the finance `$` badge is
+  gone).
+
 - **Anzan scripts.** The `soroban` CLI runs `.anzan` files
   (`soroban change.anzan` — halts at the first error with `at file:line`,
   exit 1; mixes with expression arguments in one session), pipes are

@@ -25,6 +25,28 @@ still suppresses all release workflows regardless of the paths it touches — se
 
 ### Added
 
+- **Scientific mode — the standard calculator trio (normal / scientific /
+  programmer) — and the `°` degree literal** (`spec/anzan/modes.feature`,
+  `spec/anzan/mathematics.feature`; Swift landed, Rust/ts mirrors to follow).
+  Scientific keeps Normal's grammar and changes only how a plain NUMERIC
+  result echoes: scientific notation at the value's own significant digits
+  (`123456 * 2` → `2.46912e5`, never rounded), with an ENG style
+  (`:mode scientific eng` → `246.912e3`, exponent snapped to a multiple
+  of 3). Value-carried display (Money, grouping) wins over the sci echo.
+  The new postfix `°` converts degrees to radians in every mode
+  (`x × π/180`, 50-digit π): `sin(90°)` is `1` and `90° == pi / 2` holds.
+
+### Changed
+
+- **Finance mode is retired; its literals are now core grammar.** Currency
+  (`$10`, `€10` — sugar for `Money(v, "CODE")`) and thousands grouping
+  (`138,561`) lex in EVERY mode: the `$`-before-a-letter cell pin and the
+  `,`-is-the-argument-separator-first rule already made them collision-free
+  (`$A:1` and `max(138,561)` are unchanged). `:mode finance` errors through
+  the ordinary unknown-mode path with a hint that currency now works
+  everywhere. The finance-only pin scenarios are deleted from the spec; the
+  currency/grouping scenarios now run in the default dialect.
+
 - **The site gains Playwright UI automation for the live REPL island**
   (`site/tests/repl.spec.ts`, new `site-ci.yml` on `site/**` changes).
   Chromium drives the hero's "Live · try it" build against the real static

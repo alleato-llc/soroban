@@ -219,6 +219,14 @@ struct Evaluator {
             if case .grouped = value { return .grouped(scaled) }
             return .number(scaled)
 
+        case .degrees(let inner):
+            // `90°` → 90 × π/180 — the multiply is exact against the 60-digit
+            // π constant; the divide rounds to working precision (50 digits),
+            // so 90° == pi / 2 holds exactly. Mode-agnostic, like the AST node.
+            let value = try evaluate(inner, in: environment, locals: locals, depth: depth)
+            let radians = try value.asNumber(for: "°") * Constants.pi / BigDecimal(180)
+            return .number(radians)
+
         case .binary(let op, let lhsExpr, let rhsExpr):
             let lhs = try evaluate(lhsExpr, in: environment, locals: locals, depth: depth)
             let rhs = try evaluate(rhsExpr, in: environment, locals: locals, depth: depth)

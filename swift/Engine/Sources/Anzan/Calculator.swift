@@ -43,7 +43,44 @@ public final class Calculator {
     /// cell path always parses `.normal` (log-only scope). See `docs/MODES.md`.
     public var mode: LanguageMode = .normal
 
+    /// The Scientific-mode echo variant — plain SCI (default) or ENG
+    /// (`:mode scientific eng`). Display only; ignored outside `.scientific`.
+    public var sciStyle: ScientificStyle = .sci
+
     public init() {}
+
+    /// Applies a `:mode` command argument — "programmer", "scientific eng" —
+    /// the ONE parser behind the CLI's, the app's, and the spec's `:mode`
+    /// handling, so the mode list and the unknown-mode errors can never drift
+    /// between hosts. A bare `:mode` (show the current dialect) is the
+    /// caller's concern. `:mode scientific` resets the style to plain SCI;
+    /// `finance` gets the promotion hint (currency is core grammar now).
+    public func setMode(parsing argument: String) throws(EngineError) {
+        let words = argument.split(separator: " ").map { $0.lowercased() }
+        guard let name = words.first, words.count <= 2 else {
+            throw EngineError.domainError(
+                message: "usage: :mode normal | programmer | scientific [eng]")
+        }
+        guard let requested = LanguageMode(rawValue: name) else {
+            if name == "finance" {
+                throw EngineError.domainError(
+                    message: "'finance' is gone — currency now works in every mode "
+                        + "($10, 138,561 are core grammar); use normal, programmer, or scientific")
+            }
+            throw EngineError.domainError(
+                message: "unknown mode '\(name)' — use normal, programmer, or scientific")
+        }
+        if words.count == 2 {
+            guard requested == .scientific, let style = ScientificStyle(rawValue: words[1]) else {
+                throw EngineError.domainError(
+                    message: "unknown style '\(words[1])' — only scientific takes one: :mode scientific sci|eng")
+            }
+            sciStyle = style
+        } else if requested == .scientific {
+            sciStyle = .sci
+        }
+        mode = requested
+    }
 
     /// Evaluates one line from the log. On success a value becomes `ans`
     /// (definitions don't). A single leading `=` is tolerated (spreadsheet
@@ -280,6 +317,21 @@ public enum EvalOutcome: Equatable, Sendable, CustomStringConvertible {
     /// `10.50`) rather than its `Int32(…)` / `Decimal(…)` constructor. Hosts show
     /// this; `description` stays what they recall/copy/persist (the type survives).
     public var displayDescription: String {
+        displayDescription(mode: .normal)
+    }
+
+    /// The echo under a display dialect — the ONE seam every host (app log,
+    /// CLI, spec) renders results through. In `.scientific`, a bare NUMERIC
+    /// result echoes in scientific (or, with `style: .eng`, engineering)
+    /// notation at the value's own significant digits; value-carried display
+    /// WINS — Money still shows `$10.00`, a grouped number its grouping,
+    /// strings/records their usual form. Every other mode is the plain
+    /// `displayDescription`.
+    public func displayDescription(mode: LanguageMode,
+                                   style: ScientificStyle = .sci) -> String {
+        if mode == .scientific, case .value(.number(let number)) = self {
+            return style == .eng ? number.engineeringText : number.scientificText
+        }
         if case .value(let value) = self { return value.displayDescription }
         return description
     }
@@ -418,7 +470,7 @@ extension Calculator {
     /// operator (the previous result is the implied left operand), prefix `ans`,
     /// so `+5` reads as `ans+5`. Returns the rewritten line, or nil when no
     /// operator leads. Mode-aware: `%` is binary modulo and `& | << >>` are
-    /// operators only in `.programmer`; in `.normal`/`.finance` `%` is postfix
+    /// operators only in `.programmer`; in `.normal`/`.scientific` `%` is postfix
     /// percent and the bit glyphs aren't operators, so those don't lead.
     /// (Hosts apply this only when the field was empty — a fresh continuation —
     /// never on a programmatic rewrite like history recall.)

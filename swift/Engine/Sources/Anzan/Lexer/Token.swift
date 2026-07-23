@@ -2,10 +2,10 @@
 public struct Token: Equatable, Sendable {
     public enum Kind: Equatable, Sendable {
         case number(BigDecimal)
-        // A finance-mode currency literal ($10, €10) — the glyph resolved to a
-        // Currency. Thousands grouping rides the value. Lexed only in finance mode.
+        // A currency literal ($10, €10) — the glyph resolved to a Currency.
+        // Thousands grouping rides the value. Core grammar, every mode.
         case money(BigDecimal, currency: Currency)
-        // A finance-mode grouped plain number (138,561) — presentation only.
+        // A grouped plain number (138,561) — presentation only, every mode.
         case grouped(BigDecimal)
         case identifier(String)
         case string(String)    // "…" — double-quoted string literal, escapes applied
@@ -19,6 +19,7 @@ public struct Token: Equatable, Sendable {
         case bang              // ! — sheet qualifier (Budget!A:1); != lexes first
         case quotedName(String) // 'Q1 Budget' — sheet names with spaces
         case plus, minus, star, slash, percent, caret
+        case degree            // ° — postfix degrees→radians (90° = π/2), mode-agnostic like %
         case shiftLeft, shiftRight     // << >> — Programmer-mode bit shifts (lexed mode-agnostically; parser gates)
         case ampersand, pipe           // & | — Programmer-mode bitwise AND/OR
         case tilde                     // ~ — Programmer-mode bitwise NOT (needs a fixed width)

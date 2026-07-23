@@ -8,8 +8,9 @@
 > *binary-bits* `Int`/`UInt`. **Resolved open questions:** registered under the
 > **Accounting** reference category (Q1); `scale 0` is allowed — a base-10
 > rounded integer-valued decimal (Q3). **Deferred:** `^`-power on a decimal
-> (errors for now — Q2), typed-param dispatch (Q4), and the Finance-mode currency
-> tie-in (Q5).
+> (errors for now — Q2), typed-param dispatch (Q4), and the currency-display
+> tie-in (Q5 — since overtaken: finance mode was retired and the `$10` currency
+> literal is core grammar, see `docs/MODES.md`).
 
 ## What it is
 
@@ -150,6 +151,8 @@ For the concrete types and files, see the ecosystem docs:
    (distinct from `Int`: base-10, rounds, no two's-complement). Confirm allowed.
 4. **Dispatch** — let `Decimal` appear in typed-param annotations
    (`f(x: Decimal) = …`)? Same deferred question as the per-width `IntN`.
-5. **Finance mode tie-in** — should Finance display mode default cells to a
-   currency `CellFormat`, and/or surface `Decimal` ergonomically? (Cross-ref
-   `docs/MODES.md`; out of scope for this type's core.)
+5. **Currency-display tie-in** — largely overtaken: finance mode was retired
+   and the `$10` literal (the first-class `Money` type) is core grammar in
+   every mode. What remains open is only whether cells should surface
+   `Decimal` more ergonomically. (Cross-ref `docs/MODES.md`; out of scope for
+   this type's core.)

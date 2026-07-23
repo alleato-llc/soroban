@@ -1,17 +1,17 @@
 # Modes — input/display dialects over one language
 
-> **Status: implemented for v1 (log-only, live-input).** The engine (mode-aware
-> parser + per-mode renderer), the CLI (`:mode`), and the app (Settings picker +
-> input-bar affordance) are landed and tested; `anzan.feature` pins the
-> Programmer-mode grammar. **One deliberate v1 scoping:** the log shows existing
-> entries *verbatim* (they're inert records — stored input + result text, never
-> re-evaluated), so there is no correctness risk; the *uniform historical
-> re-skin* described under "Switching modes" is **deferred** (it needs canonical
-> storage of every entry plus recall/copy changes plus comment/error/def
-> handling — disproportionate for a cosmetic effect on an inert tape). Fixed-width
-> integer types are a *separate* feature — see `docs/FIXED-WIDTH.md`. The app's
-> binary bit editor and bit-field formats that build on this mode are covered in
-> `docs/PROGRAMMER.md`.
+> **Status: implemented (log-only, live-input).** The engine (mode-aware
+> parser + per-mode renderer + the scientific echo), the CLI (`:mode`), and the
+> app (Settings picker + input-bar affordance) are landed and tested;
+> `modes.feature` pins every dialect's behavior. **One deliberate scoping:** the
+> log shows existing entries *verbatim* (they're inert records — stored input +
+> result text, never re-evaluated), so there is no correctness risk; the
+> *uniform historical re-skin* described under "Switching modes" is **deferred**
+> (it needs canonical storage of every entry plus recall/copy changes plus
+> comment/error/def handling — disproportionate for a cosmetic effect on an
+> inert tape). Fixed-width integer types are a *separate* feature — see
+> `docs/FIXED-WIDTH.md`. The app's binary bit editor and bit-field formats that
+> build on Programmer mode are covered in `docs/PROGRAMMER.md`.
 
 ## The one-sentence model
 
@@ -26,60 +26,43 @@ what a *stored* symbol means — see "Rejected alternatives"). The refused versi
 stored the ambiguous surface text; this one stores the unambiguous canonical
 form and treats the symbol as a skin. That distinction is the whole spec.
 
-## Using modes
+## The trio
 
-### Switching
+Three modes — the standard multi-mode-calculator lineup (macOS, Windows, Casio):
 
-Both app entry points set the same per-session dialect (persisted like the theme):
+- **Normal** *(default)* — **is** the canonical spelling: today's grammar,
+  unchanged, the regression oracle.
+- **Scientific** — Normal's grammar untouched; changes only how a plain
+  *numeric result echoes*: scientific notation (`123456 * 2` → `2.46912e5`),
+  or the **ENG** variant (`:mode scientific eng`) with the exponent snapped to
+  a multiple of 3 (`246.912e3`).
+- **Programmer** — `^ & | << >> %` read as XOR / AND / OR / shifts / modulo
+  (Python precedence), `~` is bitwise NOT; power is written `pow(a, b)`.
 
-- **App → Settings → Mode** (⌘,) — a Normal / Programmer / Finance picker.
-- **App input-bar affordance** — the small icon just left of the 📖 reference
-  button (`#` Normal · `</>` Programmer · `$` Finance); click it for a menu. It
-  turns accent-colored whenever you're off Normal.
-- **`:mode` command** — type `:mode programmer` (or `finance` / `normal`)
-  directly into the **app log** *or* the **CLI** REPL/pipe; in the CLI a bare
-  `:mode` prints the current dialect. In the app it logs a divider like any
-  switch.
-- **Embedders** — set `Calculator.mode`.
+**Finance mode is gone.** Its two literal forms earned a place in the *core*
+grammar (below), which left the mode with nothing to say; `:mode finance` is
+the ordinary unknown-mode error, with a hint that currency now works
+everywhere.
 
-Mode applies to the **log / input line only**; grid cells always use the
-canonical (Normal) grammar (see *Scope*).
+## Core literals that used to be finance-mode
 
-### Same keystrokes, different dialect
+Currency and thousands grouping are **core grammar — every mode**. No existing
+formula changes meaning: `$` before a *letter* is still the cell-reference
+column pin (`$A:1`), and `,` is still the argument separator first.
 
-| you type | Normal / Finance | Programmer |
-|---|---|---|
-| `5 ^ 3` | `125` (power) | `6` (XOR) |
-| `5 & 3` | error — `&` is Programmer-only | `1` (AND) |
-| `8 >> 2` | error — `>>` is Programmer-only | `2` (shift right) |
-| `17 % 5` | error — that's `17%` then `5` (missing operator) | `2` (modulo) |
-| `3%` | `0.03` (percent) | error — `%` is binary modulo here |
-| `~UInt8(0)` | error — `~` is Programmer-only | `UInt8(255)` (bitwise NOT) |
-| `pow(2, 3)` | `8` | `8` (functions work everywhere) |
-
-Whatever a mode has **no glyph for is written longhand** as the canonical
-function: power in Programmer is `pow(a, b)`; XOR in Normal is `bitXor(a, b)`;
-modulo in Normal/Finance is `mod(a, b)`. Nothing is ever unreachable — only
-re-spelled.
-
-### Finance adds a currency type and grouped numbers
-
-Finance keeps Normal's whole arithmetic core and **adds** two ways to write a
-number. Both are refused outside Finance, so no existing formula changes meaning.
-
-| you type | Finance | Normal |
-| --- | --- | --- |
-| `$10` | `$10.00` — a currency amount | error — `$` pins a cell column (`$A:1`) |
-| `138,561` | `138,561` — grouped | error — `,` is the argument separator |
+| you type | any mode |
+| --- | --- |
+| `$10` | `$10.00` — a currency amount (`Money(10, "USD")` canonically) |
+| `138,561` | `138,561` — grouped; canonically the plain `138561` |
 
 **Currency is a first-class type** — a peer of `Int32(…)` and `Decimal(…)`.
-Its canonical, mode-agnostic form is the constructor `Money(value, "CODE")`, and
-the finance-mode literal `$10` is sugar for it. A currency **literal** is one of
-a closed, curated set of symbols directly before a number — `$` `€` `£` `¥` `₹`
-`₩` `₽` `₿` (`$`→USD, `¥`→JPY canonically); an *unsupported* currency glyph is a
-loud lex error, and currencies without an unambiguous glyph (CNY, CHF) are
-reachable through the constructor. `$` before a *letter* is still the
-cell-reference column pin, so `$A:1` and `$10` never collide.
+Its canonical form is the constructor `Money(value, "CODE")`, and the literal
+`$10` is sugar for it. A currency **literal** is one of a closed, curated set
+of symbols directly before a number — `$` `€` `£` `¥` `₹` `₩` `₽` `₿` (`$`→USD,
+`¥`→JPY canonically); an *unsupported* currency glyph is a loud lex error, and
+currencies without an unambiguous glyph (CNY, CHF) are reachable through the
+constructor. `$` before a *letter* is still the cell-reference column pin, so
+`$A:1` and `$10` never collide.
 
 The currency is part of the **value**, not just its rendering — it propagates
 through arithmetic the way a `Decimal`'s type does, which is what makes
@@ -102,7 +85,82 @@ through a calculation so `138,561 * 9%` shows `12,470.49`.
 
 **`,` is the argument separator first.** Grouping is suppressed inside a call's
 argument list and inside `[…]`/`{…}` literals, so `max(138,561)` still means two
-arguments. A bare (non-call) paren re-enables it, so `($15,000 * 5%)` groups.
+arguments — in every mode. A bare (non-call) paren re-enables it, so
+`($15,000 * 5%)` groups.
+
+## Using modes
+
+### Switching
+
+Both app entry points set the same per-session dialect (persisted like the theme):
+
+- **App → Settings → Mode** (⌘,) — a Normal / Programmer / Scientific picker.
+- **App input-bar affordance** — the small icon just left of the 📖 reference
+  button (`#` Normal · `</>` Programmer · `π` Scientific); click it for a menu.
+  It turns accent-colored whenever you're off Normal.
+- **`:mode` command** — type `:mode programmer` (or `scientific` / `normal`)
+  directly into the **app log** *or* the **CLI** REPL/pipe;
+  `:mode scientific eng` selects the engineering echo. In the CLI a bare
+  `:mode` prints the current dialect. In the app it logs a divider like any
+  switch.
+- **Embedders** — set `Calculator.mode` (and `Calculator.sciStyle`), or use
+  `Calculator.setMode(parsing:)` — the one shared `:mode` argument parser, so
+  every host errors identically.
+
+Mode applies to the **log / input line only**; grid cells always use the
+canonical (Normal) grammar (see *Scope*).
+
+### Same keystrokes, different dialect
+
+| you type | Normal / Scientific | Programmer |
+|---|---|---|
+| `5 ^ 3` | `125` (power) | `6` (XOR) |
+| `5 & 3` | error — `&` is Programmer-only | `1` (AND) |
+| `8 >> 2` | error — `>>` is Programmer-only | `2` (shift right) |
+| `17 % 5` | error — that's `17%` then `5` (missing operator) | `2` (modulo) |
+| `3%` | `0.03` (percent) | error — `%` is binary modulo here |
+| `~UInt8(0)` | error — `~` is Programmer-only | `UInt8(255)` (bitwise NOT) |
+| `pow(2, 3)` | `8` | `8` (functions work everywhere) |
+
+Whatever a mode has **no glyph for is written longhand** as the canonical
+function: power in Programmer is `pow(a, b)`; XOR in Normal is `bitXor(a, b)`;
+modulo in Normal/Scientific is `mod(a, b)`. Nothing is ever unreachable — only
+re-spelled.
+
+### Scientific changes the echo, not the grammar
+
+Scientific mode parses **exactly** like Normal — same glyphs, same precedence,
+same errors. What changes is the *display* of a plain numeric result:
+
+| result of | Normal echoes | Scientific echoes | `eng` echoes |
+|---|---|---|---|
+| `123456 * 2` | `246912` | `2.46912e5` | `246.912e3` |
+| `5` | `5` | `5e0` | `5e0` |
+| `1 / 8` | `0.125` | `1.25e-1` | `125e-3` |
+
+The mantissa keeps the value's **own** significant digits — nothing is rounded
+or padded (exactness is the language's first rule; formatting is pure
+digit-string math, never floats). The **canonical** form stays the plain
+number: `the result is`, recall, copy, and persistence all carry `246912`.
+
+**Value-carried display wins.** Money still shows `$10.00`, a grouped number
+still echoes `12,470.49`, strings/records/fixed-width values keep their own
+rendering — only bare numeric results take the scientific echo.
+
+**ENG** is a display *style* on the one `scientific` mode, not a fourth mode:
+`Calculator.sciStyle` (`sci`|`eng`, default `sci`), set via
+`:mode scientific eng`. The exponent snaps down to a multiple of 3 and the
+mantissa shifts to match (1–3 integer digits).
+
+### The `°` degree literal (mode-agnostic, showcased by Scientific)
+
+`x°` is a postfix literal like `%`: it converts degrees to radians —
+`x × π/180`, with π at the engine's 50-digit working precision — so
+`sin(90°)` is `1` and `90° == pi / 2` holds exactly. It works in **every**
+mode (no dialect owns another meaning for `°`); Scientific mode is simply
+where a hand calculator's DEG habit makes it shine. The canonical AST node is
+`.degrees(expr)`; it renders and re-parses as `x°` everywhere. The `rad(x)`
+builtin computes the same thing longhand.
 
 ## Why this is allowed (the principle it must satisfy)
 
@@ -112,7 +170,8 @@ UI state.* A mode satisfies it iff:
 
 1. **Canonical is the only thing stored or transported.** Cells, the log tape,
    the workbook codec, copy/paste, recall, and `man()` all carry the canonical
-   spelling (`mod`, `bitXor`, `pow`, `bitShift`). The dialect glyph exists only
+   spelling (`mod`, `bitXor`, `pow`, `bitShift`) and the canonical number
+   (`246912`, never the `2.46912e5` skin). The dialect glyph exists only
    while you are typing into / reading from a surface.
 2. **Every operation a mode lacks a glyph for is written longhand** (as the
    canonical function). A mode never *hides* an operation; it only *re-spells*
@@ -126,7 +185,7 @@ safe by construction, because the glyph `5^3` is never the thing of record.
 ```
    type "5 ^ 3"                         render under mode
         │                                      ▲
-        ▼   parse-under-mode                    │  AST → skin
+        ▼   parse-under-mode                    │  AST → skin · value → echo
    ┌─────────────┐   AST    ┌──────────────────────────────┐
    │ mode parser │ ───────▶ │  canonical AST (the truth)    │ ──┐
    └─────────────┘          │  e.g. .call("bitXor", 5, 3)   │   │ store / transport
@@ -140,9 +199,11 @@ safe by construction, because the glyph `5^3` is never the thing of record.
   see "What this costs").
 - **Storage and transport** are canonical and mode-free. There is **no mode
   metadata anywhere** — not on entries, not in the codec.
-- **Display** is a pure function `render(AST, mode) → text`, the existing
-  `Expression.sourceText` parameterized by mode, with a **function fallback** for
-  operations the mode doesn't own a glyph for.
+- **Display** is a pure function of `(AST, mode)` for source text
+  (`Expression.sourceText(mode:)`, with a **function fallback** for operations
+  the mode doesn't own a glyph for) and of `(value, mode, style)` for result
+  echoes (`EvalOutcome.displayDescription(mode:style:)` — the one seam every
+  host renders through; Scientific lives entirely here).
 
 Because the store carries no mode, **reload, replay, and undo are mode-free** —
 there is nothing to disambiguate. (This is what makes tracking mode-switches
@@ -150,49 +211,52 @@ unnecessary; see "Rejected alternatives → per-segment mode tracking".)
 
 ## The dialects
 
-Three to start. `Normal` **is** the canonical spelling, so the stored form is
-exactly what `Normal` renders — today's grammar, unchanged.
+`Normal` **is** the canonical spelling, so the stored form is exactly what
+`Normal` renders — today's grammar, unchanged.
 
-| operation | canonical | Normal | Programmer | Finance |
-|---|---|---|---|---|
-| power | `pow(a,b)` | `a ^ b` | `pow(a,b)` | `a ^ b` |
-| XOR | `bitXor(a,b)` | `bitXor(a,b)` | `a ^ b` | `bitXor(a,b)` |
-| AND | `bitAnd(a,b)` | `bitAnd(a,b)` | `a & b` | `bitAnd(a,b)` |
-| OR | `bitOr(a,b)` | `bitOr(a,b)` | `a \| b` | `bitOr(a,b)` |
-| shift L/R | `bitShift(a,n)` | `bitShift(a,n)` | `a << n` / `a >> n` | `bitShift(a,n)` |
-| modulo | `mod(a,b)` | `mod(a,b)` | `a % b` | `mod(a,b)` |
-| percent | `.percent` node | `x%` | `x * 0.01` | `x%` |
-| concat | `concat`/`+` | `a + b` | `a + b` | `a + b` |
+| operation | canonical | Normal / Scientific | Programmer |
+|---|---|---|---|
+| power | `pow(a,b)` | `a ^ b` | `pow(a,b)` |
+| XOR | `bitXor(a,b)` | `bitXor(a,b)` | `a ^ b` |
+| AND | `bitAnd(a,b)` | `bitAnd(a,b)` | `a & b` |
+| OR | `bitOr(a,b)` | `bitOr(a,b)` | `a \| b` |
+| shift L/R | `bitShift(a,n)` | `bitShift(a,n)` | `a << n` / `a >> n` |
+| modulo | `mod(a,b)` | `mod(a,b)` | `a % b` |
+| percent | `.percent` node | `x%` | `x * 0.01` |
+| degrees | `.degrees` node | `x°` | `x°` |
+| concat | `concat`/`+` | `a + b` | `a + b` |
 
 The point of the table: **the same glyph (`^`, `&`, `%`) is owned by a different
 operation per mode, and whatever a mode doesn't own falls back to the canonical
 function.** So in Programmer mode `pow` has *no* infix glyph and renders as
-`pow(2,3)`; in Finance mode `bitXor` renders as `bitXor(5,3)`. You can never look
+`pow(2,3)`; in Normal mode `bitXor` renders as `bitXor(5,3)`. You can never look
 at a glyph and be unsure — in your current mode it means exactly one thing, and
-the meanings it lacks are spelled out.
+the meanings it lacks are spelled out. (Scientific shares Normal's column: it
+is a *display* dialect over results, not a glyph dialect over input.)
 
 Notes that fell out of the design walk-through:
 
-- **`pow` is the one new builtin** this proposal adds (power as a function, for
-  when `^` is taken by XOR). `mod`, `bitAnd/Or/Xor`, `bitShift`, and `concat`
-  already exist; `+` already concatenates when either side is a string.
+- **`pow` is the one builtin modes added** (power as a function, for when `^`
+  is taken by XOR). `mod`, `bitAnd/Or/Xor`, `bitShift`, and `concat` already
+  exist; `+` already concatenates when either side is a string.
 - **`bitShift(a, n)`** already encodes both directions (`n > 0` left, `n < 0`
   right), so Programmer `a << n` / `a >> n` both canonicalize to it (`>>`
   negates `n`).
 - **Percent is *not* a function.** A typed `x%` is the `.percent` postfix node,
-  rendered `x%` in Normal/Finance and `x * 0.01` in Programmer (where `%` is
+  rendered `x%` in Normal/Scientific and `x * 0.01` in Programmer (where `%` is
   taken by modulo). `3% == 0.03 == 3*0.01`, exact, re-parseable in any mode — so
   no `pct` builtin is confiscated. Percent and modulo never collide because they
   have **distinct canonical forms** (`.percent` vs `mod`); they merely reuse the
   `%` glyph. One wrinkle: *editing* a percent line while in Programmer mode edits
   `x * 0.01`, which re-parses as multiplication — same value, lost percent-ness.
   Viewing-and-switching-back is lossless (viewing never touches the AST).
+- **Degrees (`°`) is not overloaded** — every mode renders `.degrees` as `x°`,
+  so it needs no fallback row logic; it's listed for completeness.
 - **`&` is Programmer-only AND.** Concatenation stays `+` (string-aware) and
   `concat()` in every mode; the long-reserved "`&` for Excel-style concat" plan
-  is dropped, since `+` already covers it. In Finance/Normal, `&` is a loud
+  is dropped, since `+` already covers it. In Normal/Scientific, `&` is a loud
   mode-scoped error (see E3).
-- **Bitwise NOT (`~`) is deferred**, not dropped — it needs a fixed bit-width,
-  which Anzan's arbitrary-precision integers don't have. Its home is
+- **Bitwise NOT (`~`)** ships with **fixed-width integers** — see
   `docs/FIXED-WIDTH.md`, where width is well-defined.
 
 ## Precedence (Python-style)
@@ -211,12 +275,12 @@ postfix · unary · (* / mod) · (+ -) · (<< >>) · & · ^ · | · comparison �
 
 So bitwise binds *below* arithmetic (compute the numbers, then combine bits) but
 *above* comparison (no `& ==` trap), and AND-before-OR holds (`&` tighter than
-`|`). In Normal/Finance, `^` keeps its tight, right-associative power slot and
+`|`). In Normal/Scientific, `^` keeps its tight, right-associative power slot and
 the bitwise functions are ordinary calls (primary level); `%` is the existing
-tight postfix.
+tight postfix, and `°` chains at the same postfix level.
 
 This means `a ^ b == c` parses to different ASTs in Programmer (XOR, above
-comparison) vs Finance (power) — correct, because they're different dialects.
+comparison) vs Normal (power) — correct, because they're different dialects.
 The ASTs are unambiguous once formed; only the parse is mode-sensitive.
 
 ## Enforcement
@@ -227,14 +291,15 @@ What actively prevents a wrong meaning — by construction, not discipline:
   so it can never be re-read under a different meaning.
 - **E2 — function fallback on render.** A glyph only ever renders for its mode's
   meaning; the other meanings render as their canonical function.
-- **E3 — out-of-mode glyphs are loud, never silent.** Typing `5 << 2` in Finance
-  is a *mode-scoped parse error* — "`<<` is a Programmer-mode operator; this
-  surface is in Finance mode (use `bitShift(5, 2)`)" — not a misparse. (`<<`
-  and `&` aren't tokens in Finance at all.)
+- **E3 — out-of-mode glyphs are loud, never silent.** Typing `5 << 2` in Normal
+  is a *mode-scoped parse error* — "`<<` is a Programmer-mode operator; use
+  `bitShift(5, 2)`" — not a misparse. (`<<` and `&` aren't operators outside
+  Programmer at all.)
 - **E4 — transport emits canonical.** Copy, recall, insert, and cell-commit all
   produce the canonical spelling, so a line lifted out of context (into a cell, a
   bug report, a chat) is unambiguous. Recall a Programmer `5 ^ 3` anywhere → it
-  lands as `bitXor(5, 3)`.
+  lands as `bitXor(5, 3)`; recall a Scientific `2.46912e5` → it lands as
+  `246912`.
 
 ## Switching modes
 
@@ -243,13 +308,13 @@ is no migration of stored data — the store was canonical all along.
 
 - **Lossless in meaning and value, always.** `render` is a pure function of
   `(AST, mode)` and the AST is invariant across switches, so
-  Finance → Programmer → Finance returns identical text by construction. The
+  Normal → Programmer → Normal returns identical text by construction. The
   numbers never move.
 - **Uniform, not per-segment.** The *whole* visible tape (and visible grid, if
   in scope) re-skins to the current dialect — one consistent reading surface,
-  not a patchwork of "the dialect each line was typed in". *(Deferred in v1 — see
-  the status note at the top; v1 shows existing entries verbatim and applies the
-  mode to live input only.)*
+  not a patchwork of "the dialect each line was typed in". *(Deferred — see
+  the status note at the top; today existing entries show verbatim and the mode
+  applies to live input only.)*
 - **Text normalizes.** Re-deriving the skin from the AST loses incidental
   formatting (extra spaces, `1_000` vs `1000`). Trailing `# comments` survive;
   other literal trivia normalizes — the same way every spreadsheet reformats a
@@ -262,8 +327,8 @@ when shown.
 
 ## Scope: log-only first, workbook-wide later
 
-**v1 — log-only.** The log is a mode-switchable *calculator* (a physical calc's
-DEC/HEX/DEG toggle); the grid stays canonical (`Normal`) — the familiar
+**Today — log-only.** The log is a mode-switchable *calculator* (a physical
+calc's DEC/HEX/DEG toggle); the grid stays canonical (`Normal`) — the familiar
 spreadsheet. Smallest blast radius; cells and the codec are untouched. Mode is
 set like theme — a UI toggle (`:mode` in the CLI), persisted in UserDefaults,
 never in a workbook.
@@ -294,7 +359,7 @@ dialect":
 | storage / transport | ✅ canonical only, no mode metadata | — |
 | switch / reload / replay | ✅ mode-free; re-render visible only | — |
 | **parser** | — | ❌ mode-aware tokens + per-mode binding powers |
-| **render** | — | ❌ per-mode skin table + function fallback |
+| **render** | — | ❌ per-mode skin table + function fallback + the sci/eng echo |
 | **new builtins** | — | ❌ `pow(a,b)` only |
 | **tests** | — | ❌ round-trip `render(parse(x, m), m) == x` per mode |
 
@@ -324,14 +389,22 @@ table. The part one might fear — tracking switches, persistence, replay fideli
 - **A mode that hides/removes operations.** A mode only re-spells; it never makes
   an operation unreachable. Everything is always available as its canonical
   function.
+- **A finance mode.** Shipped, then retired: once currency (`$10`) and
+  grouping (`138,561`) proved safe in the default grammar (the `$`-letter cell
+  pin and separator-wins rules make them collision-free), the mode had no
+  dialect left to own. Literals that don't *conflict* with anything belong in
+  the core language, not behind a toggle.
+- **A `scientific` display rounded to N digits.** The mantissa keeps the
+  value's own significant digits — a display mode must never round (exactness
+  is the language's first rule); `Decimal(…)`/`round(…)` exist for that.
 
-## Gotchas & notes (v1)
+## Gotchas & notes
 
 - **The log↔grid `^` seam.** With the log in Programmer mode, `5 ^ 3` on the
   input line is XOR, but a *cell* `=5 ^ 3` is still power — the same glyph means
   different things on the two surfaces at once. This can't corrupt anything (the
   log reads a cell's *value*, never its text), but it's a genuine cognitive seam;
-  it's the reason v1 is log-only.
+  it's the reason the scope is log-only.
 - **History shows what you typed — and recall re-evaluates under the current
   mode.** Existing entries display verbatim (they aren't re-skinned when you
   switch). And **recall (↑) / copy give back the text you typed**, not the
@@ -345,17 +418,29 @@ table. The part one might fear — tracking switches, persistence, replay fideli
   two's-complement and keep the type — see [FIXED-WIDTH.md](FIXED-WIDTH.md).
 - **Out-of-mode glyphs are loud, never silent.** A `&` (or `<<`, `~`) in Normal
   mode is a clear error naming the function to use, not a misparse.
+- **Scientific + Programmer never meet.** The programmer hex echo (an integer
+  result of a `0x…` line showing its hex form) is Programmer-flavored display;
+  the sci/eng echo is Scientific's. One mode at a time, one echo rule at a time.
 
 ## Resolved decisions
 
 1. **Precedence** — Python-style (bitwise band below arithmetic, above
    comparison). Not C/Java.
-2. **Scope** — log-only for v1; workbook-wide later.
+2. **Scope** — log-only for now; workbook-wide later.
 3. **New builtins** — `pow(a,b)` only. No `pct` (percent is the `.percent` node;
    `* 0.01` fallback in Programmer). `~` (prefix bitwise-NOT in Programmer mode)
-   shipped later with fixed-width integers — see below.
+   shipped with fixed-width integers.
 4. **`&`** — Programmer-only bitwise AND. Concat stays `+` / `concat()`; the
    reserved-`&`-for-concat plan is dropped.
+5. **The trio** — normal / scientific / programmer. Finance is retired; its
+   literals (currency, grouping) are core grammar in every mode, and the merged
+   default keeps the name `normal`.
+6. **Scientific** — an echo dialect only: SCI notation at the value's own
+   significant digits, plus the ENG style (`:mode scientific eng`, exponent a
+   multiple of 3). Value-carried display (Money, grouping) wins over it.
+7. **`°`** — a mode-agnostic postfix literal (`x × π/180`, 50-digit π), not a
+   Scientific-only glyph: no other mode owns a meaning for it, so gating it
+   would only cost reach.
 
 Related work, **now shipped**: **fixed-width integer types** (`Int32`, `UInt64`,
 …) — the home for `~`, signed shifts, and checked bounded arithmetic. Orthogonal

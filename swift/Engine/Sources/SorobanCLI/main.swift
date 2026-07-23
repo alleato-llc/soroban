@@ -77,9 +77,12 @@ func evaluate(_ line: String, on calculator: Calculator,
                 // the integer result in hex too. Display only.
                 print("= \(value) (\(hex))\(trailing)")
             } else {
-                // Echo the clean form — a fixed-width int / decimal prints as its
-                // plain number (343353 / 10.50), not its Int32(…)/Decimal(…) form.
-                let shown = value.displayDescription
+                // Echo the clean form under the active dialect — a fixed-width
+                // int / decimal prints as its plain number (343353 / 10.50), not
+                // its Int32(…)/Decimal(…) form; in scientific mode a plain
+                // numeric result echoes as 2.46912e5 (or 246.912e3 with eng).
+                let shown = outcome.displayDescription(mode: calculator.mode,
+                                                       style: calculator.sciStyle)
                 print(pretty ? "= \(shown)\(trailing)" : shown)
             }
         case .functionDefined(let signature):
@@ -110,22 +113,33 @@ if arguments.contains("--version") {
     exit(0)
 }
 
-/// `:mode [normal|programmer|finance]` — show or set the input/display dialect.
-/// Programmer mode reads `^` as XOR, `&`/`|` as AND/OR, `<<`/`>>` as shifts, and
-/// `%` as modulo (power becomes pow); see docs/MODES.md.
+/// The dialect + style, for the `:mode` status line — "scientific eng" when
+/// the ENG variant is on, otherwise just the mode name.
+func modeText(of calculator: Calculator) -> String {
+    calculator.mode == .scientific && calculator.sciStyle == .eng
+        ? "scientific eng" : calculator.mode.rawValue
+}
+
+/// `:mode [normal|programmer|scientific [eng]]` — show or set the input/display
+/// dialect. Programmer mode reads `^` as XOR, `&`/`|` as AND/OR, `<<`/`>>` as
+/// shifts, and `%` as modulo (power becomes pow); scientific echoes plain
+/// numeric results in scientific (or, with `eng`, engineering) notation. The
+/// parsing itself is the engine's one shared seam (`Calculator.setMode`), so
+/// the mode list and errors can't drift from the app's. See docs/MODES.md.
 @discardableResult
 func handleModeCommand(_ line: String, on calculator: Calculator, quiet: Bool = false) -> Bool {
     let parts = line.split(separator: " ", maxSplits: 1).map(String.init)
     guard parts.count == 2 else {
-        if !quiet { print("mode: \(calculator.mode.rawValue) — use :mode normal|programmer|finance") }
+        if !quiet { print("mode: \(modeText(of: calculator)) — use :mode normal|programmer|scientific [eng]") }
         return true
     }
-    guard let mode = LanguageMode(rawValue: parts[1].trimmingCharacters(in: .whitespaces).lowercased()) else {
-        eprint("unknown mode '\(parts[1])' — use normal, programmer, or finance")
+    do {
+        try calculator.setMode(parsing: parts[1])
+    } catch {
+        eprint(error.description)
         return false
     }
-    calculator.mode = mode
-    if !quiet { print("mode: \(mode.rawValue)") }
+    if !quiet { print("mode: \(modeText(of: calculator))") }
     return true
 }
 

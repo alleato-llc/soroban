@@ -296,10 +296,10 @@ final class CalculatorSession {
         let line = input.trimmingCharacters(in: .whitespaces)
         guard !line.isEmpty else { return }
 
-        // `:mode [normal|programmer|finance]` — switch the input dialect from the
-        // log itself (parity with the CLI's :mode and the toggle), not a
-        // calculation. The mode change logs its own dim divider via `mode`'s
-        // observer.
+        // `:mode [normal|programmer|scientific [eng]]` — switch the input
+        // dialect from the log itself (parity with the CLI's :mode and the
+        // toggle), not a calculation. The mode change logs its own dim divider
+        // via `mode`'s observer.
         if line == ":mode" || line.hasPrefix(":mode ") {
             applyModeCommand(line)
             input = ""; historyCursor = nil; draft = ""
@@ -336,7 +336,11 @@ final class CalculatorSession {
             } else if case .value(let value) = result, value.containsHost {
                 outcome = .info(value.description)
             } else {
-                let display = result.displayDescription
+                // Mode-aware echo (the engine's one display seam): scientific
+                // mode shows a plain numeric result as 2.46912e5 (or eng);
+                // recall still gives the canonical form.
+                let display = result.displayDescription(mode: calculator.mode,
+                                                        style: calculator.sciStyle)
                 outcome = .value(display)
                 let canonical = result.description
                 if canonical != display { recallOverride = canonical }
@@ -381,18 +385,30 @@ final class CalculatorSession {
         }
     }
 
-    /// Handles a `:mode …` line typed into the log. A valid dialect switches
-    /// `mode` (which logs the divider + persists); anything else logs a usage hint.
+    /// Handles a `:mode …` line typed into the log, through the engine's one
+    /// shared parse seam (`Calculator.setMode` — the same errors as the CLI's).
+    /// A valid dialect switches `mode` (which logs the divider + persists);
+    /// anything else logs the engine's error or a usage hint.
     private func applyModeCommand(_ line: String) {
         let parts = line.split(separator: " ", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
-        guard parts.count == 2, let requested = LanguageMode(rawValue: parts[1].lowercased()) else {
+        guard parts.count == 2 else {
             log.append(HistoryEntry(expression: line, outcome: .error(
-                message: "usage: :mode normal | programmer | finance (currently \(mode.displayName))",
+                message: "usage: :mode normal | programmer | scientific [eng] (currently \(mode.displayName))",
                 position: nil)))
             logGeneration += 1
             return
         }
-        mode = requested
+        do {
+            try calculator.setMode(parsing: parts[1])
+        } catch {
+            log.append(HistoryEntry(expression: line, outcome: .error(
+                message: error.description, position: nil)))
+            logGeneration += 1
+            return
+        }
+        // Route through the observable property (divider + persistence); the
+        // seam already set calculator.mode, so this is an idempotent re-set.
+        mode = calculator.mode
     }
 
     func clearLog() {

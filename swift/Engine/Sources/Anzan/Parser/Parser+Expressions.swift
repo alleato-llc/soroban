@@ -106,7 +106,7 @@ extension Parser {
     // C-style `a & b == c` trap). Active only in `.programmer`; in other modes
     // these are pass-throughs, and the glyphs that have no other meaning
     // (`| & << >>`) raise a mode-scoped error rather than a vague "unexpected
-    // input". `^` is NOT errored here: in `.normal`/`.finance` it is power,
+    // input". `^` is NOT errored here: in `.normal`/`.scientific` it is power,
     // consumed deeper by power().
 
     mutating func bitwiseOr() throws(EngineError) -> Expression {
@@ -237,7 +237,7 @@ extension Parser {
     mutating func power() throws(EngineError) -> Expression {
         let base = try postfix()
         // In Programmer mode `^` is XOR (consumed up the chain by bitwiseXor);
-        // only in .normal/.finance is it power.
+        // only in .normal/.scientific is it power.
         guard mode != .programmer, case .caret = current.kind else { return base }
         _ = advance()
         // Right-associative; the exponent may carry its own unary minus (2^-1).
@@ -276,11 +276,16 @@ extension Parser {
                     expr = .member(base: expr, name: name)
                 }
             case .percent where mode != .programmer:
-                // Postfix percent: `3%` → 0.03. In .normal/.finance `%` is always
-                // percent; chains like other postfixes (`A:1%`, `arr[0]%`). In
-                // Programmer mode `%` is modulo — left for term() to consume.
+                // Postfix percent: `3%` → 0.03. In .normal/.scientific `%` is
+                // always percent; chains like other postfixes (`A:1%`, `arr[0]%`).
+                // In Programmer mode `%` is modulo — left for term() to consume.
                 _ = advance()
                 expr = .percent(expr)
+            case .degree:
+                // Postfix degrees: `90°` → radians (× π/180). Mode-agnostic —
+                // no mode owns another meaning for `°`.
+                _ = advance()
+                expr = .degrees(expr)
             default:
                 break loop
             }

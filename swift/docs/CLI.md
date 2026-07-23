@@ -58,9 +58,15 @@ Built from the same engine seams the app uses, so behavior matches:
   `trailingIdentifier(of:)`.
 - Gray `name(` **signature hints** from `FunctionDoc`.
 - **↑/↓ history**, persisted to `~/.soroban_history`.
-- `:mode` switches the presentational dialect (normal/programmer/finance) for
-  the REPL and pipe — see [MODES.md](../../docs/MODES.md). In programmer mode a
-  leading binary operator on an empty line is `ans`-prefixed (SpeedCrunch-style).
+- `:mode` switches the presentational dialect (normal/programmer/scientific;
+  `:mode scientific eng` selects the engineering echo) for the REPL and pipe —
+  parsed by the engine's shared `Calculator.setMode(parsing:)` seam, so the
+  errors match the app's; see [MODES.md](../../docs/MODES.md). In programmer
+  mode a leading binary operator on an empty line is `ans`-prefixed
+  (SpeedCrunch-style). Results echo through
+  `EvalOutcome.displayDescription(mode:style:)`, so scientific mode shows
+  `2.46912e5` (or `246.912e3` under eng) while Money/grouped keep their own
+  display.
 
 ## Error rendering
 

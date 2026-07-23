@@ -4,8 +4,10 @@ import BigInt
 package struct Lexer {
     private let chars: [Character]
     private var index = 0
-    /// Finance mode adds two literal forms (currency, thousands grouping); every
-    /// other mode lexes identically. See docs/MODES.md.
+    /// The active dialect. Every mode LEXES identically today — currency and
+    /// thousands grouping are core literals — but the parameter stays: modes
+    /// own glyph *meaning* at the parser, and a future dialect may need the
+    /// lexer again. See docs/MODES.md.
     private let mode: LanguageMode
     /// The token before the one being scanned — distinguishes a CALL paren
     /// (`max(`) from a grouping paren (`(`), which decides whether `,` inside
@@ -24,7 +26,7 @@ package struct Lexer {
 
     /// May a `,` inside a numeric literal group thousands right here?
     private var groupingAllowed: Bool {
-        mode == .finance && (groupingStack.last ?? true)
+        groupingStack.last ?? true
     }
 
     /// Maintains `previousKind` + `groupingStack` after each token is emitted.
@@ -81,6 +83,7 @@ package struct Lexer {
         "&": .ampersand, "|": .pipe, // Programmer-mode bitwise; parser errors elsewhere
         "~": .tilde, // Programmer-mode bitwise NOT
         "≤": .lessOrEqual, "≥": .greaterOrEqual, "≠": .notEqual,
+        "°": .degree, // postfix degrees→radians, mode-agnostic (like %)
         "!": .bang, // sheet qualifier — "!=" was caught by the two-char pass
         "∑": .identifier("sigma"),   // math symbols aren't letters, so the
         "∏": .identifier("product"), // identifier scanner can't pick them up
@@ -191,13 +194,12 @@ package struct Lexer {
             return try number(from: start)
         }
 
-        // A finance-mode currency literal: any Unicode currency symbol directly
-        // before a number ($10, €10, £1234.56, $10,000). This runs BEFORE the
-        // '$' cell-pin branch, so '$' followed by a DIGIT is money while '$'
-        // followed by a LETTER stays the column pin ($A:1) — the two never
-        // collide. Outside finance mode nothing here applies and '$' keeps its
-        // only meaning.
-        if mode == .finance, c.isCurrencySymbol, startsNumber(at: index + 1) {
+        // A currency literal — CORE grammar, every mode: any Unicode currency
+        // symbol directly before a number ($10, €10, £1234.56, $10,000). This
+        // runs BEFORE the '$' cell-pin branch, so '$' followed by a DIGIT is
+        // money while '$' followed by a LETTER stays the column pin ($A:1) —
+        // the two never collide.
+        if c.isCurrencySymbol, startsNumber(at: index + 1) {
             guard let currency = Currency.fromGlyph(c) else {
                 throw EngineError.lexError(
                     message: "unsupported currency '\(c)' — supported symbols are $ € £ ¥ ₹ ₩ ₽ ₿; use Money(value, \"CODE\") for others",
@@ -326,10 +328,11 @@ package struct Lexer {
         return chars[at] == "." && at + 1 < chars.count && chars[at + 1].isNumber
     }
 
-    /// Scans `123`, `1.5`, `1_000`, `2.5e-3` — and, in finance mode, thousands
-    /// groups (`138,561`, `1,234,567`). Returns the value and whether a group
-    /// separator appeared. The leading sign is not part of the literal — the
-    /// parser handles unary minus.
+    /// Scans `123`, `1.5`, `1_000`, `2.5e-3` — and thousands groups
+    /// (`138,561`, `1,234,567`) wherever `,` couldn't be an argument
+    /// separator. Returns the value and whether a group separator appeared.
+    /// The leading sign is not part of the literal — the parser handles
+    /// unary minus.
     private mutating func decimalValue(from start: Int)
         throws(EngineError) -> (value: BigDecimal, grouped: Bool) {
         var sawDot = false

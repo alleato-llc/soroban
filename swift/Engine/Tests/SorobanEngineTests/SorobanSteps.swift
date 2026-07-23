@@ -48,7 +48,20 @@ struct SorobanSteps: StepDefinitions {
     // MARK: Log
 
     let calculate = StepDefinition.when("I calculate \"(.*)\"") { match in
-        Self.outcome = Self.calculator.evaluate(match.captures[0])
+        let line = match.captures[0]
+        // Hosts intercept `:mode` lines before evaluate; the spec exercises
+        // the shared parse seam (Calculator.setMode) the same way, so the
+        // unknown-mode errors (`:mode finance`) are pinned engine-side.
+        if line == ":mode" || line.hasPrefix(":mode ") {
+            do {
+                try Self.calculator.setMode(parsing: String(line.dropFirst(5)))
+                Self.outcome = .success(.comment("mode: \(Self.calculator.mode.rawValue)"))
+            } catch let error as EngineError {
+                Self.outcome = .failure(error)
+            }
+            return
+        }
+        Self.outcome = Self.calculator.evaluate(line)
     }
 
     /// Runs a multi-line docstring through the statement accumulator + the
@@ -70,8 +83,14 @@ struct SorobanSteps: StepDefinitions {
         }
     }
 
-    let setMode = StepDefinition.given("the calculator is in (normal|programmer|finance) mode") { match in
+    let setMode = StepDefinition.given("the calculator is in (normal|programmer|scientific) mode") { match in
         Self.calculator.mode = LanguageMode(rawValue: match.captures[0])!
+    }
+
+    /// The Scientific-mode echo variant (`sci`/`eng`) — a display style on the
+    /// calculator, not a mode (`:mode scientific eng` in the CLI).
+    let setSciStyle = StepDefinition.given("the scientific style is \"(sci|eng)\"") { match in
+        Self.calculator.sciStyle = ScientificStyle(rawValue: match.captures[0])!
     }
 
     let resultIs = StepDefinition.then("the result is \"(.*)\"") { match in
@@ -83,16 +102,20 @@ struct SorobanSteps: StepDefinitions {
         }
     }
 
-    /// The human-facing ECHO (`displayDescription`) rather than the canonical
-    /// `description` — how the log and CLI show a result. Distinct from `the
-    /// result is` for tagged types whose display differs from their canonical
-    /// form (a currency amount shows `$10.00`, recalls as `Money(10, "USD")`).
+    /// The human-facing ECHO (`displayDescription(mode:style:)`) rather than
+    /// the canonical `description` — how the log and CLI show a result, under
+    /// the calculator's active dialect (so Scientific-mode scenarios assert
+    /// the sci/eng notation). Distinct from `the result is` for values whose
+    /// display differs from their canonical form (a currency amount shows
+    /// `$10.00`, recalls as `Money(10, "USD")`).
     let logEchoes = StepDefinition.then("the log echoes \"(.*)\"") { match in
         guard case .success(let outcome)? = Self.outcome else {
             throw Failure(description: "expected a result, got \(String(describing: Self.outcome))")
         }
-        guard outcome.displayDescription == match.captures[0] else {
-            throw Failure(description: "expected echo \(match.captures[0]), got \(outcome.displayDescription)")
+        let echo = outcome.displayDescription(mode: Self.calculator.mode,
+                                              style: Self.calculator.sciStyle)
+        guard echo == match.captures[0] else {
+            throw Failure(description: "expected echo \(match.captures[0]), got \(echo)")
         }
     }
 
