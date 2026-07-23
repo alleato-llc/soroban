@@ -1,0 +1,5 @@
+#!/usr/bin/env soroban
+# Open… fixture: the script halts at the first error, like the CLIs.
+1 + 1
+nosuchfn(3)
+2 + 2

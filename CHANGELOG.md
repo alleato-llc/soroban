@@ -25,6 +25,17 @@ still suppresses all release workflows regardless of the paths it touches — se
 
 ### Added
 
+- **The site gains Playwright UI automation for the live REPL island**
+  (`site/tests/repl.spec.ts`, new `site-ci.yml` on `site/**` changes).
+  Chromium drives the hero's "Live · try it" build against the real static
+  build (`npm run test:ui` — build + preview via the config's `webServer`):
+  hydration + an exactness smoke (which catches a stale vendored wasm), the
+  welcome lines, the mode-badge cycle and its snap-to-normal on examples
+  (the bitXor regression), the Examples ▾ menu, the ENV/? panels, Open…/
+  Save As… round-trips (including script halting), and the carousel's
+  slide-less live build. Island **wiring only** — language behavior stays
+  with the three spec runners.
+
 - **Anzan in the browser and on npm: the TS/WASM target** (`ts/`,
   `rust/wasm`, the site's live REPL — modeled on the sibling dorado repo's
   pattern). The verified Rust engine compiles to WebAssembly via a thin,

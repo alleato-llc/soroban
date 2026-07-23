@@ -16,7 +16,25 @@ npm install
 npm run dev        # local dev server with HMR
 npm run build      # → dist/ (deploy anywhere static)
 npm run preview    # serve dist/ locally
+npm run test:ui    # Playwright UI automation for the live REPL (see below)
 ```
+
+## UI automation (the live REPL island)
+
+`tests/repl.spec.ts` drives the hero's **Live · try it** build — the Repl
+island running the real engine via the vendored WASM — with Playwright
+(chromium only). The config's `webServer` builds and previews the static
+site on its own port (4331), so `npm run test:ui` is the whole loop; first
+time, install the browser with `npx playwright install chromium --with-deps`.
+CI runs it in `site-ci.yml` on `site/**` changes.
+
+**The rule: island wiring only.** These tests cover hydration, the menu bar
+(Open…/Save As…/Examples ▾), the mode badge cycle + its snap-to-normal on
+examples, the ENV/? panels, and the carousel's slide-less handling of the
+live build. Language behavior is NEVER tested here — that belongs to the
+three spec runners over `spec/anzan` (Swift, Rust, cucumber-js). The one
+arithmetic assertion (`0.1 + 0.2 == 0.3` → `1`) exists to catch a broken or
+stale vendored wasm, not to test the language.
 
 ## Layout
 
