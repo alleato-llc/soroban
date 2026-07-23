@@ -9,7 +9,11 @@ use crate::eval::environment::{EvaluationEnvironment, UserFunction};
 use crate::eval::value::{FunctionValueKind, Value};
 use crate::EngineError;
 
-const STACK_HEADROOM: usize = 128 * 1024;
+// 256 KB: CI's macos-14 (x86_64, newer stable) overflowed the deep-recursion
+// scenario at 128 KB — debug-build frames there are fatter than the arm64
+// dev boxes'. Headroom only decides how EARLY the fresh-segment hop happens,
+// so doubling costs nothing but a slightly earlier hop.
+const STACK_HEADROOM: usize = 256 * 1024;
 const SEGMENT_STACK_SIZE: usize = 16 << 20; // 16 MB per segment
 /// Sanity cap: a missing base case errors (with a hint) instead of chewing
 /// memory forever. ~10k frames is far beyond honest recursion.
