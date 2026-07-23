@@ -110,7 +110,7 @@ impl App {
         let modes = [
             LanguageMode::Normal,
             LanguageMode::Programmer,
-            LanguageMode::Finance,
+            LanguageMode::Scientific,
         ];
         let labels: Vec<String> = modes.iter().map(|m| title_case(m.name())).collect();
         let current = title_case(self.session.language_mode().name());
@@ -127,7 +127,8 @@ impl App {
             picker,
             text(
                 "Normal is the everyday dialect. Programmer reads ^ & | << >> as \
-                 bitwise operators; Finance tunes the display for money."
+                 bitwise operators; Scientific echoes plain numeric results in \
+                 scientific notation."
             )
             .size(12)
             .color(palette.muted),

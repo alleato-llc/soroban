@@ -55,15 +55,15 @@ impl Expression {
     /// Renders under a display dialect. Only the overloaded glyphs differ
     /// between modes (`^ % & | << >>`); everything else is identical. In
     /// `Programmer` the canonical bitwise/mod calls and the power/percent
-    /// nodes render with their infix glyphs; in `Normal`/`Finance` they
+    /// nodes render with their infix glyphs; in `Normal`/`Scientific` they
     /// render as the canonical function / `^` / `%`. The result re-parses
     /// *under the same mode*. See `docs/MODES.md`.
     pub fn source_text_in(&self, mode: LanguageMode) -> String {
         let sub = |e: &Expression| e.source_text_in(mode);
         match self {
             Self::Number(value) => value.to_string(),
-            // The currency literal re-parses in finance mode, the only mode that
-            // produces it; the symbol is part of the value, so it always renders.
+            // The currency literal is core grammar — it re-parses in any mode;
+            // the symbol is part of the value, so it always renders.
             Self::Money { value, currency } => {
                 let magnitude = if value.is_negative() {
                     -value
@@ -101,6 +101,11 @@ impl Expression {
                     // percent.
                     format!("{}%", sub(inner))
                 }
+            }
+            Self::Degrees(inner) => {
+                // `°` is mode-agnostic (no dialect owns another meaning), so
+                // it renders — and re-parses — identically everywhere.
+                format!("{}°", sub(inner))
             }
             Self::Binary(op, lhs, rhs) => {
                 // Power has no `^` glyph in Programmer mode (`^` is XOR).

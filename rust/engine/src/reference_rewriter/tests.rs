@@ -47,8 +47,10 @@ fn pins_lex_and_evaluate_like_plain_references() {
 
 #[test]
 fn dollar_alone_is_a_loud_lex_error() {
+    // `$5` is NOT here — `$`+digit is the core currency literal (any mode);
+    // only `$`+letter shapes are the cell pin, and a dangling `$` is loud.
     let mut calculator = Calculator::new();
-    for input in ["$", "$x", "$5", "2 + $", "$A", "$A:"] {
+    for input in ["$", "$x", "2 + $", "$A", "$A:"] {
         let Err(error) = calculator.evaluate(input) else {
             panic!("'{input}' should be a lex error");
         };

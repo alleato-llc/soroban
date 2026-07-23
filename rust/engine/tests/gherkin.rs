@@ -12,7 +12,7 @@ use cucumber::gherkin::Step;
 use cucumber::{given, then, when, World, WriterExt as _};
 use soroban_engine::{
     BigDecimal, Calculator, CellAddress, CellDisplay, EngineError, EvalOutcome, LanguageMode,
-    SheetStore,
+    ScientificStyle, SheetStore,
 };
 use std::cell::RefCell;
 use std::fmt;
@@ -76,6 +76,17 @@ fn render(display: CellDisplay) -> String {
 #[when(regex = r#"^I calculate "(.*)"$"#)]
 #[then(regex = r#"^I calculate "(.*)"$"#)]
 fn calculate(world: &mut AnzanWorld, expression: String) {
+    // Hosts intercept `:mode` lines before evaluate; the spec exercises the
+    // shared parse seam (`set_mode_parsing`) the same way, so the
+    // unknown-mode errors (`:mode finance`) are pinned engine-side.
+    if expression == ":mode" || expression.starts_with(":mode ") {
+        let mut calculator = world.calculator.borrow_mut();
+        let outcome = calculator
+            .set_mode_parsing(&expression[5..])
+            .map(|()| EvalOutcome::Comment(format!("mode: {}", calculator.mode.name())));
+        world.outcome = Some(outcome);
+        return;
+    }
     world.outcome = Some(world.calculator.borrow_mut().evaluate(&expression));
 }
 
@@ -105,10 +116,18 @@ fn run_script(world: &mut AnzanWorld, step: &Step) {
     }
 }
 
-#[given(regex = r"^the calculator is in (normal|programmer|finance) mode$")]
+#[given(regex = r"^the calculator is in (normal|programmer|scientific) mode$")]
 fn set_mode(world: &mut AnzanWorld, mode: String) {
     world.calculator.borrow_mut().mode =
         LanguageMode::from_name(&mode).expect("gated by the regex");
+}
+
+/// The Scientific-mode echo variant (`sci`/`eng`) — a display style on the
+/// calculator, not a mode (`:mode scientific eng` in the CLI).
+#[given(regex = r#"^the scientific style is "(sci|eng)"$"#)]
+fn set_sci_style(world: &mut AnzanWorld, style: String) {
+    world.calculator.borrow_mut().sci_style =
+        ScientificStyle::from_name(&style).expect("gated by the regex");
 }
 
 #[then(regex = r#"^the result is "(.*)"$"#)]
@@ -122,15 +141,18 @@ fn result_is(world: &mut AnzanWorld, expected: String) {
     }
 }
 
-/// The human-facing ECHO (`display_description`) rather than the canonical
-/// `to_string` — how the log and CLI show a result. Distinct from `the result
-/// is` for tagged types whose display differs from their canonical form (a
-/// currency amount shows `$10.00`, recalls as `Money(10, "USD")`).
+/// The human-facing ECHO (`display_description_in`) rather than the canonical
+/// `to_string` — how the log and CLI show a result, under the calculator's
+/// active dialect (so Scientific-mode scenarios assert the sci/eng notation).
+/// Distinct from `the result is` for values whose display differs from their
+/// canonical form (a currency amount shows `$10.00`, recalls as
+/// `Money(10, "USD")`).
 #[then(regex = r#"^the log echoes "(.*)"$"#)]
 fn log_echoes(world: &mut AnzanWorld, expected: String) {
     match &world.outcome {
         Some(Ok(outcome)) => {
-            let echo = outcome.display_description();
+            let calculator = world.calculator.borrow();
+            let echo = outcome.display_description_in(calculator.mode, calculator.sci_style);
             assert_eq!(echo, expected, "expected echo {expected}, got {echo}");
         }
         other => panic!("expected a result, got {other:?}"),

@@ -1,9 +1,9 @@
-//! A currency known to finance mode — the tag on a `Money` value. A closed,
+//! A currency the language knows — the tag on a `Money` value. A closed,
 //! curated set (not "any Unicode currency glyph"), so an amount always names a
 //! real currency and the canonical `Money(v, "USD")` form round-trips by code.
 //! See docs/MODES.md.
 
-/// The closed set of currencies finance mode understands. A peer of the
+/// The closed set of currencies the language understands. A peer of the
 /// `Currency` Swift enum — the same ten, in the same order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Currency {

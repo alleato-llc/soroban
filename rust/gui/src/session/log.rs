@@ -64,24 +64,37 @@ impl Session {
         self.revision += 1;
     }
 
-    /// Intercept the host-level `:mode [name]` command (like the CLI). Returns
-    /// the log outcome to record, or `None` if the line isn't a mode command.
+    /// The dialect + style, for the `:mode` status line — "scientific eng"
+    /// when the ENG variant is on, otherwise just the mode name.
+    fn mode_text(&self) -> String {
+        let calculator = self.calculator.borrow();
+        if calculator.mode == LanguageMode::Scientific
+            && calculator.sci_style == ScientificStyle::Eng
+        {
+            "scientific eng".to_string()
+        } else {
+            calculator.mode.name().to_string()
+        }
+    }
+
+    /// Intercept the host-level `:mode [name]` command (like the CLI), through
+    /// the engine's one shared parse seam (`set_mode_parsing` — the same
+    /// errors as the CLI's). Returns the log outcome to record, or `None` if
+    /// the line isn't a mode command.
     fn mode_command(&mut self, line: &str) -> Option<Outcome> {
         let rest = line.strip_prefix(":mode")?;
         let arg = rest.trim();
         if arg.is_empty() {
-            return Some(Outcome::Info(format!(
-                "mode: {}",
-                self.language_mode().name()
-            )));
+            return Some(Outcome::Info(format!("mode: {}", self.mode_text())));
         }
-        match LanguageMode::from_name(arg) {
-            Some(mode) => {
-                self.set_language_mode(mode);
-                Some(Outcome::Info(format!("mode: {}", mode.name())))
+        let result = self.calculator.borrow_mut().set_mode_parsing(arg);
+        match result {
+            Ok(()) => {
+                self.revision += 1;
+                Some(Outcome::Info(format!("mode: {}", self.mode_text())))
             }
-            None => Some(Outcome::Error {
-                message: format!("unknown mode '{arg}' — normal, programmer, or finance"),
+            Err(error) => Some(Outcome::Error {
+                message: error.to_string(),
                 position: None,
             }),
         }
@@ -120,7 +133,16 @@ impl Session {
                     return Outcome::Info(block.to_string());
                 }
                 match &outcome {
-                    EvalOutcome::Value(value) => Outcome::Value(value.display_description()),
+                    // Mode-aware echo (the engine's one display seam):
+                    // scientific mode shows a plain numeric result as
+                    // 2.46912e5 (or eng); recall still gives the canonical
+                    // form.
+                    EvalOutcome::Value(_) => {
+                        let calculator = self.calculator.borrow();
+                        Outcome::Value(
+                            outcome.display_description_in(calculator.mode, calculator.sci_style),
+                        )
+                    }
                     EvalOutcome::FunctionDefined { signature } => {
                         Outcome::Function(signature.clone())
                     }

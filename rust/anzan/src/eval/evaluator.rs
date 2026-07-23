@@ -243,6 +243,11 @@ impl Evaluator<'_> {
                 percent(value)
             }
 
+            Expression::Degrees(inner) => {
+                let value = self.evaluate(inner, environment, locals, depth)?;
+                degrees(value)
+            }
+
             Expression::Binary(op, lhs_expr, rhs_expr) => {
                 let lhs = self.evaluate(lhs_expr, environment, locals, depth)?;
                 let rhs = self.evaluate(rhs_expr, environment, locals, depth)?;
@@ -438,7 +443,7 @@ impl Evaluator<'_> {
     }
 }
 
-/// Unary minus with the finance tag preserved — `-$1,234.50` stays dollars and
+/// Unary minus with the money/grouped tag preserved — `-$1,234.50` stays dollars and
 /// `-138,561` stays grouped. Kept OUT of `evaluate` (`#[inline(never)]`) so its
 /// locals don't inflate the recursive evaluator's stack frame (deep recursion
 /// hops fixed 16 MB segments; a fatter frame overflows the red zone sooner).
@@ -469,6 +474,17 @@ fn percent(value: Value) -> Result<Value, EngineError> {
         Value::Grouped(_) => Ok(Value::Grouped(scaled)),
         _ => Ok(Value::Number(scaled)),
     }
+}
+
+/// `90°` → 90 × π/180 — the multiply is exact against the 60-digit π
+/// constant; the divide rounds to working precision (50 digits), so
+/// 90° == pi / 2 holds exactly. Mode-agnostic, like the AST node. Kept out
+/// of `evaluate` for the same stack-frame reason as `negate`.
+#[inline(never)]
+fn degrees(value: Value) -> Result<Value, EngineError> {
+    let radians = (&value.as_number("°")? * &super::environment::constants::pi())
+        .div(&BigDecimal::from_int(180))?;
+    Ok(Value::Number(radians))
 }
 
 /// An exact integer (for indexes and bounds), or a domain error naming the

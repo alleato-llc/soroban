@@ -12,7 +12,7 @@
 
 mod repl;
 
-use anzan::{Calculator, EngineError, EvalOutcome, LanguageMode, Value};
+use anzan::{Calculator, EngineError, EvalOutcome, LanguageMode, ScientificStyle, Value};
 use std::io::{BufRead, IsTerminal};
 use std::process::ExitCode;
 
@@ -99,10 +99,13 @@ pub(crate) fn evaluate(
                         let hex = programmer_hex().expect("checked");
                         println!("= {value} ({hex}){trailing}");
                     } else {
-                        // Echo the clean form — a fixed-width int / decimal
-                        // prints as its plain number (343353 / 10.50), not
-                        // its Int32(…)/Decimal(…) form.
-                        let shown = value.display_description();
+                        // Echo the clean form under the active dialect — a
+                        // fixed-width int / decimal prints as its plain number
+                        // (343353 / 10.50), not its Int32(…)/Decimal(…) form;
+                        // in scientific mode a plain numeric result echoes as
+                        // 2.46912e5 (or 246.912e3 with eng).
+                        let shown =
+                            outcome.display_description_in(calculator.mode, calculator.sci_style);
                         if pretty {
                             println!("= {shown}{trailing}");
                         } else {
@@ -143,30 +146,39 @@ pub(crate) fn evaluate(
     }
 }
 
-/// `:mode [normal|programmer|finance]` — show or set the input/display
-/// dialect. Programmer mode reads `^` as XOR, `&`/`|` as AND/OR, `<<`/`>>`
-/// as shifts, and `%` as modulo (power becomes pow); see docs/MODES.md.
+/// The dialect + style, for the `:mode` status line — "scientific eng" when
+/// the ENG variant is on, otherwise just the mode name.
+fn mode_text(calculator: &Calculator) -> String {
+    if calculator.mode == LanguageMode::Scientific && calculator.sci_style == ScientificStyle::Eng {
+        "scientific eng".to_string()
+    } else {
+        calculator.mode.name().to_string()
+    }
+}
+
+/// `:mode [normal|programmer|scientific [eng]]` — show or set the input/display
+/// dialect. Programmer mode reads `^` as XOR, `&`/`|` as AND/OR, `<<`/`>>` as
+/// shifts, and `%` as modulo (power becomes pow); scientific echoes plain
+/// numeric results in scientific (or, with `eng`, engineering) notation. The
+/// parsing itself is the engine's one shared seam (`set_mode_parsing`), so the
+/// mode list and errors can't drift from the GUI's. See docs/MODES.md.
 pub(crate) fn handle_mode_command(line: &str, calculator: &mut Calculator, quiet: bool) -> bool {
     let parts: Vec<&str> = line.splitn(2, ' ').collect();
     if parts.len() != 2 {
         if !quiet {
             println!(
-                "mode: {} — use :mode normal|programmer|finance",
-                calculator.mode.name()
+                "mode: {} — use :mode normal|programmer|scientific [eng]",
+                mode_text(calculator)
             );
         }
         return true;
     }
-    let Some(mode) = LanguageMode::from_name(parts[1].trim().to_lowercase().as_str()) else {
-        eprint_line(&format!(
-            "unknown mode '{}' — use normal, programmer, or finance",
-            parts[1]
-        ));
+    if let Err(error) = calculator.set_mode_parsing(parts[1]) {
+        eprint_line(&error.to_string());
         return false;
-    };
-    calculator.mode = mode;
+    }
     if !quiet {
-        println!("mode: {}", mode.name());
+        println!("mode: {}", mode_text(calculator));
     }
     true
 }

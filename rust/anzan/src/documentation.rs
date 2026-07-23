@@ -117,6 +117,12 @@ pub(crate) fn operators() -> Vec<FunctionDoc> {
             &["√16", "√(2 + 2)"],
         ),
         doc(
+            "degrees",
+            "x°",
+            "Postfix degrees→radians: x° is x × π/180 (π at the engine's 50-digit precision), so sin(90°) = 1. Works in every mode, chains like % (A:1°, (a + b)°). The trig functions themselves always take radians — ° is how you hand them degrees.",
+            &["sin(90°)", "cos(180°)", "90° == pi / 2"],
+        ),
+        doc(
             "strings",
             "\"text\"   ·   +",
             "Double-quoted string values (escapes: \\\" \\\\ \\n \\t). + concatenates as soon as either side is a string; == compares. In a cell, a formula that returns a string displays as text.",
@@ -148,8 +154,8 @@ pub(crate) fn operators() -> Vec<FunctionDoc> {
         ),
         doc(
             "modes",
-            ":mode normal · programmer · finance",
-            "Input/display DIALECTS for the calculation log. Normal (default): ^ is power, postfix % is percent, and bit ops are functions (bitAnd, bitOr, bitXor, bitShift, bitNot). Programmer: ^ is XOR, & AND, | OR, << >> shifts, % modulo, ~ NOT (Python precedence; power becomes pow). Finance ≈ Normal for now. A dialect only changes which glyphs you type and read — the stored formula is always canonical, so it never means two things. SWITCH: Settings → Mode (⌘,) or the input-bar mode icon, or type :mode programmer (or finance / normal) — the :mode command works in both the app log and the CLI. Grid cells are always Normal.",
+            ":mode normal · programmer · scientific [eng]",
+            "Input/display DIALECTS for the calculation log. Normal (default): ^ is power, postfix % is percent, and bit ops are functions (bitAnd, bitOr, bitXor, bitShift, bitNot). Programmer: ^ is XOR, & AND, | OR, << >> shifts, % modulo, ~ NOT (Python precedence; power becomes pow). Scientific: the grammar is Normal's, but a plain numeric result ECHOES in scientific notation (123456 * 2 → 2.46912e5) — or engineering notation via :mode scientific eng (246.912e3, exponent a multiple of 3); Money and grouped numbers keep their own display. A dialect only changes which glyphs you type and read — the stored formula is always canonical, so it never means two things. Currency ($10) and thousands grouping (138,561) are CORE grammar, in every mode. SWITCH: Settings → Mode (⌘,) or the input-bar mode icon, or type :mode programmer (or scientific / normal) — the :mode command works in both the app log and the CLI. Grid cells are always Normal.",
             &["5 ^ 3", "pow(2, 10)", "bitAnd(12, 10)"],
         ),
     ]

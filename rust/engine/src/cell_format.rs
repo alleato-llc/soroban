@@ -159,8 +159,8 @@ impl NumberFormat {
     /// `decimals` places (banker's, via `rounded_to_places`).
     /// Sign + grouped integer part + fraction padded/rounded to exactly
     /// `decimals` places (banker's). Lives on `BigDecimal` in `anzan` because
-    /// finance-mode literals echo the same grouping — sharing the one
-    /// implementation is what keeps a formatted cell and a finance-mode result
+    /// grouped literals echo the same grouping — sharing the one
+    /// implementation is what keeps a formatted cell and a grouped result
     /// from ever drifting apart.
     fn fixed(value: &BigDecimal, decimals: i64) -> String {
         value.grouped_text(decimals)
