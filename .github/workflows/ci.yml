@@ -1,20 +1,84 @@
 name: CI
 
-# Every branch and PR: the engine + session test suites (the SAME named suites
-# release.yml runs), via salpa so the commands live in ONE place (salpa.yaml).
-# Releases (signed dmg) happen in release.yml when main moves.
+# The ONE always-running CI workflow: every job below starts on every PR and
+# every push to main, and a paths-filter step (the `changes` job) decides
+# whether it does real work or reports instantly. This replaces the old
+# quartet (ci.yml [swift], rust-ci.yml, ts-ci.yml, site-ci.yml) whose
+# workflow-level path gates meant a check simply NEVER REPORTED on a PR that
+# didn't touch its paths — leaving branch protection's required checks
+# "Expected" forever and every such merge needing an admin bypass. With the
+# gate moved inside the workflow (dorny/paths-filter + a job-level `if`), a
+# job whose paths didn't change is SKIPPED, which GitHub's required checks
+# treat as passing — so all six required checks resolve on every PR.
+#
+# The six job names below are load-bearing: branch protection requires them
+# byte-for-byte ("Engine tests", "App compiles + session tests",
+# "cargo test (ubuntu-latest)", "cargo test (macos-14)",
+# "npm test + spec (ubuntu-latest)", "playwright (ubuntu-latest)").
+# Do not rename them without updating the protection rule.
+#
+# Releases are separate: release.yml (macOS) and release-rust.yml run on
+# path-gated pushes to main; deploy-site.yml ships site/**.
 on:
   pull_request:
   push:
-    branches-ignore: [main]
+    branches: [main]
 
 permissions:
   contents: read
-  packages: read # pull salpa from ghcr
+  packages: read # pull salpa from ghcr (the Swift jobs)
+
+# One live run per ref — a newer push cancels the superseded run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  test:
+  # Detect which components changed, so each job below runs only when
+  # relevant. A change to the shared spec (spec/**) or to this workflow
+  # re-runs every engine suite — spec/** is the parity oracle all three
+  # runners execute. The site job keys on site/** (it tests the VENDORED
+  # wasm on purpose) plus this workflow.
+  changes:
+    name: Detect changed components
+    runs-on: ubuntu-latest
+    outputs:
+      swift: ${{ steps.filter.outputs.swift }}
+      rust: ${{ steps.filter.outputs.rust }}
+      ts: ${{ steps.filter.outputs.ts }}
+      site: ${{ steps.filter.outputs.site }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            spec: &spec
+              - 'spec/**'
+              - '.github/workflows/ci.yml'
+            swift:
+              - *spec
+              - 'swift/**'
+            rust:
+              - *spec
+              - 'rust/**'
+            ts:
+              - *spec
+              - 'ts/**'
+              - 'rust/anzan/**'
+              - 'rust/wasm/**'
+            site:
+              - '.github/workflows/ci.yml'
+              - 'site/**'
+
+  # ---- Swift ---------------------------------------------------------------
+  # The engine + session test suites (the SAME named suites release.yml runs),
+  # via salpa so the commands live in ONE place (salpa.yaml).
+
+  engine:
     name: Engine tests
+    needs: changes
+    if: needs.changes.outputs.swift == 'true'
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v5
@@ -52,8 +116,10 @@ jobs:
           path: gherkin-report-engine.html
           if-no-files-found: warn
 
-  build:
+  session:
     name: App compiles + session tests
+    needs: changes
+    if: needs.changes.outputs.swift == 'true'
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v5
@@ -92,3 +158,125 @@ jobs:
           name: gherkin-report-session
           path: gherkin-report-session.html
           if-no-files-found: warn
+
+  # ---- Rust ----------------------------------------------------------------
+  # fmt + clippy + unit tests + the shared Gherkin suite (spec/anzan through
+  # cucumber-rs — the parity oracle the Swift engine also runs). Two OSes
+  # deliberately: the anzan crate promises platform-independent results
+  # (pure-Rust libm at the via_double seam), and running Linux and macOS side
+  # by side keeps that claim honest.
+
+  rust:
+    name: cargo test (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-14]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+
+      - name: Format check
+        run: cargo fmt --check
+
+      - name: Clippy (warnings are errors)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Unit tests
+        run: cargo test --workspace --lib
+
+      - name: Gherkin parity suite (spec/anzan)
+        run: cargo test --test gherkin -p soroban-engine
+
+  # ---- TypeScript / WASM ---------------------------------------------------
+  # typecheck + vitest (binding surface) + the shared Gherkin suite
+  # (spec/anzan through cucumber-js — the THIRD parity runner, guarding the
+  # JS binding/marshalling layer). Unlike the site (which uses the VENDORED
+  # wasm in ts/wasm and site/src/wasm), this job builds the nodejs wasm
+  # itself so a rust/anzan change can never test against a stale binary —
+  # which is also why rust/anzan/** and rust/wasm/** are in the ts filter.
+
+  ts:
+    name: npm test + spec (ubuntu-latest)
+    needs: changes
+    if: needs.changes.outputs.ts == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust/wasm
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ts/package-lock.json
+      - name: Install
+        working-directory: ts
+        run: npm ci
+      - name: Build wasm (fresh — never test against a stale vendored binary)
+        working-directory: ts
+        run: npm run build:wasm
+      - name: Typecheck
+        working-directory: ts
+        run: npm run typecheck
+      - name: Build
+        working-directory: ts
+        run: npm run build
+      - name: Unit tests (binding surface)
+        working-directory: ts
+        run: npm test
+      - name: Shared spec (cucumber-js — the third parity runner)
+        working-directory: ts
+        run: npm run spec
+
+  # ---- Site ----------------------------------------------------------------
+  # Playwright (chromium) drives the live REPL island — the "Live · try it"
+  # hero build — against the real static build (`npm run build && npm run
+  # preview`, via playwright.config.ts's webServer). Island WIRING only
+  # (hydration, menu bar, mode badge, panels, the carousel handoff); language
+  # behavior is covered by the three spec runners, never here. Uses the
+  # VENDORED wasm (site/src/wasm) on purpose — the smoke test is exactly what
+  # catches a broken or stale vendored binary.
+
+  site:
+    name: playwright (ubuntu-latest)
+    needs: changes
+    if: needs.changes.outputs.site == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+      - name: Install
+        working-directory: site
+        run: npm ci
+      - name: Install chromium
+        working-directory: site
+        run: npx playwright install chromium --with-deps
+      - name: UI tests (the live REPL island)
+        working-directory: site
+        run: npm run test:ui
+      - name: Upload report on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: site/playwright-report/
+          retention-days: 7

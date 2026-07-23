@@ -62,13 +62,28 @@ require verbatim test output back, and do NOT run builds/tests yourself while
 it's mid-edit — a half-written tree can compile into nonsense (we chased a
 phantom stack overflow that way).
 
+**After ANY `rust/anzan` change, re-vendor the wasm:** `cd ts && npm run
+build:wasm` — the script now rebuilds and vendors all three targets:
+`ts/wasm/node`, `ts/wasm/web`, AND `site/src/wasm`. Skipping this leaves the
+ts runner and the site REPL testing a stale binary of the old behavior.
+
 ## 4. Verify (see the `verify` skill for the full battery)
 
-Both suites green with MATCHING, RISEN scenario counts, clippy/fmt clean, and
-a **differential CLI check**: run the same input through both binaries
-(`swift/Engine/.build/debug/soroban` vs `cargo run -q --bin soroban`) and
-byte-compare. Stdout/stderr interleave differently when piped — compare
-sorted before calling a diff real.
+All THREE spec runners green — Swift (PickleKit), Rust (cucumber-rs), and ts
+(cucumber-js via `cd ts && npm test && npm run spec`) — plus the site
+Playwright smoke (`cd site && npx playwright test`). The scenario-count check
+is three-way:
+
+| Runner | Count rule |
+|---|---|
+| Swift | identical to Rust, risen by exactly your added scenarios |
+| Rust | identical to Swift |
+| ts | the language-subset count (lower by design); rises when you touch features it runs, never silently drops |
+
+Clippy/fmt clean, and a **differential CLI check**: run the same input
+through both binaries (`swift/Engine/.build/debug/soroban` vs
+`cargo run -q --bin soroban`) and byte-compare. Stdout/stderr interleave
+differently when piped — compare sorted before calling a diff real.
 
 ## 5. Changelogs — three files, same commit as the code
 

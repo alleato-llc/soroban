@@ -11,6 +11,13 @@ Two salpa-driven tracks, auto-tagged on path-gated merges to `main`:
 fires BOTH. `site/**` (and `docs/ANZAN.md`, `spec/**`) fires only
 `deploy-site.yml`.
 
+Branch protection on `main` requires six checks ("Engine tests", "App
+compiles + session tests", "cargo test (ubuntu-latest)", "cargo test
+(macos-14)", "npm test + spec (ubuntu-latest)", "playwright (ubuntu-latest)")
+and the consolidated `ci.yml` (paths-filter inside one always-running
+workflow) makes them always report — skipped-when-irrelevant counts as
+passing, so no more admin bypass on merges.
+
 ## 1. After a merge: verify, don't trust
 
 ```sh
