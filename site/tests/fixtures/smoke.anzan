@@ -1,0 +1,4 @@
+#!/usr/bin/env soroban
+# Open… fixture: a definition and a use — comments are filtered from the log.
+triple(x) = x * 3
+triple(14)
