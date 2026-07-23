@@ -1,6 +1,7 @@
 ---
 import Layout from "../layouts/Layout.astro";
 import Card from "../components/Card.astro";
+import Repl from "../components/Repl.tsx";
 import Download from "../components/Download.tsx";
 import { resolveDownloads } from "../lib/releases";
 
@@ -78,6 +79,7 @@ const links = {
                 <div class="build-toggle" role="tablist" aria-label="Which build to preview">
                     <button class="bt-opt is-active" data-build="native" role="tab">Native · macOS</button>
                     <button class="bt-opt" data-build="cross" role="tab">Cross-platform</button>
+                    <button class="bt-opt" data-build="live" role="tab">Live · try it</button>
                 </div>
                 <div class="shots">
                     <!-- Native (Swift/macOS) -->
@@ -138,6 +140,14 @@ const links = {
                         src="/screenshots/rust-grid-inspector-light.png"
                         alt="The cross-platform Rust app's grid with the environment inspector"
                         width="2080" height="1360" loading="lazy" />
+                    <!-- The LIVE build — not a screenshot: the real engine
+                         (Rust → WASM) as an interactive REPL. Hydrates only
+                         when Astro mounts the island; the carousel treats
+                         this build as slide-less (no dots, no cycling, no
+                         pause/maximize handlers). -->
+                    <div class="shot-live" data-build="live">
+                        <Repl client:only="preact" />
+                    </div>
                 </div>
                 <div class="dots" aria-label="Screenshot navigation"></div>
             </div>
@@ -165,8 +175,9 @@ const links = {
 
                     const theme = () =>
                         document.documentElement.dataset.theme === "light" ? "light" : "dark";
-                    const build = () =>
-                        root.dataset.build === "cross" ? "cross" : "native";
+                    // "native" | "cross" | "live" — live is the REPL island,
+                    // a slide-less build (no dots/cycling/pause/maximize).
+                    const build = () => root.dataset.build ?? "native";
                     const slides = () =>
                         [
                             ...root.querySelectorAll<HTMLImageElement>(
@@ -176,6 +187,7 @@ const links = {
 
                     const render = () => {
                         const list = slides();
+                        if (list.length === 0) return; // live build: no slides
                         index = ((index % list.length) + list.length) % list.length;
                         root.querySelectorAll(".shot").forEach((s) => s.classList.remove("is-active"));
                         list[index]?.classList.add("is-active");
@@ -223,6 +235,7 @@ const links = {
 
                     const maximize = () => {
                         const list = slides();
+                        if (list.length === 0) return; // live build
                         lightImg.src = list[index].src;
                         lightImg.alt = list[index].alt;
                         lightbox.classList.add("open");
@@ -242,10 +255,12 @@ const links = {
                     // Single click pauses/plays; a double click cancels the
                     // pending single action and maximizes instead.
                     shots.addEventListener("click", () => {
+                        if (build() === "live") return; // REPL owns its clicks
                         clearTimeout(clickTimer);
                         clickTimer = window.setTimeout(togglePlay, 250);
                     });
                     shots.addEventListener("dblclick", () => {
+                        if (build() === "live") return;
                         clearTimeout(clickTimer);
                         maximize();
                     });
@@ -283,6 +298,9 @@ const links = {
                             index = 0;
                             buildDots();
                             render();
+                            // The live build doesn't cycle; leaving it
+                            // resumes (unless the visitor had paused).
+                            chosen === "live" ? stop() : play();
                         });
                     });
 

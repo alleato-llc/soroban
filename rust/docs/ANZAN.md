@@ -10,7 +10,12 @@ multi-line source into logical statements — the same primitive behind `.anzan`
 files, statement-aware pipes, and REPL continuation): split, then `evaluate`
 each statement. The CLI (`rust/cli`) is a two-file demonstration of exactly
 that surface. The crate is consumable as a cargo **git dependency** by package
-name (`anzan = { git = "…" }`); it is not on crates.io.
+name (`anzan = { git = "…" }`); it is not on crates.io. For JS hosts, the
+workspace-excluded `rust/wasm` crate (`anzan-wasm`) compiles this same surface
+to WebAssembly — the `@alleato/anzan` npm package (`ts/`) and the site's live
+REPL are its consumers. Two wasm32-only cfg shims live in this crate:
+`today()` reads the JS clock, and `MAX_CALL_DEPTH` drops to 200 (the wasm
+stack can't grow — `stacker` is a no-op there).
 
 > **This is a doc about the CRATE**, not the language. For the language itself —
 > grammar, precedence, the number lexicon, functions, `data` types, reflection —

@@ -25,6 +25,22 @@ still suppresses all release workflows regardless of the paths it touches — se
 
 ### Added
 
+- **Anzan in the browser and on npm: the TS/WASM target** (`ts/`,
+  `rust/wasm`, the site's live REPL — modeled on the sibling dorado repo's
+  pattern). The verified Rust engine compiles to WebAssembly via a thin,
+  workspace-excluded binding crate (`anzan-wasm`) — *a binding, never a third
+  implementation* — wrapped by the npm-ready `@alleato/anzan` TypeScript
+  package (typed `Calculator` API, a fourth `anzan` CLI, vendored wasm so
+  installs need no Rust; unpublished until the name/org call). The shared
+  spec gains a THIRD runner — cucumber-js over `spec/anzan` — guarding the
+  JS binding layer, and the landing page gains a **live REPL** ("Try it,
+  right here"): the real engine, mode chips, click-to-run examples, session
+  state (`ans * 2` after the finance example answers `$21,500.00`).
+  `ts/wasm/` and `site/src/wasm/` are vendored builds — regenerate with
+  `cd ts && npm run build:wasm` after `rust/anzan` changes. New `ts-ci.yml`
+  builds fresh wasm and runs typecheck/vitest/spec on `ts/**`,
+  `rust/anzan/**`, `rust/wasm/**`, and `spec/**` changes.
+
 - **Anzan scripts: `.anzan` files, statement-aware pipes, and a REPL
   continuation prompt** (`spec/anzan/scripting.feature`, both engines). A
   statement now ends at a newline *unless* a `( [ {` is still open — following

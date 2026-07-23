@@ -16,7 +16,10 @@
 //! - `SOROBAN_SHOT_VIEW=grid` — start in the grid view (default: the log).
 //! - `SOROBAN_SHOT_SELECT=B4` — select that cell (shows the edit bar / a control
 //!   strip / a control's own value).
-//! - `SOROBAN_SHOT_MENU=file|edit|view` — open that top menu's dropdown.
+//! - `SOROBAN_SHOT_MENU=file|edit|sheet|view|examples` — open that top menu's
+//!   dropdown.
+//! - `SOROBAN_SHOT_EXAMPLES=<index>` — with `_MENU=examples`, fly out the
+//!   category submenu at that 0-based index.
 //! - `SOROBAN_SHOT_EDIT=1` — open the inline editor on the selected cell.
 //! - `SOROBAN_SHOT_TYPE=<text>` — seed live input (log bar / formula bar) and
 //!   recompute completions, to capture the autocomplete popup.
@@ -100,7 +103,14 @@ pub fn configure(app: &mut App) {
         Ok("edit") => app.menu_open = Some(1),
         Ok("sheet") => app.menu_open = Some(2),
         Ok("view") => app.menu_open = Some(3),
+        Ok("examples") => app.menu_open = Some(4),
         _ => {}
+    }
+    // With the Examples menu open, optionally fly out one category's submenu.
+    if let Ok(index) = std::env::var("SOROBAN_SHOT_EXAMPLES") {
+        if let Ok(index) = index.parse() {
+            app.examples_submenu = Some(index);
+        }
     }
     // Open the right-click cell context menu (formatting + clipboard verbs) at a
     // fixed anchor, for shooting it over the grid.

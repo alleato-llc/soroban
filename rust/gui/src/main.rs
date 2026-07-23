@@ -15,6 +15,7 @@
 //! save/open.
 
 mod binary_panel;
+mod examples;
 mod message;
 mod panels;
 mod render;
@@ -213,6 +214,9 @@ struct App {
     /// Which cell-menu submenu (Number Format / Alignment / …) is currently
     /// flown out, by index; `None` when none is hovered.
     cell_menu_submenu: Option<usize>,
+    /// Which Examples-menu category submenu is currently flown out, by index
+    /// into [`examples::CATEGORIES`]; `None` when none is hovered.
+    examples_submenu: Option<usize>,
     /// True while the edit bar holds uncommitted typing — the point-mode gate:
     /// a grid click on an operand-expecting draft inserts a reference instead
     /// of moving the selection.

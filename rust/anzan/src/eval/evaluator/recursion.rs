@@ -13,7 +13,15 @@ const STACK_HEADROOM: usize = 128 * 1024;
 const SEGMENT_STACK_SIZE: usize = 16 << 20; // 16 MB per segment
 /// Sanity cap: a missing base case errors (with a hint) instead of chewing
 /// memory forever. ~10k frames is far beyond honest recursion.
+#[cfg(not(target_arch = "wasm32"))]
 const MAX_CALL_DEPTH: usize = 10_000;
+/// On wasm the stack CANNOT grow (`stacker::maybe_grow` is a no-op there), so
+/// deep recursion would TRAP — aborting the whole instance, which is fatal for
+/// a browser REPL. Node/browser default stacks trap around
+/// ~500 minimal language frames (measured); 200 leaves >2x margin for
+/// complex expressions. Proper TAIL recursion is unaffected (constant stack).
+#[cfg(target_arch = "wasm32")]
+const MAX_CALL_DEPTH: usize = 200;
 /// Tail-call iteration cap: a tail loop uses CONSTANT stack, so without
 /// this a base-case-less TAIL recursion would spin forever.
 const MAX_TAIL_ITERATIONS: usize = 1_000_000;
