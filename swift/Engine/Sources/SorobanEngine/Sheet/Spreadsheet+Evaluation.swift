@@ -133,7 +133,7 @@ extension Spreadsheet {
         case .number(let number): return .value(number)
         case .fixedInt(let f): return .value(f.decimal) // shows its numeric value
         case .fixedDecimal(let d): return .value(d.value) // value; CellFormat handles currency padding
-        // A finance-mode literal's symbol/grouping is INPUT formatting; a cell's
+        // A money/grouped literal's symbol/grouping is INPUT formatting; a cell's
         // own NumberFormat is what governs how it displays. Storing the raw
         // value keeps the two from fighting (and keeps references numeric).
         case .money(let m): return .value(m.value)

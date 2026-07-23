@@ -35,7 +35,7 @@ pub use eval::format_builder::{
 };
 pub use eval::registry::FunctionRegistry;
 pub use eval::value::{FunctionValue, HostObject, MapEntry, RecordValue, Value};
-pub use mode::LanguageMode;
+pub use mode::{LanguageMode, ScientificStyle};
 pub use number::{BigDecimal, PrecisionContext};
 pub use parser::Parser;
 pub use script::{Statement, StatementAccumulator};

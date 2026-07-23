@@ -76,6 +76,20 @@ Feature: The mathematics a user can reach
       | acos(0) * 2  | 3.1415926535897932 |
       | atan(1) * 4  | 3.1415926535897932 |
 
+  # The ° postfix converts degrees to radians exactly (× π/180, π at the
+  # engine's 50-digit working precision) — a core, mode-agnostic literal, so
+  # sin(90°) reads the way a hand calculator's DEG key feels without ever
+  # storing a mode. The trig itself still crosses the Double seam.
+  Scenario Outline: The degree postfix converts to radians
+    When I calculate "<expression>"
+    Then the result is "<result>"
+
+    Examples:
+      | expression    | result |
+      | sin(90°)      | 1      |
+      | cos(180°)     | -1     |
+      | 90° == pi / 2 | 1      |
+
   Scenario Outline: Exponentials and logarithms
     When I calculate "<expression>"
     Then the result is "<result>"

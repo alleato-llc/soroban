@@ -12,6 +12,7 @@ import {
   statements,
   trailingComment,
   usesProgrammerNotation,
+  type Mode,
 } from "./index.js";
 
 function value(calculator: Calculator, line: string) {
@@ -51,21 +52,57 @@ describe("Calculator", () => {
     expect(value(calculator, "0b1100 ^ 0b1010").description).toBe("6");
   });
 
-  it("finance mode: currency is first-class, canonical vs display", () => {
+  it("currency is core grammar: first-class in the default mode, canonical vs display", () => {
     const calculator = new Calculator();
-    calculator.mode = "finance";
     const outcome = value(calculator, "$10 * 5%");
     expect(outcome.kind).toBe("value");
     expect(outcome.displayDescription).toBe("$0.50");
     expect(outcome.description).toBe('Money(0.5, "USD")');
   });
 
-  it("finance mode: grouped input echoes grouped", () => {
+  it("grouped input echoes grouped in the default mode", () => {
     const calculator = new Calculator();
-    calculator.mode = "finance";
     const outcome = value(calculator, "138,561 * 9%");
     expect(outcome.description).toBe("12470.49");
     expect(outcome.displayDescription).toBe("12,470.49");
+  });
+
+  it("scientific mode echoes plain numbers scientifically; eng snaps to 3", () => {
+    const calculator = new Calculator();
+    calculator.mode = "scientific";
+    const outcome = value(calculator, "123456 * 2");
+    // The canonical form stays the plain number — only the echo changes.
+    expect(outcome.description).toBe("246912");
+    expect(outcome.displayDescription).toBe("2.46912e5");
+    calculator.sciStyle = "eng";
+    expect(value(calculator, "123456 * 2").displayDescription).toBe("246.912e3");
+    // Value-carried display wins over the sci echo.
+    expect(value(calculator, "$10 * 5%").displayDescription).toBe("$0.50");
+  });
+
+  it("setModeParsing rides the engine's :mode seam", () => {
+    const calculator = new Calculator();
+    calculator.setModeParsing("scientific eng");
+    expect(calculator.mode).toBe("scientific");
+    expect(calculator.sciStyle).toBe("eng");
+    calculator.setModeParsing("normal");
+    expect(calculator.mode).toBe("normal");
+  });
+
+  it("the retired finance mode throws the promotion hint", () => {
+    const calculator = new Calculator();
+    expect(() => {
+      calculator.mode = "finance" as unknown as Mode;
+    }).toThrow(/currency now works in every mode/);
+    expect(() => calculator.setModeParsing("finance")).toThrow(
+      /use normal, programmer, or scientific/,
+    );
+  });
+
+  it("the degree literal converts to radians in every mode", () => {
+    const calculator = new Calculator();
+    expect(value(calculator, "sin(90°)").description).toBe("1");
+    expect(value(calculator, "90° == pi / 2").description).toBe("1");
   });
 
   it("classifies outcomes by kind", () => {

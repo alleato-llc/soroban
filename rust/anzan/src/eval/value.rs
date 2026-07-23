@@ -42,14 +42,14 @@ pub enum Value {
     /// matrix lives in the evaluator.
     FixedDecimal(FixedDecimal),
 
-    /// A finance-mode currency amount (`$10`, `Money(10, "USD")`) — a
-    /// first-class tagged type. Coerces to its plain value outside tagged
-    /// arithmetic; the mixing matrix lives in `Money`.
+    /// A currency amount (`$10`, `Money(10, "USD")` — core grammar, any
+    /// mode) — a first-class tagged type. Coerces to its plain value outside
+    /// tagged arithmetic; the mixing matrix lives in `Money`.
     Money(Money),
-    /// A plain number written with thousands grouping (`138,561`) in finance
-    /// mode. PRESENTATION ONLY — equal to the same ungrouped number in every
-    /// way; it carries so the grouping echoes through a calculation. See
-    /// `Grouped` for the (rule-free) propagation.
+    /// A plain number written with thousands grouping (`138,561` — core
+    /// grammar, any mode). PRESENTATION ONLY — equal to the same ungrouped
+    /// number in every way; it carries so the grouping echoes through a
+    /// calculation. See `Grouped` for the (rule-free) propagation.
     Grouped(BigDecimal),
     /// An opaque, HOST-implemented handle navigated through a uniform
     /// protocol (`.member`/`[…]`/`.method(…)`). Anzan never knows what it is
@@ -322,8 +322,8 @@ impl fmt::Display for Value {
             Self::FixedInt(fixed) => write!(f, "{}", fixed.description()),
             Self::FixedDecimal(d) => write!(f, "{}", d.description()),
             Self::Money(m) => write!(f, "{}", m.description()),
-            // Grouping is presentation — the canonical form is the plain number,
-            // which re-parses in any mode (unlike the finance-only `138,561`).
+            // Grouping is presentation — the canonical form is the plain
+            // number; the grouped `138,561` spelling is input sugar.
             Self::Grouped(n) => write!(f, "{n}"),
             Self::Host(object) => write!(f, "{}", object.description()),
         }

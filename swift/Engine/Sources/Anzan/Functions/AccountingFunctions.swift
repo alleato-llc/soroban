@@ -54,7 +54,7 @@ let accountingFunctions: [BuiltinFunction] = [
     BuiltinFunction(
         name: "Money", category: .accounting,
         signature: "Money(value, code)",
-        summary: "A currency amount — the mode-agnostic form of the finance-mode $10 literal. `code` is an ISO currency code string (case-insensitive): USD, EUR, GBP, JPY, CNY, INR, KRW, RUB, CHF, BTC. Renders grouped to 2 decimals with the currency symbol (Money(1234.5, \"USD\") → $1,234.50). The currency propagates through arithmetic; mixing two currencies is an error.",
+        summary: "A currency amount — the canonical constructor form of the $10 literal (both are core grammar, any mode). `code` is an ISO currency code string (case-insensitive): USD, EUR, GBP, JPY, CNY, INR, KRW, RUB, CHF, BTC. Renders grouped to 2 decimals with the currency symbol (Money(1234.5, \"USD\") → $1,234.50). The currency propagates through arithmetic; mixing two currencies is an error.",
         examples: ["Money(10, \"USD\")", "Money(1234.5, \"EUR\")"],
         arity: 2...2,
         applyValues: { try makeMoney($0) }),

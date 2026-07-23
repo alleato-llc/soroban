@@ -17,8 +17,10 @@ struct ReferenceRewriterTests {
     }
 
     @Test func dollarAloneIsALoudLexError() {
+        // `$5` is NOT here — `$`+digit is the core currency literal (any mode);
+        // only `$`+letter shapes are the cell pin, and a dangling `$` is loud.
         let calc = Calculator()
-        for input in ["$", "$x", "$5", "2 + $", "$A", "$A:"] {
+        for input in ["$", "$x", "2 + $", "$A", "$A:"] {
             guard case .failure(let error) = calc.evaluate(input) else {
                 Issue.record("'\(input)' should be a lex error"); return
             }

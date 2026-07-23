@@ -50,11 +50,11 @@ struct ProgrammerModeParsingTests {
         #expect(try c.evaluate("2^3^2").get() == .value(BigDecimal(512)))             // right-assoc power
     }
 
-    @Test func financeModeMatchesNormalGrammar() throws {
+    @Test func scientificModeMatchesNormalGrammar() throws {
         let c = Calculator()
-        c.mode = .finance
-        // Finance is grammatically identical to Normal today (a placeholder for
-        // future finance display defaults) — pin it so a later fork trips here.
+        c.mode = .scientific
+        // Scientific is grammatically identical to Normal — it changes only how
+        // a plain numeric RESULT echoes. Pin it so a grammar fork trips here.
         #expect(try c.evaluate("2 ^ 3").get() == .value(BigDecimal(8)))            // power, not XOR
         #expect(try c.evaluate("3%").get() == .value(BigDecimal(string: "0.03")!)) // percent, not modulo
         #expect(c.evaluate("5 & 3").isFailure)                                     // & is Programmer-only

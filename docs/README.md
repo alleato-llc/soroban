@@ -28,8 +28,8 @@ Only [`ANZAN.md`](ANZAN.md) is rendered on the site
 Each expands a section of `ANZAN.md`. These describe the *language*, so they are
 shared; implementation details live in the ecosystem docs.
 
-- **[MODES.md](MODES.md)** — input/display dialects (Normal / Programmer /
-  Finance) over one canonical AST. *(ANZAN §4)*
+- **[MODES.md](MODES.md)** — input/display dialects (Normal / Scientific /
+  Programmer) over one canonical AST. *(ANZAN §4)*
 - **[FIXED-WIDTH.md](FIXED-WIDTH.md)** — bounded, *checked* `Int` / `UInt`
   integer types. *(ANZAN §2)*
 - **[DECIMAL.md](DECIMAL.md)** — fixed-precision `Decimal(value, precision,

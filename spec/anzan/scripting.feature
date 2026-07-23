@@ -78,10 +78,9 @@ Feature: Scripts — multi-line sources split into logical statements
       """
     Then the calculation fails mentioning "unterminated"
 
-  # Modes compose with scripts: finance-mode grouping works inside a
+  # Core grouping composes with scripts: a grouped literal works inside a
   # continued (non-call) paren, where the `,` can't be an argument separator.
-  Scenario: Finance-mode grouping works inside a continued statement
-    Given the calculator is in finance mode
+  Scenario: Thousands grouping works inside a continued statement
     When I run the script:
       """
       x = (

@@ -7,14 +7,13 @@ use std::ops::Range;
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind {
     Number(BigDecimal),
-    /// A finance-mode currency literal ($10, €10) — the glyph resolved to a
-    /// `Currency`. Thousands grouping rides the value. Lexed only in finance
-    /// mode.
+    /// A currency literal ($10, €10) — the glyph resolved to a `Currency`.
+    /// Thousands grouping rides the value. Core grammar, every mode.
     Money {
         value: BigDecimal,
         currency: Currency,
     },
-    /// A finance-mode grouped plain number (138,561) — presentation only.
+    /// A grouped plain number (138,561) — presentation only, every mode.
     Grouped(BigDecimal),
     Identifier(String),
     /// "…" — double-quoted string literal, escapes applied.
@@ -44,6 +43,8 @@ pub enum TokenKind {
     Slash,
     Percent,
     Caret,
+    /// ° — postfix degrees→radians (90° = π/2), mode-agnostic like %.
+    Degree,
     /// << >> — Programmer-mode bit shifts (lexed mode-agnostically; parser
     /// gates).
     ShiftLeft,

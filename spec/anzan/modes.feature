@@ -45,11 +45,11 @@ Feature: Input/display modes are dialects over one canonical language
       | 1 << 2 |
       | 8 >> 1 |
 
-  # docs/MODES.md — Finance keeps the Normal arithmetic core: ^ is power, % is
-  # percent, and the Programmer glyphs still error. It ADDS two literal forms
-  # (currency and grouped numbers); everything else reads as Normal does.
-  Scenario Outline: Finance mode keeps the Normal arithmetic core
-    Given the calculator is in finance mode
+  # docs/MODES.md — Scientific keeps the Normal GRAMMAR untouched: ^ is power,
+  # % is percent, and the Programmer glyphs still error. It changes only how a
+  # plain numeric RESULT echoes (scientific notation, below).
+  Scenario Outline: Scientific mode keeps the Normal arithmetic core
+    Given the calculator is in scientific mode
     When I calculate "<expr>"
     Then the result is "<result>"
 
@@ -59,18 +59,77 @@ Feature: Input/display modes are dialects over one canonical language
       | 3%    | 0.03   |
       | 50%   | 0.5    |
 
-  Scenario: Finance mode still rejects the Programmer-only glyphs
-    Given the calculator is in finance mode
+  Scenario: Scientific mode still rejects the Programmer-only glyphs
+    Given the calculator is in scientific mode
     When I calculate "5 & 3"
     Then the calculation fails mentioning "Programmer-mode operator"
 
-  # docs/MODES.md — currency is a first-class tagged TYPE (a peer of Int32/Decimal).
-  # `the result is` checks the CANONICAL form — the mode-agnostic constructor
-  # Money(v, "CODE"), what persists and recalls — while `the log echoes` checks
-  # the human display, $10.00 (grouped, 2 decimals, symbol outside the sign).
-  # The currency PROPAGATES through arithmetic, so a money input yields money.
-  Scenario Outline: Finance mode carries currency through arithmetic
-    Given the calculator is in finance mode
+  # docs/MODES.md — in Scientific mode a plain NUMERIC result echoes in
+  # scientific notation. The mantissa keeps the value's own significant digits
+  # (exactness — no rounding); the CANONICAL form is untouched (`the result is`
+  # stays the plain number, which is what persists and recalls).
+  Scenario Outline: Scientific mode echoes plain numbers in scientific notation
+    Given the calculator is in scientific mode
+    When I calculate "<expr>"
+    Then the result is "<canonical>"
+    And the log echoes "<echo>"
+
+    Examples:
+      | expr       | canonical | echo      |
+      | 123456 * 2 | 246912    | 2.46912e5 |
+      | 5          | 5         | 5e0       |
+      | 1 / 8      | 0.125     | 1.25e-1   |
+      | -2500 * 2  | -5000     | -5e3      |
+
+  # The ENG variant snaps the exponent to a multiple of 3, shifting the
+  # mantissa — the same value, engineering-style. Set via `:mode scientific eng`.
+  Scenario Outline: The engineering style snaps the exponent to a multiple of 3
+    Given the calculator is in scientific mode
+    And the scientific style is "eng"
+    When I calculate "<expr>"
+    Then the log echoes "<echo>"
+
+    Examples:
+      | expr       | echo      |
+      | 123456 * 2 | 246.912e3 |
+      | 0.05       | 50e-3     |
+      | 5          | 5e0       |
+
+  # Value-carried display WINS over the scientific echo: Money still shows
+  # $10.00 and a grouped number still echoes grouped — only bare numeric
+  # results take the sci/eng notation.
+  Scenario: Money keeps its own display in scientific mode
+    Given the calculator is in scientific mode
+    When I calculate "$10 * 5%"
+    Then the log echoes "$0.50"
+
+  Scenario: A grouped number keeps its grouping in scientific mode
+    Given the calculator is in scientific mode
+    When I calculate "138,561 * 9%"
+    Then the log echoes "12,470.49"
+
+  # The ° literal is mode-agnostic (see mathematics.feature); in Scientific
+  # mode its plain numeric result echoes scientifically like any other.
+  Scenario: Degrees work in scientific mode
+    Given the calculator is in scientific mode
+    When I calculate "sin(90°)"
+    Then the result is "1"
+    And the log echoes "1e0"
+
+  # Finance mode is GONE — its literals were promoted into the core grammar
+  # (currency and grouping work in every mode now), so `:mode finance` is the
+  # ordinary unknown-mode error, pointing at the promotion.
+  Scenario: The finance mode is retired in favor of core currency
+    When I calculate ":mode finance"
+    Then the calculation fails mentioning "currency now works"
+
+  # docs/MODES.md — currency is a first-class tagged TYPE (a peer of Int32/Decimal)
+  # in the CORE grammar: the literal lexes in every mode. `the result is` checks
+  # the CANONICAL form — the constructor Money(v, "CODE"), what persists and
+  # recalls — while `the log echoes` checks the human display, $10.00 (grouped,
+  # 2 decimals, symbol outside the sign). The currency PROPAGATES through
+  # arithmetic, so a money input yields money.
+  Scenario Outline: Currency carries through arithmetic
     When I calculate "<expr>"
     Then the result is "<canonical>"
     And the log echoes "<echo>"
@@ -86,9 +145,8 @@ Feature: Input/display modes are dialects over one canonical language
       | £1234.567   | Money(1234.567, "GBP") | £1,234.57  |
       | ¥5000 * 2   | Money(10000, "JPY")    | ¥10,000.00 |
 
-  # The constructor is mode-agnostic — it works in Normal mode too (the $-literal
-  # does not). This is the persistence/recall form: it re-parses by evaluation in
-  # any mode, exactly like Decimal(…) / Int32(…).
+  # The constructor is the persistence/recall form: it re-parses by evaluation
+  # exactly like Decimal(…) / Int32(…), and the literal is sugar for it.
   Scenario: The Money constructor works in normal mode
     When I calculate "Money(10, "USD")"
     Then the result is "Money(10, "USD")"
@@ -101,7 +159,6 @@ Feature: Input/display modes are dialects over one canonical language
   # The currency set is closed — an unsupported currency glyph is a loud lex
   # error, not a silent pass. (Use the constructor for currencies without a glyph.)
   Scenario: An unsupported currency glyph is refused
-    Given the calculator is in finance mode
     When I calculate "₫100"
     Then the calculation fails mentioning "unsupported currency"
 
@@ -111,7 +168,6 @@ Feature: Input/display modes are dialects over one canonical language
   # otherwise be indistinguishable. Note `$10 * 5%` is fine: there the % is on
   # the plain 5, never on the money.
   Scenario: Percent on a currency amount is refused
-    Given the calculator is in finance mode
     When I calculate "$9%"
     Then the calculation fails mentioning "can't apply % to a currency amount"
 
@@ -119,7 +175,6 @@ Feature: Input/display modes are dialects over one canonical language
   # the symbol on both sides. (Percent relies on this: `5%` evaluates to a plain
   # 0.05 before it ever reaches the multiply.)
   Scenario Outline: A plain number absorbs into the currency
-    Given the calculator is in finance mode
     When I calculate "<expr>"
     Then the log echoes "<echo>"
 
@@ -132,7 +187,6 @@ Feature: Input/display modes are dialects over one canonical language
   # Two different currencies is a hard error — there is no exchange rate to
   # apply, so guessing would be worse than refusing.
   Scenario Outline: Mixing currencies is refused
-    Given the calculator is in finance mode
     When I calculate "<expr>"
     Then the calculation fails mentioning "can't mix currencies"
 
@@ -147,7 +201,6 @@ Feature: Input/display modes are dialects over one canonical language
   # dimensionality ($10 * $2 is $20.00, not "dollars squared"): the tag is a
   # display contract, not a unit system.
   Scenario Outline: The currency survives every arithmetic operator
-    Given the calculator is in finance mode
     When I calculate "<expr>"
     Then the log echoes "<echo>"
 
@@ -161,23 +214,16 @@ Feature: Input/display modes are dialects over one canonical language
   # Negating money keeps it money, and the sign sits OUTSIDE the symbol —
   # matching how the sheet's currency format already renders negatives.
   Scenario: Negation keeps the currency and puts the sign outside the symbol
-    Given the calculator is in finance mode
     When I calculate "-$1234.5"
     Then the result is "Money(-1234.5, "USD")"
     And the log echoes "-$1,234.50"
 
-  # Currency literals are a FINANCE dialect — in Normal mode `$` still means the
-  # cell-reference column pin, and that error must not regress into silence.
-  Scenario: Currency literals are finance-mode only
-    When I calculate "$10 + $5"
-    Then the calculation fails mentioning "'$' pins a cell reference"
-
   # `,` groups the thousands of a numeric literal: 1-3 digits, then any number of
-  # exactly-3-digit groups. Grouping is PRESENTATION — the canonical form is the
-  # plain number, but it ECHOES, so an input that grouped gets a grouped answer
-  # back (at the value's own decimals — padding is money's rule, not grouping's).
-  Scenario Outline: Finance mode reads grouped numbers and echoes the grouping
-    Given the calculator is in finance mode
+  # exactly-3-digit groups — in EVERY mode. Grouping is PRESENTATION — the
+  # canonical form is the plain number, but it ECHOES, so an input that grouped
+  # gets a grouped answer back (at the value's own decimals — padding is money's
+  # rule, not grouping's).
+  Scenario Outline: Grouped numbers echo their grouping
     When I calculate "<expr>"
     Then the result is "<canonical>"
     And the log echoes "<echo>"
@@ -194,27 +240,23 @@ Feature: Input/display modes are dialects over one canonical language
   # Grouping composes with currency — the money literal is the same number
   # grammar behind the symbol.
   Scenario: Grouped currency composes through a subexpression
-    Given the calculator is in finance mode
     When I calculate "$10,000 + ($15,000 * 5%)"
     Then the result is "Money(10750, "USD")"
     And the log echoes "$10,750.00"
 
   # `,` is the argument separator FIRST. Grouping is suppressed inside a call's
   # argument list (and inside [ ] / { } literals), so existing code cannot change
-  # meaning under finance mode.
+  # meaning.
   Scenario: The argument separator wins over grouping
-    Given the calculator is in finance mode
     When I calculate "max(138,561)"
     Then the result is "561"
 
   Scenario: Grouping is suppressed inside an array literal
-    Given the calculator is in finance mode
     When I calculate "sum([1,500])"
     Then the result is "501"
 
   # A malformed group is a loud lex error, not a silent two-number misparse.
   Scenario Outline: Malformed thousands groups are refused
-    Given the calculator is in finance mode
     When I calculate "<expr>"
     Then the calculation fails mentioning "thousands group"
 
@@ -223,10 +265,3 @@ Feature: Input/display modes are dialects over one canonical language
       | 1,23     |
       | 1,2345   |
       | 1234,567 |
-
-  # Grouped literals are a FINANCE dialect too — Normal mode still reads `,` as a
-  # separator everywhere, so a bare grouped number is the usual "can't directly
-  # follow" error rather than a number.
-  Scenario: Grouped literals are finance-mode only
-    When I calculate "138,561"
-    Then the calculation fails mentioning "unexpected trailing input"

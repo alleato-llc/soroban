@@ -6,7 +6,7 @@
 //! functions, and the mode exactly like the app's log and the native CLIs.
 #![forbid(unsafe_code)]
 
-use anzan::{Calculator, EvalOutcome, LanguageMode, StatementAccumulator};
+use anzan::{Calculator, EvalOutcome, ScientificStyle, StatementAccumulator};
 use serde_json::json;
 use wasm_bindgen::prelude::*;
 
@@ -33,7 +33,8 @@ impl WasmCalculator {
     /// canonical, re-parseable form (what persists); `displayDescription`
     /// is the human echo (`$10.00`).
     pub fn evaluate(&mut self, line: &str) -> String {
-        outcome_json(self.inner.evaluate(line)).to_string()
+        let outcome = self.inner.evaluate(line);
+        self.outcome_json(outcome).to_string()
     }
 
     /// Run a multi-line script (the `.anzan` contract): statements split by
@@ -57,7 +58,7 @@ impl WasmCalculator {
         for statement in statements {
             let outcome = self.inner.evaluate(&statement.text);
             let failed = outcome.is_err();
-            let mut entry = outcome_json(outcome);
+            let mut entry = self.outcome_json(outcome);
             entry["line"] = json!(statement.line);
             entry["statement"] = json!(statement.text);
             results.push(entry);
@@ -69,23 +70,49 @@ impl WasmCalculator {
         json!({ "results": results, "halted": halted }).to_string()
     }
 
-    /// The language mode — "normal" | "programmer" | "finance".
+    /// The language mode — "normal" | "programmer" | "scientific".
     #[wasm_bindgen(getter)]
     pub fn mode(&self) -> String {
         self.inner.mode.name().to_string()
     }
 
+    /// Setting rides the engine's one shared `:mode` parse seam
+    /// (`Calculator::set_mode_parsing`), so the mode list and the
+    /// unknown-mode errors (including the `finance` promotion hint) can
+    /// never drift from the native hosts'.
     #[wasm_bindgen(setter, js_name = mode)]
     pub fn set_mode(&mut self, mode: &str) -> Result<(), JsError> {
-        match LanguageMode::from_name(&mode.to_lowercase()) {
-            Some(mode) => {
-                self.inner.mode = mode;
+        self.set_mode_parsing(mode)
+    }
+
+    /// The Scientific-mode echo variant — "sci" (default) | "eng"
+    /// (`:mode scientific eng`). Display only; ignored outside scientific.
+    #[wasm_bindgen(getter, js_name = sciStyle)]
+    pub fn sci_style(&self) -> String {
+        self.inner.sci_style.name().to_string()
+    }
+
+    #[wasm_bindgen(setter, js_name = sciStyle)]
+    pub fn set_sci_style(&mut self, style: &str) -> Result<(), JsError> {
+        match ScientificStyle::from_name(&style.to_lowercase()) {
+            Some(style) => {
+                self.inner.sci_style = style;
                 Ok(())
             }
-            None => Err(JsError::new(
-                "unknown mode — use normal, programmer, or finance",
-            )),
+            None => Err(JsError::new("unknown scientific style — use sci or eng")),
         }
+    }
+
+    /// Applies a `:mode` command argument — "programmer", "scientific eng" —
+    /// through the engine's shared parse seam (`Calculator::set_mode_parsing`),
+    /// the same one the native CLIs, the GUI, and the spec use. Throws the
+    /// engine's own error text on an unknown mode/style (`:mode finance` gets
+    /// the currency-promotion hint).
+    #[wasm_bindgen(js_name = setModeParsing)]
+    pub fn set_mode_parsing(&mut self, argument: &str) -> Result<(), JsError> {
+        self.inner
+            .set_mode_parsing(argument)
+            .map_err(|error| JsError::new(&error.to_string()))
     }
 
     /// Identifier completions for a prefix — JSON `[{"name":…}]` (the same
@@ -154,6 +181,38 @@ impl WasmCalculator {
             })
             .to_string(),
             None => "null".to_string(),
+        }
+    }
+}
+
+impl WasmCalculator {
+    /// The outcome under this session's display dialect: `displayDescription`
+    /// comes from `display_description_in(mode, sci_style)`, so the browser
+    /// REPL and the ts CLI echo scientific notation exactly like the native
+    /// hosts (value-carried display — Money, grouping — still wins).
+    fn outcome_json(&self, outcome: Result<EvalOutcome, anzan::EngineError>) -> serde_json::Value {
+        match outcome {
+            Ok(outcome) => {
+                let kind = match &outcome {
+                    EvalOutcome::Value(_) => "value",
+                    EvalOutcome::FunctionDefined { .. } => "function",
+                    EvalOutcome::DataDefined { .. } => "data",
+                    EvalOutcome::Documentation(_) => "documentation",
+                    EvalOutcome::Comment(_) => "comment",
+                };
+                let mut entry = json!({
+                    "ok": true,
+                    "kind": kind,
+                    "description": outcome.to_string(),
+                    "displayDescription":
+                        outcome.display_description_in(self.inner.mode, self.inner.sci_style),
+                });
+                if let Some(block) = outcome.raw_block() {
+                    entry["rawBlock"] = json!(block);
+                }
+                entry
+            }
+            Err(error) => error_json(&error),
         }
     }
 }
@@ -245,31 +304,6 @@ pub fn trailing_comment(line: &str) -> Option<String> {
 #[wasm_bindgen(js_name = usesProgrammerNotation)]
 pub fn uses_programmer_notation(line: &str) -> bool {
     Calculator::uses_programmer_notation(line)
-}
-
-fn outcome_json(outcome: Result<EvalOutcome, anzan::EngineError>) -> serde_json::Value {
-    match outcome {
-        Ok(outcome) => {
-            let kind = match &outcome {
-                EvalOutcome::Value(_) => "value",
-                EvalOutcome::FunctionDefined { .. } => "function",
-                EvalOutcome::DataDefined { .. } => "data",
-                EvalOutcome::Documentation(_) => "documentation",
-                EvalOutcome::Comment(_) => "comment",
-            };
-            let mut entry = json!({
-                "ok": true,
-                "kind": kind,
-                "description": outcome.to_string(),
-                "displayDescription": outcome.display_description(),
-            });
-            if let Some(block) = outcome.raw_block() {
-                entry["rawBlock"] = json!(block);
-            }
-            entry
-        }
-        Err(error) => error_json(&error),
-    }
 }
 
 fn error_json(error: &anzan::EngineError) -> serde_json::Value {

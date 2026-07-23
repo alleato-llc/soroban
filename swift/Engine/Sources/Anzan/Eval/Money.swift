@@ -2,7 +2,7 @@ import BigInt
 
 /// A currency amount — the payload of `Value.money`, a first-class tagged type
 /// alongside `FixedInt` (`Int32(…)`) and `FixedDecimal` (`Decimal(…)`). Written
-/// as a finance-mode literal (`$10`, `€10`) or the mode-agnostic constructor
+/// as a literal (`$10`, `€10` — core grammar, any mode) or the constructor
 /// `Money(10, "USD")`. See docs/MODES.md.
 ///
 /// The currency propagates through arithmetic the way `FixedDecimal`'s type

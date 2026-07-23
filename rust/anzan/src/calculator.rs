@@ -6,7 +6,7 @@ use crate::eval::environment::EvaluationEnvironment;
 use crate::eval::evaluator::{Evaluator, Locals, Resolvers};
 use crate::eval::registry::FunctionRegistry;
 use crate::eval::value::Value;
-use crate::{BigDecimal, EngineError, LanguageMode, Parser};
+use crate::{BigDecimal, EngineError, LanguageMode, Parser, ScientificStyle};
 use std::collections::HashMap;
 use std::fmt;
 
@@ -28,6 +28,9 @@ pub struct Calculator {
     /// the cell path always parses `Normal` (log-only scope). See
     /// `docs/MODES.md`.
     pub mode: LanguageMode,
+    /// The Scientific-mode echo variant — plain SCI (default) or ENG
+    /// (`:mode scientific eng`). Display only; ignored outside `Scientific`.
+    pub sci_style: ScientificStyle,
 }
 
 impl fmt::Debug for Calculator {
@@ -47,6 +50,52 @@ impl Calculator {
 
     pub fn environment_mut(&mut self) -> &mut EvaluationEnvironment {
         &mut self.environment
+    }
+
+    /// Applies a `:mode` command argument — "programmer", "scientific eng" —
+    /// the ONE parser behind the CLI's, the GUI's, and the spec's `:mode`
+    /// handling, so the mode list and the unknown-mode errors can never drift
+    /// between hosts (the port of Swift's `Calculator.setMode(parsing:)`). A
+    /// bare `:mode` (show the current dialect) is the caller's concern.
+    /// `:mode scientific` resets the style to plain SCI; `finance` gets the
+    /// promotion hint (currency is core grammar now).
+    pub fn set_mode_parsing(&mut self, argument: &str) -> Result<(), EngineError> {
+        let words: Vec<String> = argument.split_whitespace().map(str::to_lowercase).collect();
+        if words.is_empty() || words.len() > 2 {
+            return Err(EngineError::domain(
+                "usage: :mode normal | programmer | scientific [eng]",
+            ));
+        }
+        let Some(requested) = LanguageMode::from_name(&words[0]) else {
+            if words[0] == "finance" {
+                return Err(EngineError::domain(
+                    "'finance' is gone — currency now works in every mode \
+                     ($10, 138,561 are core grammar); use normal, programmer, or scientific",
+                ));
+            }
+            return Err(EngineError::domain(format!(
+                "unknown mode '{}' — use normal, programmer, or scientific",
+                words[0]
+            )));
+        };
+        if words.len() == 2 {
+            let style = if requested == LanguageMode::Scientific {
+                ScientificStyle::from_name(&words[1])
+            } else {
+                None
+            };
+            let Some(style) = style else {
+                return Err(EngineError::domain(format!(
+                    "unknown style '{}' — only scientific takes one: :mode scientific sci|eng",
+                    words[1]
+                )));
+            };
+            self.sci_style = style;
+        } else if requested == LanguageMode::Scientific {
+            self.sci_style = ScientificStyle::Sci;
+        }
+        self.mode = requested;
+        Ok(())
     }
 
     /// Evaluates one line from the log. On success a value becomes `ans`
@@ -339,6 +388,25 @@ impl EvalOutcome {
     /// `10.50`) rather than its constructor. Hosts show this; `to_string`
     /// stays what they recall/copy/persist (the type survives).
     pub fn display_description(&self) -> String {
+        self.display_description_in(LanguageMode::Normal, ScientificStyle::Sci)
+    }
+
+    /// The echo under a display dialect — the ONE seam every host (GUI log,
+    /// CLI, spec) renders results through. In `Scientific`, a bare NUMERIC
+    /// result echoes in scientific (or, with `Eng`, engineering) notation at
+    /// the value's own significant digits; value-carried display WINS —
+    /// Money still shows `$10.00`, a grouped number its grouping,
+    /// strings/records their usual form. Every other mode is the plain
+    /// `display_description`.
+    pub fn display_description_in(&self, mode: LanguageMode, style: ScientificStyle) -> String {
+        if mode == LanguageMode::Scientific {
+            if let Self::Value(Value::Number(number)) = self {
+                return match style {
+                    ScientificStyle::Eng => number.engineering_text(),
+                    ScientificStyle::Sci => number.scientific_text(),
+                };
+            }
+        }
         if let Self::Value(value) = self {
             return value.display_description();
         }

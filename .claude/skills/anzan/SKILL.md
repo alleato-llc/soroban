@@ -28,7 +28,7 @@ printf 'x = 3\nx^2 + 1\n' | .build/debug/soroban       # pipe, line/statement pe
 .build/debug/soroban file.anzan                         # script file (halts at first error)
 # Rust CLI:
 cd rust && cargo run -q --bin soroban                   # same four modes
-# Mode-dependent behavior: put ':mode finance' (or programmer) on its own line first.
+# Mode-dependent behavior: put ':mode programmer' (or scientific) on its own line first.
 ```
 
 Scripts: one statement per **logical line** — an open `( [ {` continues the
@@ -42,7 +42,9 @@ x = 3                      # variables; `ans` is the previous result
 f(x) = x * 2               # functions; recursion works: fact(n) = if(n <= 1, 1, n * fact(n - 1))
 if(cond, a, b)             # lazy — only the taken branch evaluates (safe for recursion)
 5%                         # percent literal → 0.05 (postfix, exact)
-mod(a, b)                  # modulo in normal/finance (the % glyph is percent there)
+90°                        # degrees literal → radians (× π/180, 50-digit π): sin(90°) is 1
+$10 · 138,561              # currency + thousands grouping — CORE literals, any mode
+mod(a, b)                  # modulo in normal/scientific (the % glyph is percent there)
 data Pt { x: Number, y: Number }      # record type; construct Pt(x: 3, y: 4) / Pt(3, 4)
 p.x                        # field access; types: Number, String, Boolean, [T], nested data
 namespace Geo { data Pt {…}; dist(p: Pt) = … }   # members separated by `;`, use Geo::dist, or `import Geo`
@@ -50,11 +52,18 @@ map(x -> x^2, [1, 2, 3])   # lambdas + higher-order fns; sum/len/max/… flatten
 man name                   # docs for anything; a trailing `# comment` on a definition IS its doc
 ```
 
-Modes (`:mode …`) are *display/input dialects* — stored formulas stay canonical:
-- **finance**: `$10`, `€10` (currency is a real type — `Money(10, "USD")` is
-  the canonical, any-mode constructor; mixing currencies errors; `$9%` errors)
-  and `138,561` thousands grouping (presentation-only, echoes through math).
+Modes (`:mode …`) are *display/input dialects* — stored formulas stay canonical.
+The trio is **normal / scientific / programmer** (finance is GONE — its
+literals are core grammar now; `:mode finance` errors with the promotion hint):
+- **scientific**: normal's grammar; a plain NUMERIC result echoes as
+  `2.46912e5` (`:mode scientific eng` → `246.912e3`, exponent a multiple of
+  3). Money/grouped display wins over the sci echo; canonical stays plain.
 - **programmer**: `^`=XOR, `& | << >> ~` bitwise, `%`=modulo, `0xFF`/`0b1010`.
+
+Core, mode-agnostic literals (formerly finance-only): `$10`, `€10` (currency is
+a real type — `Money(10, "USD")` is the canonical constructor; mixing
+currencies errors; `$9%` errors) and `138,561` thousands grouping
+(presentation-only, echoes through math).
 
 ## Gotchas that cost real debugging time
 
@@ -63,7 +72,7 @@ Modes (`:mode …`) are *display/input dialects* — stored formulas stay canoni
   hit the BUILTIN `count` and return plausible nonsense. Check a name with
   `man <name>` before using it for a user function (this bit us: use `coins`).
 - **`,` is the argument separator inside `(` `[` `{` of a call/literal** —
-  `max(138,561)` is two args even in finance mode; grouping only lexes at top
+  `max(138,561)` is two args in every mode; grouping only lexes at top
   level or inside a bare (non-call) paren: `($15,000 * 5%)` groups.
 - **Two result renderings.** `description` is canonical/re-parseable
   (`Money(10, "USD")`, `Int8(8)`, `Decimal(0.50, 2)`) — it's what persists and

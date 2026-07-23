@@ -31,7 +31,7 @@ public enum Value: Sendable {
     /// typed arithmetic; the mixing matrix lives in the evaluator.
     case fixedDecimal(FixedDecimal)
 
-    /// A finance-mode number carrying how it was written — a currency symbol
+    /// A number carrying how it was written — a currency symbol
     /// (`$10`), thousands grouping (`138,561`), or both. Coerces to its plain
     /// value outside tagged arithmetic; the mixing matrix lives in `Money`.
     case money(Money)

@@ -17,6 +17,25 @@ DMG.
 
 ### Added
 
+- **Scientific mode + the `°` degree literal; finance mode retired** (the
+  Rust mirror of the Swift-side change — shared behavior, see the root
+  changelog). `LanguageMode` is now the standard trio — normal /
+  **scientific** / programmer. Scientific keeps Normal's grammar and changes
+  only the echo of a plain numeric result: `BigDecimal::scientific_text` /
+  `engineering_text` (pure digit-string math, mantissa at the value's own
+  significant digits) surface through the new
+  `EvalOutcome::display_description_in(mode, style)` seam, which the GUI log,
+  the CLI, and the spec's `the log echoes` all render through;
+  `Calculator::sci_style` (`sci`|`eng`) selects the ENG variant
+  (`:mode scientific eng`). The currency (`$10`) and grouping (`138,561`)
+  literals are un-gated into the CORE lexer (every mode; `$A:1` and
+  `max(138,561)` unchanged), and `:mode` parsing moves to the one shared
+  `Calculator::set_mode_parsing` seam — `:mode finance` errors with the
+  promotion hint in every host. The postfix `°` literal (lexer token, AST
+  `Degrees`, `× π/180` at the 60-digit π constant) makes `sin(90°)` answer
+  `1` in any mode. GUI: the Settings picker and the input-bar mode cycle
+  become Normal / Programmer / Scientific.
+
 - **The GUI gains an Examples menu.** A new top-level menu after View, mirroring
   the macOS app's: one flyout submenu per category — led by the new Showcase
   group (the `namespace Cash { … }` one-liner and `Cash::changeForDollar(0.95)`)

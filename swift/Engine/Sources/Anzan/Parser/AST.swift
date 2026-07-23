@@ -1,11 +1,13 @@
 /// Expression tree produced by the parser.
 public indirect enum Expression: Equatable, Sendable {
     case number(BigDecimal)
-    /// A finance-mode currency literal — `$10`, `€10`, `$10,000`. The currency
-    /// propagates through arithmetic (see `Money`), so it is part of the value.
+    /// A currency literal — `$10`, `€10`, `$10,000` (core grammar, any mode).
+    /// The currency propagates through arithmetic (see `Money`), so it is part
+    /// of the value.
     case money(BigDecimal, currency: Currency)
-    /// A finance-mode grouped plain number — `138,561`. Presentation only; the
-    /// grouping echoes through a calculation (see `Grouped`).
+    /// A grouped plain number — `138,561` (core grammar, any mode).
+    /// Presentation only; the grouping echoes through a calculation (see
+    /// `Grouped`).
     case grouped(BigDecimal)
     case variable(String)
     /// `A:1` or `Budget!A:1` / `'Q1 Budget'!A:1` — nil sheet means the sheet
@@ -19,6 +21,9 @@ public indirect enum Expression: Equatable, Sendable {
     /// `3%` — postfix percent: the operand divided by 100 (3% → 0.03), exact.
     /// Binds tighter than `^` (like indexing); modulo is the `mod(x, y)` function.
     case percent(Expression)
+    /// `90°` — postfix degrees: the operand × π/180 (radians), π at the
+    /// engine's 50-digit working precision. Mode-agnostic, postfix like `%`.
+    case degrees(Expression)
     case binary(BinaryOperator, Expression, Expression)
     case call(name: String, arguments: [Expression])
     case assignment(name: String, value: Expression)
@@ -174,7 +179,7 @@ extension Expression {
             return true
         case .number, .money, .grouped, .variable:
             return false
-        case .unaryMinus(let inner), .percent(let inner):
+        case .unaryMinus(let inner), .percent(let inner), .degrees(let inner):
             return inner.containsCellReference
         case .binary(_, let lhs, let rhs):
             return lhs.containsCellReference || rhs.containsCellReference

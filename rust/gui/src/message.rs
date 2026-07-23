@@ -29,7 +29,7 @@ pub(crate) enum Message {
     ResetFontSize,
     /// Pick the monospace font family (by display name).
     SelectFont(String),
-    /// Pick the calculator language mode (Normal / Programmer / Finance).
+    /// Pick the calculator language mode (Normal / Programmer / Scientific).
     SelectMode(LanguageMode),
     /// Cycle the language mode from the input-bar affordance.
     CycleMode,

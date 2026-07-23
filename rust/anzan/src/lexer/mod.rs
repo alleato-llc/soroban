@@ -15,8 +15,11 @@ use num_bigint::BigInt;
 pub struct Lexer {
     chars: Vec<char>,
     index: usize,
-    /// Finance mode adds two literal forms (currency, thousands grouping);
-    /// every other mode lexes identically. See docs/MODES.md.
+    /// The active dialect. Every mode LEXES identically today — currency and
+    /// thousands grouping are core literals — but the field stays: modes own
+    /// glyph *meaning* at the parser, and a future dialect may need the lexer
+    /// again. See docs/MODES.md.
+    #[allow(dead_code)]
     mode: LanguageMode,
     /// The token before the one being scanned — distinguishes a CALL paren
     /// (`max(`) from a grouping paren (`(`), which decides whether `,` inside
@@ -29,7 +32,7 @@ pub struct Lexer {
     grouping_stack: Vec<bool>,
 }
 
-/// True for a Unicode currency symbol (general category Sc) — the finance-mode
+/// True for a Unicode currency symbol (general category Sc) — the
 /// money-literal prefix. Mirrors Swift's `Character.isCurrencySymbol`; `char`
 /// has no such predicate in std, so the category's ranges are spelled out.
 fn is_currency_symbol(c: char) -> bool {
@@ -70,7 +73,7 @@ impl Lexer {
 
     /// May a `,` inside a numeric literal group thousands right here?
     fn grouping_allowed(&self) -> bool {
-        self.mode == LanguageMode::Finance && *self.grouping_stack.last().unwrap_or(&true)
+        *self.grouping_stack.last().unwrap_or(&true)
     }
 
     /// Maintains `previous_kind` + `grouping_stack` after each token is
@@ -240,6 +243,8 @@ impl Lexer {
             '≤' => Some(TokenKind::LessOrEqual),
             '≥' => Some(TokenKind::GreaterOrEqual),
             '≠' => Some(TokenKind::NotEqual),
+            // Postfix degrees→radians, mode-agnostic (like %).
+            '°' => Some(TokenKind::Degree),
             '!' => Some(TokenKind::Bang), // sheet qualifier — "!=" was caught by the two-char pass
             // Math symbols aren't letters, so the identifier scanner can't
             // pick them up.
@@ -285,16 +290,12 @@ impl Lexer {
             return self.number(start).map(Some);
         }
 
-        // A finance-mode currency literal: any Unicode currency symbol
-        // directly before a number ($10, €10, £1234.56, $10,000). This runs
-        // BEFORE the '$' cell-pin branch, so '$' followed by a DIGIT is money
-        // while '$' followed by a LETTER stays the column pin ($A:1) — the two
-        // never collide. Outside finance mode nothing here applies and '$'
-        // keeps its only meaning.
-        if self.mode == LanguageMode::Finance
-            && is_currency_symbol(c)
-            && self.starts_number(self.index + 1)
-        {
+        // A currency literal — CORE grammar, every mode: any Unicode currency
+        // symbol directly before a number ($10, €10, £1234.56, $10,000). This
+        // runs BEFORE the '$' cell-pin branch, so '$' followed by a DIGIT is
+        // money while '$' followed by a LETTER stays the column pin ($A:1) —
+        // the two never collide.
+        if is_currency_symbol(c) && self.starts_number(self.index + 1) {
             let Some(currency) = Currency::from_glyph(c) else {
                 return Err(EngineError::LexError {
                     message: format!(
@@ -484,10 +485,11 @@ impl Lexer {
         }
     }
 
-    /// Scans `123`, `1.5`, `1_000`, `2.5e-3` — and, in finance mode, thousands
-    /// groups (`138,561`, `1,234,567`). Returns the value and whether a group
-    /// separator appeared. The leading sign is not part of the literal — the
-    /// parser handles unary minus.
+    /// Scans `123`, `1.5`, `1_000`, `2.5e-3` — and thousands groups
+    /// (`138,561`, `1,234,567`) wherever `,` couldn't be an argument
+    /// separator. Returns the value and whether a group separator appeared.
+    /// The leading sign is not part of the literal — the parser handles
+    /// unary minus.
     fn decimal_value(&mut self, start: usize) -> Result<(BigDecimal, bool), EngineError> {
         let malformed_group = || EngineError::LexError {
             message: "malformed thousands group — write 1,234 or 1,234,567".to_string(),

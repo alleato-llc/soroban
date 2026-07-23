@@ -14,8 +14,9 @@ read like the math they denote), and **small** (no I/O, no loops with side
 effects — the host provides persistence and interaction).
 
 This document specifies the canonical language. Companion specs cover features
-with their own depth: **[MODES.md](https://github.com/alleato-llc/soroban/blob/main/docs/MODES.md)** — the Programmer/Finance input-display *dialects*
-(what the glyphs `^ % & | << >> ~` mean per mode, over one canonical AST); and
+with their own depth: **[MODES.md](https://github.com/alleato-llc/soroban/blob/main/docs/MODES.md)** — the Programmer/Scientific input-display *dialects*
+(what the glyphs `^ % & | << >> ~` mean per mode, and the scientific result
+echo, over one canonical AST); and
 **[FIXED-WIDTH.md](https://github.com/alleato-llc/soroban/blob/main/docs/FIXED-WIDTH.md)** — the bounded, checked `Int`/`UInt` integer types; and
 **[DECIMAL.md](https://github.com/alleato-llc/soroban/blob/main/docs/DECIMAL.md)** — fixed-precision `Decimal(value, precision, scale)` (or the short forms `Decimal(value)` / `Decimal(value, scale)`) (the money
 type); and **[MODULES.md](https://github.com/alleato-llc/soroban/blob/main/docs/MODULES.md)** — the module system (namespaces, qualified
@@ -171,6 +172,26 @@ never a silent implicit multiplication. The leading sign is not part of the
 literal — `-2` is unary minus applied to `2` (see §3 for why that matters
 next to `^`).
 
+**Thousands grouping**: `138,561` — 1-3 digits, then exactly-3-digit comma
+groups (a malformed group like `1,23` is a loud lex error). Presentation
+only — canonically the plain number — but it *echoes* through a calculation
+(`138,561 * 9%` shows `12,470.49`). `,` is the argument separator FIRST:
+grouping is suppressed inside a call's argument list and inside `[…]`/`{…}`
+literals, so `max(138,561)` is still two arguments; a bare (non-call) paren
+re-enables it.
+
+**Currency literals**: `$10`, `€10`, `£1,234.56` — a closed set of symbols
+(`$ € £ ¥ ₹ ₩ ₽ ₿`) directly before a number; an unsupported currency glyph is
+a loud lex error. Sugar for the canonical constructor `Money(v, "USD")`; the
+currency is part of the *value* and propagates through arithmetic (see §2 and
+[MODES.md](https://github.com/alleato-llc/soroban/blob/main/docs/MODES.md)).
+`$` before a *letter* is still the cell-reference column pin (`$A:1`) — the
+two never collide.
+
+**Degrees**: postfix `°` converts degrees to radians — `x°` is `x × π/180`
+(π at 50-digit working precision), so `sin(90°)` is `1` and `90° == pi / 2`.
+A core literal in every mode; `rad(x)` is the longhand.
+
 ### Strings
 
 Double-quoted: `"Q1 revenue"`. Escapes: `\"` `\\` `\n` `\t`. An unterminated
@@ -253,6 +274,7 @@ Every expression evaluates to one of:
 | record | `Person(name: "Ada", …)` | an instance of a declared `data` type (§8) |
 | fixed-width int | `Int32(255)`, `UInt8(255)` (or `Int(255, 32)`, `UInt(255, 8)`) | a bounded, checked integer — exact, but overflow is an error, not a wraparound ([FIXED-WIDTH.md](https://github.com/alleato-llc/soroban/blob/main/docs/FIXED-WIDTH.md)) |
 | fixed-precision decimal | `Decimal(10.5, 5, 2)`, `Decimal(0.5)`, `Decimal(0.5, 2)` | SQL DECIMAL(p,s) / money: rounds to `scale`, checked `precision` (≤ 1000), configurable rounding; short forms capture the value at max precision ([DECIMAL.md](https://github.com/alleato-llc/soroban/blob/main/docs/DECIMAL.md)) |
+| currency amount | `$10`, `€10` — canonically `Money(10, "USD")` | a first-class tagged number: the currency propagates through arithmetic (`$10 * 5%` → `$0.50`), mixing two currencies errors, `%` on money errors; echoes grouped at 2 decimals ([MODES.md](https://github.com/alleato-llc/soroban/blob/main/docs/MODES.md)) |
 | handle | *(no literal)* | an opaque, read-only host object — a `Workbook`, worksheet, or cell — navigated with `.` and `[]` (§12) |
 
 Structures are **immutable** — there is no element assignment; rebind the
@@ -286,14 +308,15 @@ From loosest to tightest. Each line binds tighter than the one above:
 | multiplicative | `* /` (`× ÷ ·`) and **implicit multiplication** | `2x`, `2(3+4)`, `(a)(b)`, `2 A:1`, `2pi` — a value against a **name/paren/cell**, NOT a bare number |
 | unary | `-` `+` `√` | prefix; `√x` ≡ `sqrt(x)` |
 | power | `^` | **right-associative**: `2^3^2` = `512`; exponent may carry its own sign: `2^-2` = `0.25` |
-| postfix | `expr[i]` · `expr.name` · `expr%` | binds tighter than `^`; chains freely |
+| postfix | `expr[i]` · `expr.name` · `expr%` · `expr°` | binds tighter than `^`; chains freely |
 | primary | literals, names, calls, `(expr)`, `[…]`, `{…}`, reductions, `if(…)` | |
 
 Because unary minus binds **looser** than `^`: `-2^2` = `-4`.
 **`%` is a postfix percent**: `x%` ≡ `x × 0.01`, exact (`3%` is `0.03`). It binds
 tighter than `^`, so `1 * 3%` is `1 * 0.03`, not `(1 * 3)%`. Modulo is the
 `mod(x, y)` function (the `%` symbol is percent, not modulo — bitwise stays
-functional too).
+functional too). **`°` is postfix degrees** at the same level: `x°` ≡
+`x × π/180` (§1), so `sin(90°)` = `1`.
 
 **Implicit multiplication is a value against a name, paren, or cell — never a
 bare number.** `2x`, `2pi`, `2(3+4)`, `2 A:1` all multiply by juxtaposition, but
@@ -320,24 +343,31 @@ parse the canonical dialect. The full glyph tables are in
 - **Normal** *(default — the dialect §3 specifies)*: `^` power, `%` percent;
   bit operations are the functions `bitAnd` `bitOr` `bitXor` `bitShift`
   `bitNot`.
+- **Scientific**: Normal's grammar, untouched — it changes only how a plain
+  *numeric result echoes*: scientific notation at the value's own significant
+  digits (`123456 * 2` → `2.46912e5`, `5` → `5e0`; never rounded), or the
+  **ENG** style (`:mode scientific eng`) with the exponent snapped to a
+  multiple of 3 (`246.912e3`). Value-carried display wins — Money still shows
+  `$10.00`, a grouped number its grouping; the canonical/stored form stays
+  the plain number.
 - **Programmer**: the glyphs `^ & | << >> %` read as XOR / AND / OR /
   shift-left / shift-right / modulo, and prefix `~` is bitwise NOT — Python's
   operators and precedence (the bitwise band sits below arithmetic and above
   comparison). Power becomes the `pow(a, b)` function. A glyph a mode lacks is
   always written longhand (`pow` in Programmer, `bitXor` in Normal), so nothing
   is unreachable — only re-spelled.
-- **Finance**: Normal's arithmetic core plus a first-class **currency** type
-  (`$10`, `€10`; the mode-agnostic constructor `Money(v, "USD")` is the canonical
-  form) and separate presentation-only **thousands grouping** (`138,561`). The
-  currency rides the value through arithmetic, so `$10 * 5%` is `$0.50` and
-  `$10,000 + ($15,000 * 5%)` is `$10,750.00`; mixing two currencies is a hard
-  error. Both literal forms are refused outside Finance (`$` stays the
-  cell-column pin, `,` stays the argument separator). See [MODES.md](docs/MODES.md).
 
-**Out-of-mode glyphs are loud, never silent**: a bare `&` in Normal, or `<<` in
-Finance, is a clear error, not a misparse. Because only the canonical (Normal)
-form is ever stored, switching modes and reloading are lossless — and Normal
-must stay byte-identical to the pre-modes grammar (it's the regression oracle).
+There is no finance mode: **currency** (`$10`) and **thousands grouping**
+(`138,561`) are core literals in every mode (§1, §2) — the `$`-before-a-letter
+cell pin and the `,`-is-the-argument-separator-first rule make them
+collision-free, so they never needed a dialect. `:mode finance` errors with a
+hint at the promotion.
+
+**Out-of-mode glyphs are loud, never silent**: a bare `&` in Normal or
+Scientific is a clear error, not a misparse. Because only the canonical
+(Normal) form is ever stored, switching modes and reloading are lossless — and
+Normal must stay byte-identical to the pre-modes grammar (it's the regression
+oracle).
 
 ## 5. The exactness model
 
@@ -827,8 +857,8 @@ additive    = term { ("+" | "-") term } ;
 term        = unary { ("*" | "/") unary | unary } ;   (* 2nd alt: implicit × — the juxtaposed factor is a name/paren/cell, not a bare NUMBER (`3 4` is an error) *)
 unary       = ("-" | "+" | "√") unary | power ;
 power       = postfix [ "^" unary ] ;                 (* right-assoc, signed exponent *)
-postfix     = primary { "[" expression "]" | "." IDENT [ "(" [ argument { "," argument } ] ")" ] | "%" } ;
-            (* ".name" is member access; ".name(args)" is a method call; trailing "%" is percent (× 0.01) *)
+postfix     = primary { "[" expression "]" | "." IDENT [ "(" [ argument { "," argument } ] ")" ] | "%" | "°" } ;
+            (* ".name" is member access; ".name(args)" is a method call; trailing "%" is percent (× 0.01), trailing "°" degrees→radians (× π/180) *)
 primary     = NUMBER | STRING | CELLREF | NAMEREF | constant
             | IDENT | qualname | call | reduction | conditional
             | "(" expression ")" | array | map ;

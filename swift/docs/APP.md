@@ -206,8 +206,9 @@ the app's UX and links out for the language.
 Type an expression in the input bar, get a result; `ans` is the last one. See
 [../../docs/ANZAN.md](../../docs/ANZAN.md) for the full language — numbers are
 exact to 50 significant digits, functions are case-insensitive, structures
-(strings/arrays/maps/records), lambdas, reductions (∑ ∏), dates, and the
-Programmer/Finance modes all work in the log and in cells alike.
+(strings/arrays/maps/records), lambdas, reductions (∑ ∏), dates, currency
+(`$10`) and grouped (`138,561`) literals all work in the log and in cells
+alike; the Programmer/Scientific modes apply to the log's input line.
 
 - **Autocomplete** as you type (functions, your variables, constants): **Tab**
   accepts, **↑/↓** pick while the list is open, **Esc** dismisses.

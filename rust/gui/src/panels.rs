@@ -163,12 +163,12 @@ impl App {
 
         // The input is pinned to the BOTTOM, behind a `>` prompt; Enter submits
         // (no `=` button — the original has none). A mode affordance (cycles
-        // Normal → Programmer → Finance) sits at the left of the corner icons
-        // (docs / grid), like the AppKit app's input-bar mode control.
+        // Normal → Programmer → Scientific) sits at the left of the corner
+        // icons (docs / grid), like the AppKit app's input-bar mode control.
         let mode_label = match self.session.language_mode() {
             LanguageMode::Normal => "Normal",
             LanguageMode::Programmer => "Programmer",
-            LanguageMode::Finance => "Finance",
+            LanguageMode::Scientific => "Scientific",
         };
         let input_bar = row![
             text(">").font(font).size(size + 2.0).color(palette.muted),

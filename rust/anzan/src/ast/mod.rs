@@ -11,14 +11,16 @@ use crate::BigDecimal;
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expression {
     Number(BigDecimal),
-    /// A finance-mode currency literal — `$10`, `€10`, `$10,000`. The currency
-    /// propagates through arithmetic (see `Money`), so it is part of the value.
+    /// A currency literal — `$10`, `€10`, `$10,000` (core grammar, any mode).
+    /// The currency propagates through arithmetic (see `Money`), so it is
+    /// part of the value.
     Money {
         value: BigDecimal,
         currency: Currency,
     },
-    /// A finance-mode grouped plain number — `138,561`. Presentation only; the
-    /// grouping echoes through a calculation (see `Grouped`).
+    /// A grouped plain number — `138,561` (core grammar, any mode).
+    /// Presentation only; the grouping echoes through a calculation (see
+    /// `Grouped`).
     Grouped(BigDecimal),
     Variable(String),
     /// `A:1` or `Budget!A:1` / `'Q1 Budget'!A:1` — `None` sheet means the
@@ -42,6 +44,9 @@ pub enum Expression {
     /// Binds tighter than `^` (like indexing); modulo is the `mod(x, y)`
     /// function.
     Percent(Box<Expression>),
+    /// `90°` — postfix degrees: the operand × π/180 (radians), π at the
+    /// engine's 50-digit working precision. Mode-agnostic, postfix like `%`.
+    Degrees(Box<Expression>),
     Binary(BinaryOperator, Box<Expression>, Box<Expression>),
     Call {
         name: String,
@@ -306,7 +311,9 @@ impl Expression {
         match self {
             Self::CellReference { .. } | Self::CellRange { .. } => true,
             Self::Number(_) | Self::Money { .. } | Self::Grouped(_) | Self::Variable(_) => false,
-            Self::UnaryMinus(inner) | Self::Percent(inner) => inner.contains_cell_reference(),
+            Self::UnaryMinus(inner) | Self::Percent(inner) | Self::Degrees(inner) => {
+                inner.contains_cell_reference()
+            }
             Self::Binary(_, lhs, rhs) => {
                 lhs.contains_cell_reference() || rhs.contains_cell_reference()
             }

@@ -204,7 +204,7 @@ impl Spreadsheet {
             Value::FixedInt(f) => CellDisplay::Value(f.decimal()),
             // Value; CellFormat handles currency padding.
             Value::FixedDecimal(d) => CellDisplay::Value(d.value.clone()),
-            // A finance-mode literal's symbol/grouping is INPUT formatting; a
+            // A money/grouped literal's symbol/grouping is INPUT formatting; a
             // cell's own NumberFormat is what governs how it displays.
             // Storing the raw value keeps the two from fighting (and keeps
             // references numeric).

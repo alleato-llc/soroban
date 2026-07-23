@@ -7,17 +7,23 @@ extension LanguageMode {
         switch self {
         case .normal: return "Normal"
         case .programmer: return "Programmer"
-        case .finance: return "Finance"
+        case .scientific: return "Scientific"
         }
     }
 
-    /// Compact SF Symbol for the input-bar status affordance.
-    var symbol: String {
+    /// Compact SF Symbol for the input-bar status affordance. Scientific has
+    /// no SF Symbol glyph — its badge is the literal π (see `badgeText`).
+    var symbol: String? {
         switch self {
         case .normal: return "number"
         case .programmer: return "chevron.left.forwardslash.chevron.right"
-        case .finance: return "dollarsign"
+        case .scientific: return nil
         }
+    }
+
+    /// Literal-text badge for modes without an SF Symbol (`π` for Scientific).
+    var badgeText: String? {
+        self == .scientific ? "π" : nil
     }
 }
 
@@ -112,9 +118,18 @@ struct InputBarView: View {
                     }
                 }
             } label: {
-                Image(systemName: session.mode.symbol)
-                    .foregroundStyle(session.mode == .normal
-                                     ? theme.secondaryText.color : theme.accent.color)
+                // `#` Normal · `π` Scientific · `</>` Programmer — π is literal
+                // text (no SF Symbol exists for it), styled to match the icons.
+                if let badge = session.mode.badgeText {
+                    Text(badge)
+                        .font(.system(size: 13, weight: .medium, design: .serif))
+                        .foregroundStyle(session.mode == .normal
+                                         ? theme.secondaryText.color : theme.accent.color)
+                } else {
+                    Image(systemName: session.mode.symbol ?? "number")
+                        .foregroundStyle(session.mode == .normal
+                                         ? theme.secondaryText.color : theme.accent.color)
+                }
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)

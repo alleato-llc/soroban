@@ -1,4 +1,4 @@
-/// A currency known to finance mode — the tag on a `Money` value. A closed,
+/// A currency the language knows — the tag on a `Money` value. A closed,
 /// curated set (not "any Unicode currency glyph"), so an amount always names a
 /// real currency and the canonical `Money(v, "USD")` form round-trips by code.
 /// See docs/MODES.md.

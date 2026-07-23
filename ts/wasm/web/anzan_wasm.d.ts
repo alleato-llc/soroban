@@ -43,9 +43,22 @@ export class WasmCalculator {
      */
     runScript(source: string): string;
     /**
-     * The language mode — "normal" | "programmer" | "finance".
+     * Applies a `:mode` command argument — "programmer", "scientific eng" —
+     * through the engine's shared parse seam (`Calculator::set_mode_parsing`),
+     * the same one the native CLIs, the GUI, and the spec use. Throws the
+     * engine's own error text on an unknown mode/style (`:mode finance` gets
+     * the currency-promotion hint).
+     */
+    setModeParsing(argument: string): void;
+    /**
+     * The language mode — "normal" | "programmer" | "scientific".
      */
     mode: string;
+    /**
+     * The Scientific-mode echo variant — "sci" (default) | "eng"
+     * (`:mode scientific eng`). Display only; ignored outside scientific.
+     */
+    sciStyle: string;
 }
 
 /**
@@ -94,7 +107,10 @@ export interface InitOutput {
     readonly wasmcalculator_mode: (a: number) => [number, number];
     readonly wasmcalculator_new: () => number;
     readonly wasmcalculator_runScript: (a: number, b: number, c: number) => [number, number];
+    readonly wasmcalculator_sciStyle: (a: number) => [number, number];
+    readonly wasmcalculator_setModeParsing: (a: number, b: number, c: number) => [number, number];
     readonly wasmcalculator_set_mode: (a: number, b: number, c: number) => [number, number];
+    readonly wasmcalculator_set_sciStyle: (a: number, b: number, c: number) => [number, number];
     readonly wasmstatementaccumulator_finish: (a: number) => [number, number];
     readonly wasmstatementaccumulator_isPending: (a: number) => number;
     readonly wasmstatementaccumulator_new: () => number;

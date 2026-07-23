@@ -39,7 +39,7 @@ impl Parser {
     // `Programmer`; in other modes these are pass-throughs, and the glyphs
     // that have no other meaning (`| & << >>`) raise a mode-scoped error
     // rather than a vague "unexpected input". `^` is NOT errored here: in
-    // `Normal`/`Finance` it is power, consumed deeper by power().
+    // `Normal`/`Scientific` it is power, consumed deeper by power().
 
     fn bitwise_or(&mut self) -> Result<Expression, EngineError> {
         let mut lhs = self.bitwise_xor()?;
@@ -238,7 +238,7 @@ impl Parser {
     fn power(&mut self) -> Result<Expression, EngineError> {
         let base = self.postfix()?;
         // In Programmer mode `^` is XOR (consumed up the chain by
-        // bitwise_xor); only in Normal/Finance is it power.
+        // bitwise_xor); only in Normal/Scientific is it power.
         if self.mode == LanguageMode::Programmer || self.current().kind != TokenKind::Caret {
             return Ok(base);
         }
@@ -297,12 +297,18 @@ impl Parser {
                     }
                 }
                 TokenKind::Percent if self.mode != LanguageMode::Programmer => {
-                    // Postfix percent: `3%` → 0.03. In Normal/Finance `%` is
-                    // always percent; chains like other postfixes (`A:1%`,
+                    // Postfix percent: `3%` → 0.03. In Normal/Scientific `%`
+                    // is always percent; chains like other postfixes (`A:1%`,
                     // `arr[0]%`). In Programmer mode `%` is modulo — left for
                     // term() to consume.
                     self.advance();
                     expr = Expression::Percent(Box::new(expr));
+                }
+                TokenKind::Degree => {
+                    // Postfix degrees: `90°` → radians (× π/180). Mode-
+                    // agnostic — no mode owns another meaning for `°`.
+                    self.advance();
+                    expr = Expression::Degrees(Box::new(expr));
                 }
                 _ => break,
             }

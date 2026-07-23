@@ -439,14 +439,15 @@ const links = {
                         </p>
                     </Fragment>
                 </Card>
-                <Card title="Finance mode & currency" scopes={["log", "grid", "cli"]}>
+                <Card title="Currency as a type · Scientific mode" scopes={["log", "grid", "cli"]}>
                     Type money like you write it — <code>$10,000 + ($15,000 * 5%)</code>
-                    is <code>$10,750.00</code> — with currency as a real type.
+                    is <code>$10,750.00</code> — in every mode, with currency as
+                    a real type.
                     <Fragment slot="detail">
                         <p>
-                            Flip to <strong>Finance mode</strong> and money reads
-                            the way you'd write it on paper: <code>$10 * 5%</code>
-                            is <code>$0.50</code>, <code>€10 * .4</code> is
+                            Money reads the way you'd write it on paper — no mode
+                            switch needed: <code>$10 * 5%</code> is
+                            <code>$0.50</code>, <code>€10 * .4</code> is
                             <code>€4.00</code>, and thousands group with commas —
                             <code>138,561 * 9%</code> answers
                             <code>12,470.49</code>, echoing your grouping back.
@@ -459,16 +460,24 @@ const links = {
                             (<code>-$1,234.50</code>) — and mixing currencies
                             (<code>$10 + €5</code>) is a loud error, never a
                             guess. Ten currencies from <code>$</code> to
-                            <code>₿</code>; the mode-agnostic constructor
-                            <code>Money(10, "USD")</code> works everywhere and is
-                            what persists, exactly like <code>Decimal(…)</code>
-                            and <code>Int32(…)</code>.
+                            <code>₿</code>; the constructor
+                            <code>Money(10, "USD")</code> is what persists,
+                            exactly like <code>Decimal(…)</code> and
+                            <code>Int32(…)</code>. Nothing existing changes
+                            meaning: <code>$A:1</code> still pins a cell
+                            reference, and <code>max(138,561)</code> is still two
+                            arguments — the separator always wins inside a call.
                         </p>
                         <p>
-                            Nothing existing changes meaning: outside Finance
-                            mode <code>$A:1</code> still pins a cell reference,
-                            and <code>max(138,561)</code> is still two arguments —
-                            the separator always wins inside a call.
+                            And alongside Programmer sits <strong>Scientific
+                            mode</strong>: plain numeric results echo in
+                            scientific notation (<code>123456 * 2</code> answers
+                            <code>2.46912e5</code>) at the value's own
+                            significant digits — never rounded — with an
+                            engineering variant (<code>:mode scientific eng</code>
+                            → <code>246.912e3</code>). The <code>°</code> degree
+                            literal works in every mode: <code>sin(90°)</code> is
+                            exactly <code>1</code>.
                         </p>
                     </Fragment>
                 </Card>

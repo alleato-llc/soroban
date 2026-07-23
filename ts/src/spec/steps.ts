@@ -7,7 +7,7 @@
 
 import assert from "node:assert/strict";
 import { Before, Given, Then, When } from "@cucumber/cucumber";
-import { Calculator, type EvalOutcome, type Mode } from "../index.js";
+import { Calculator, type EvalOutcome, type Mode, type SciStyle } from "../index.js";
 
 interface AnzanWorld {
   calculator: Calculator;
@@ -29,6 +29,20 @@ function success(world: AnzanWorld): Extract<EvalOutcome, { ok: true }> {
 // Registration is keyword-agnostic in cucumber-js (Given/When/Then are
 // interchangeable), so one definition serves every keyword the features use.
 When(/^I calculate "(.*)"$/, function (this: AnzanWorld, expression: string) {
+  // Hosts intercept `:mode` lines before evaluate; the spec exercises the
+  // shared parse seam (`setModeParsing`) the same way, so the unknown-mode
+  // errors (`:mode finance`) are pinned engine-side — mirroring the Swift
+  // and Rust runners.
+  if (expression === ":mode" || expression.startsWith(":mode ")) {
+    try {
+      this.calculator.setModeParsing(expression.slice(5));
+      const text = `mode: ${this.calculator.mode}`;
+      this.outcome = { ok: true, kind: "comment", description: text, displayDescription: text };
+    } catch (e) {
+      this.outcome = { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+    return;
+  }
   this.outcome = this.calculator.evaluate(expression);
 });
 
@@ -43,11 +57,17 @@ When(/^I run the script:$/, function (this: AnzanWorld, source: string) {
 });
 
 Given(
-  /^the calculator is in (normal|programmer|finance) mode$/,
+  /^the calculator is in (normal|programmer|scientific) mode$/,
   function (this: AnzanWorld, mode: string) {
     this.calculator.mode = mode as Mode;
   },
 );
+
+/** The Scientific-mode echo variant (`sci`/`eng`) — a display style on the
+ * calculator, not a mode (`:mode scientific eng` in the CLI). */
+Given(/^the scientific style is "(sci|eng)"$/, function (this: AnzanWorld, style: string) {
+  this.calculator.sciStyle = style as SciStyle;
+});
 
 Then(/^the result is "(.*)"$/, function (this: AnzanWorld, expected: string) {
   // The CANONICAL description (what persists/recalls), not the echo.

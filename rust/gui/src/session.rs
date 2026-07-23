@@ -12,8 +12,8 @@ use soroban_engine::workbook::{restore_session, SheetPayload, Workbook};
 use soroban_engine::{
     csv, package, BigDecimal, BinaryEditorPresets, BinaryFieldSpec, BinaryView,
     BinaryViewUnavailable, Calculator, CellAddress, CellDisplay, CellFormat, Completion,
-    CompletionKind, Control, DataSheet, DataStore, EvalOutcome, FormatBuilder, LanguageMode, Sheet,
-    SheetStore, Spreadsheet, UserFunction, Value, BINARY_EDITABLE_WIDTHS,
+    CompletionKind, Control, DataSheet, DataStore, EvalOutcome, FormatBuilder, LanguageMode,
+    ScientificStyle, Sheet, SheetStore, Spreadsheet, UserFunction, Value, BINARY_EDITABLE_WIDTHS,
 };
 use std::cell::RefCell;
 use std::collections::HashMap;

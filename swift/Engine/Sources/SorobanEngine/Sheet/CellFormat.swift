@@ -86,8 +86,8 @@ public enum NumberFormat: Equatable, Sendable {
 
     /// Sign + grouped integer part + fraction padded/rounded to exactly
     /// `decimals` places (banker's). Lives on `BigDecimal` in `Anzan` because
-    /// finance-mode literals echo the same grouping — sharing the one
-    /// implementation is what keeps a formatted cell and a finance-mode result
+    /// grouped literals echo the same grouping — sharing the one
+    /// implementation is what keeps a formatted cell and a grouped result
     /// from ever drifting apart.
     private static func fixed(_ value: BigDecimal, decimals: Int) -> String {
         value.groupedText(decimals: decimals)

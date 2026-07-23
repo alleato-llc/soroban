@@ -101,8 +101,8 @@ impl App {
             Message::CycleMode => {
                 let next = match self.session.language_mode() {
                     LanguageMode::Normal => LanguageMode::Programmer,
-                    LanguageMode::Programmer => LanguageMode::Finance,
-                    LanguageMode::Finance => LanguageMode::Normal,
+                    LanguageMode::Programmer => LanguageMode::Scientific,
+                    LanguageMode::Scientific => LanguageMode::Normal,
                 };
                 self.session.set_language_mode(next);
                 // Keep typing where it was — a toolbar click would otherwise

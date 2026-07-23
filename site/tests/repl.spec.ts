@@ -51,16 +51,29 @@ test("shows exactly 10 welcome lines; clicking one runs it", async ({ page }) =>
   await expect(welcome).toHaveCount(0);
 });
 
-test("mode badge cycles # normal → $ finance → </> programmer", async ({ page }) => {
+test("mode badge cycles # normal → π scientific → </> programmer", async ({ page }) => {
   await openLiveRepl(page);
   const badge = page.locator(".repl-mode");
   await expect(badge).toHaveText("# normal");
   await badge.click();
-  await expect(badge).toHaveText("$ finance");
+  await expect(badge).toHaveText("π scientific");
   await badge.click();
   await expect(badge).toHaveText("</> programmer");
   await badge.click();
   await expect(badge).toHaveText("# normal");
+});
+
+test("scientific mode echoes a plain result in scientific notation", async ({ page }) => {
+  await openLiveRepl(page);
+  const badge = page.locator(".repl-mode");
+  await badge.click();
+  await expect(badge).toHaveText("π scientific");
+  await evaluate(page, "123456 * 2");
+  // The engine seam (display_description_in) carries the sci echo across the
+  // wasm boundary — a stale vendored wasm would answer 246912 here.
+  await expect(page.locator(".repl-entry").last().locator(".repl-out")).toHaveText(
+    "= 2.46912e5",
+  );
 });
 
 test("running an example snaps programmer mode back to normal (no bitXor misread)", async ({

@@ -99,7 +99,7 @@ class WasmCalculator {
         }
     }
     /**
-     * The language mode — "normal" | "programmer" | "finance".
+     * The language mode — "normal" | "programmer" | "scientific".
      * @returns {string}
      */
     get mode() {
@@ -143,12 +143,60 @@ class WasmCalculator {
         }
     }
     /**
+     * The Scientific-mode echo variant — "sci" (default) | "eng"
+     * (`:mode scientific eng`). Display only; ignored outside scientific.
+     * @returns {string}
+     */
+    get sciStyle() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.wasmcalculator_sciStyle(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * Applies a `:mode` command argument — "programmer", "scientific eng" —
+     * through the engine's shared parse seam (`Calculator::set_mode_parsing`),
+     * the same one the native CLIs, the GUI, and the spec use. Throws the
+     * engine's own error text on an unknown mode/style (`:mode finance` gets
+     * the currency-promotion hint).
+     * @param {string} argument
+     */
+    setModeParsing(argument) {
+        const ptr0 = passStringToWasm0(argument, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmcalculator_setModeParsing(this.__wbg_ptr, ptr0, len0);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
+     * Setting rides the engine's one shared `:mode` parse seam
+     * (`Calculator::set_mode_parsing`), so the mode list and the
+     * unknown-mode errors (including the `finance` promotion hint) can
+     * never drift from the native hosts'.
      * @param {string} mode
      */
     set mode(mode) {
         const ptr0 = passStringToWasm0(mode, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
         const ret = wasm.wasmcalculator_set_mode(this.__wbg_ptr, ptr0, len0);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
+     * @param {string} style
+     */
+    set sciStyle(style) {
+        const ptr0 = passStringToWasm0(style, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmcalculator_set_sciStyle(this.__wbg_ptr, ptr0, len0);
         if (ret[1]) {
             throw takeFromExternrefTable0(ret[0]);
         }

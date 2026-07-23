@@ -122,7 +122,7 @@ impl Evaluator<'_> {
         if FixedDecimal::is_involved(lhs, rhs) {
             return FixedDecimal::apply_binary(op, lhs, rhs);
         }
-        // Finance-mode currency (docs/MODES.md) — the currency propagates and a
+        // Currency (docs/MODES.md) — the currency propagates and a
         // plain (or grouped) Number is absorbed, so `$10 * 5%` is `$0.50`. Money
         // runs before Grouped, so money + grouped → money.
         if Money::is_involved(lhs, rhs) {
