@@ -13,9 +13,15 @@ on:
       - "site/**"
       - ".github/workflows/site-ci.yml"
   push:
+    branches: [main]
     paths:
       - "site/**"
       - ".github/workflows/site-ci.yml"
+
+# One live run per ref — a newer push cancels the superseded run.
+concurrency:
+  group: site-ci-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
