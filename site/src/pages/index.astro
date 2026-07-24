@@ -75,11 +75,11 @@ const links = {
                  Single click pauses/plays; double click maximizes (Esc /
                  click-away / double-click to exit). Dots rebuild per set.
                  Honors reduced-motion. -->
-            <div class="hero-shot" data-carousel data-build="native">
+            <div id="try" class="hero-shot" data-carousel data-build="native">
                 <div class="build-toggle" role="tablist" aria-label="Which build to preview">
                     <button class="bt-opt is-active" data-build="native" role="tab">Native · macOS</button>
                     <button class="bt-opt" data-build="cross" role="tab">Cross-platform</button>
-                    <button class="bt-opt" data-build="live" role="tab">Live · try it</button>
+                    <button class="bt-opt" data-build="live" role="tab">Live</button>
                 </div>
                 <div class="shots">
                     <!-- Native (Swift/macOS) -->
@@ -281,32 +281,45 @@ const links = {
                         attributeFilter: ["data-theme"],
                     });
 
-                    // Segmented build toggle: switch the native/cross set,
-                    // reset to its first slide, and rebuild dots + track.
+                    // Select a build (native / cross / live): mark the tab,
+                    // reset to its first slide, rebuild dots + track. Shared by
+                    // the segmented toggle and the nav's "Try it" (→ live).
+                    const selectBuild = (chosen: string) => {
+                        if (root.dataset.build === chosen) return;
+                        root.dataset.build = chosen;
+                        root.querySelectorAll(".bt-opt").forEach((b) =>
+                            b.classList.toggle(
+                                "is-active",
+                                (b as HTMLElement).dataset.build === chosen,
+                            ),
+                        );
+                        index = 0;
+                        buildDots();
+                        render();
+                        // The live build doesn't cycle; leaving it resumes
+                        // (unless the visitor had paused).
+                        chosen === "live" ? stop() : play();
+                    };
+
                     root.querySelectorAll<HTMLButtonElement>(".bt-opt").forEach((btn) => {
                         btn.addEventListener("click", (e) => {
                             e.stopPropagation();
-                            const chosen = btn.dataset.build ?? "native";
-                            if (root.dataset.build === chosen) return;
-                            root.dataset.build = chosen;
-                            root.querySelectorAll(".bt-opt").forEach((b) =>
-                                b.classList.toggle(
-                                    "is-active",
-                                    (b as HTMLElement).dataset.build === chosen,
-                                ),
-                            );
-                            index = 0;
-                            buildDots();
-                            render();
-                            // The live build doesn't cycle; leaving it
-                            // resumes (unless the visitor had paused).
-                            chosen === "live" ? stop() : play();
+                            selectBuild(btn.dataset.build ?? "native");
                         });
                     });
+
+                    // The nav's "Try it" (and any /#try link) activates the
+                    // Live tab. Driving off the hash covers nav clicks, direct
+                    // links, and back/forward; the #try id scrolls it into view.
+                    const activateFromHash = () => {
+                        if (location.hash === "#try") selectBuild("live");
+                    };
+                    window.addEventListener("hashchange", activateFromHash);
 
                     buildDots();
                     render();
                     play();
+                    activateFromHash(); // honor a #try deep-link on load
                 }
             </script>
         </section>

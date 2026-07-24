@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
-// UI automation for the live REPL island — the "Live · try it" build of the
+// UI automation for the live REPL island — the "Live" build of the
 // hero carousel (src/components/Repl.tsx, the real Rust engine via vendored
 // WASM). These tests cover ONLY the island's wiring: hydration, the menu
 // bar, the mode badge, the panels, and the carousel handoff. Language
@@ -16,7 +16,7 @@ const fixture = (name: string) =>
 // the island to hydrate + the WASM engine to come up (data-status="ready").
 async function openLiveRepl(page: Page) {
   await page.goto("/");
-  await page.getByRole("tab", { name: "Live · try it" }).click();
+  await page.getByRole("tab", { name: "Live" }).click();
   const repl = page.locator(".repl");
   await expect(repl).toBeVisible();
   await expect(page.locator('.repl[data-status="ready"]')).toBeVisible({
@@ -202,7 +202,7 @@ test("carousel treats the live build as slide-less; native gets its shots back",
   await page.goto("/");
   const dots = page.locator(".hero-shot .dots");
   await expect(dots).toBeVisible();
-  await page.getByRole("tab", { name: "Live · try it" }).click();
+  await page.getByRole("tab", { name: "Live" }).click();
   await expect(page.locator(".repl")).toBeVisible();
   await expect(dots).toBeHidden();
   await page.getByRole("tab", { name: "Native · macOS" }).click();
@@ -246,7 +246,7 @@ test("fullscreen: enter, zoom text, run, and exit", async ({ page }) => {
   await expect(repl).not.toHaveClass(/is-fullscreen/);
 
   await page.reload();
-  await page.getByRole("tab", { name: "Live · try it" }).click();
+  await page.getByRole("tab", { name: "Live" }).click();
   await expect(page.locator('.repl[data-status="ready"]')).toBeVisible({ timeout: 30_000 });
   await page.locator(".repl").getByRole("button", { name: "Enter fullscreen" }).click();
   expect(await px()).toBeGreaterThan(base); // remembered
@@ -277,4 +277,14 @@ test("fullscreen adapts to a mobile viewport (keyboard-aware height)", async ({ 
   expect(box.y).toBeLessThan(125);
   expect(box.height).toBeGreaterThan(490); // height follows --repl-vh
   expect(box.height).toBeLessThan(520);
+});
+
+test("the nav 'Try it' activates the Live build", async ({ page }) => {
+  await page.goto("/");
+  // The carousel starts on the native screenshots, not the REPL.
+  await expect(page.locator(".repl")).toBeHidden();
+  await page.getByRole("navigation").getByRole("link", { name: "Try it" }).click();
+  // #try activates the Live tab → the REPL island mounts and comes up.
+  await expect(page.getByRole("tab", { name: "Live" })).toHaveClass(/is-active/);
+  await expect(page.locator('.repl[data-status="ready"]')).toBeVisible({ timeout: 30_000 });
 });
