@@ -46,6 +46,7 @@ flowchart TD
     end
     W["ci.yml runs"] --> CH
 
+    SPEC["spec/** changed<br/>(the shared parity oracle)"] -. "sets swift + rust + ts" .-> CH
     CH["<b>changes</b><br/>dorny/paths-filter<br/>→ swift? rust? ts? site?"]
 
     CH -->|swift| ENG["<b>Engine tests</b><br/>macos-26 · salpa"]
