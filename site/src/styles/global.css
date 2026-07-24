@@ -1170,7 +1170,7 @@ footer.site .wrap {
   position: absolute;
   top: calc(100% + 4px);
   left: 0;
-  z-index: 1002;
+  z-index: 30;
   width: 340px;
   max-width: 80vw;
   max-height: 320px;
@@ -1234,7 +1234,7 @@ footer.site .wrap {
 .repl-about {
   position: absolute;
   inset: 15% 10% auto 10%;
-  z-index: 1002;
+  z-index: 30;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -1246,110 +1246,3 @@ footer.site .wrap {
 .repl-about h3 { margin: 0 0 8px; font-size: 0.95rem; }
 .repl-about a { color: var(--accent); }
 .repl { position: relative; }
-
-/* ---- Fullscreen / immersive REPL (mobile-first) ------------------------- */
-/* A CSS overlay, not the Fullscreen API (iOS Safari denies it to non-video
-   elements). --repl-vh mirrors visualViewport.height so the input bar rides
-   just above the on-screen keyboard; --repl-zoom steps the reading text. */
-.repl.is-fullscreen {
-  position: fixed;
-  /* `position: fixed` is relative to the LAYOUT viewport. When the iOS keyboard
-     opens it shrinks the VISUAL viewport AND scrolls it down (offsetTop > 0),
-     but a `top: 0` overlay stays at the layout top — so it scrolls above the
-     visible area (top bar gone) while its bottom ends mid-screen, and the page
-     bleeds through below the input. Track the visual viewport: --repl-top =
-     offsetTop keeps the overlay's top at the visible top, --repl-vh = its
-     height ends it just above the keyboard. */
-  top: var(--repl-top, 0);
-  left: 0;
-  right: 0;
-  z-index: 1000;
-  width: 100%;
-  height: var(--repl-vh, 100dvh);
-  max-width: none;
-  border: none;
-  border-radius: 0;
-  box-shadow: none;
-  background: var(--bg);
-  overscroll-behavior: contain;
-}
-.repl.is-fullscreen .repl-menubar { display: none; }
-.repl.is-fullscreen .repl-log,
-.repl.is-fullscreen .repl-input,
-.repl.is-fullscreen .repl-welcome-line {
-  font-size: calc(0.95rem * var(--repl-zoom, 1));
-}
-.repl.is-fullscreen .repl-body { position: relative; }
-
-/* The immersive top bar: leave · text size · overflow. */
-.repl-fsbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  border-bottom: 1px solid var(--border);
-}
-.repl-zoom {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  margin-left: auto;
-}
-.repl-zoom-label { color: var(--faint); font-size: 0.8rem; padding: 0 2px; }
-.repl-fs-icon {
-  font: inherit;
-  font-size: 1rem;
-  line-height: 1;
-  min-width: 34px;
-  height: 34px;
-  padding: 0 8px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-}
-.repl-fs-icon:hover:not(:disabled), .repl-fs-icon.is-active { color: var(--accent); border-color: var(--accent); }
-.repl-fs-icon:disabled { opacity: 0.4; cursor: default; }
-.repl-fsbar .repl-menu-wrap { position: relative; display: flex; }
-.repl-overflow { right: 0; left: auto; top: calc(100% + 6px); }
-
-/* Examples as a centered sheet in fullscreen (the anchored dropdown is hidden). */
-.repl-sheet {
-  position: fixed;
-  z-index: 1002;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  width: min(92vw, 460px);
-  max-height: 70vh;
-  overflow-y: auto;
-  padding: 12px 14px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: 0 16px 48px var(--shadow);
-  text-align: left;
-}
-.repl-sheet h3 {
-  margin: 10px 0 3px;
-  font-size: 0.68rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--faint);
-}
-.repl-sheet h3:first-child { margin-top: 0; }
-
-/* ENV / reference panels become a full overlay sheet in fullscreen (the
-   side-by-side split is unusable at phone width). */
-.repl.is-fullscreen .repl-panel {
-  position: absolute;
-  inset: 0;
-  width: auto;
-  max-width: none;
-  z-index: 6;
-  background: var(--bg);
-  border-left: none;
-}
-.repl-backdrop { z-index: 1001; }
-.repl.is-fullscreen .repl-about { z-index: 1002; inset: 12% 6% auto 6%; }
