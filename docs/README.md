@@ -49,6 +49,10 @@ shared; implementation details live in the ecosystem docs.
 
 ## Process
 
+- **[CICD.md](CICD.md)** — the CI/CD architecture: the six GitHub Actions
+  workflows, their triggers and path-gating, job dependencies, and the
+  aggregate branch-protection gate. Mermaid diagrams. Start here for "how does
+  the pipeline work."
 - **[RELEASING.md](RELEASING.md)** — the gitflow + [salpa](https://github.com/alleato-llc/salpa)
   release process (two ecosystem tracks, auto-tagged semver on merge to `main`).
 - **[../CONTRIBUTING.md](../CONTRIBUTING.md)** — how to build, test, and land a
