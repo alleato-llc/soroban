@@ -31,6 +31,29 @@ async function evaluate(page: Page, expression: string) {
   await input.press("Enter");
 }
 
+// The fullscreen overlay must cover the actual VIEWPORT — not merely exist
+// with the right width. A transformed carousel ancestor once trapped
+// position:fixed inside the frame (top bar at y≈450, input below the fold);
+// the fix portals the tree to <body>. These assertions fail on that bug:
+// the overlay is pinned to the origin, its top bar sits at y≈0, the input
+// row is on-screen near the bottom, and it really is a child of <body>.
+async function assertCoversViewport(page: Page, repl: ReturnType<Page["locator"]>) {
+  const vp = page.viewportSize()!;
+  const box = (await repl.boundingBox())!;
+  expect(box.x).toBeLessThanOrEqual(1);
+  expect(box.y).toBeLessThanOrEqual(1);
+  expect(box.width).toBeGreaterThanOrEqual(vp.width - 2);
+
+  const bar = (await repl.locator(".repl-fsbar").boundingBox())!;
+  expect(bar.y).toBeLessThanOrEqual(1); // top bar at the very top
+
+  const input = (await page.getByLabel("Anzan expression").boundingBox())!;
+  expect(input.y).toBeGreaterThan(vp.height / 2); // lower half…
+  expect(input.y + input.height).toBeLessThanOrEqual(vp.height + 1); // …and on-screen
+
+  expect(await repl.evaluate((el) => el.parentElement === document.body)).toBe(true);
+}
+
 test("hydrates and evaluates through the real engine", async ({ page }) => {
   await openLiveRepl(page);
   await evaluate(page, "0.1 + 0.2 == 0.3");
@@ -186,4 +209,57 @@ test("carousel treats the live build as slide-less; native gets its shots back",
   await expect(page.locator(".hero-shot img.shot.is-active").first()).toBeVisible();
   await expect(dots).toBeVisible();
   await expect(page.locator(".repl")).toBeHidden();
+});
+
+test("fullscreen: enter, zoom text, run, and exit", async ({ page }) => {
+  await openLiveRepl(page);
+  const repl = page.locator(".repl");
+
+  // Enter immersive mode — the menu bar gives way to the minimal top bar.
+  await repl.getByRole("button", { name: "Enter fullscreen" }).click();
+  await expect(repl).toHaveClass(/is-fullscreen/);
+  await expect(repl.locator(".repl-fsbar")).toBeVisible();
+  await expect(repl.locator(".repl-menubar")).toBeHidden();
+  await assertCoversViewport(page, repl); // pinned to the viewport, not the carousel frame
+
+  // Zoom is fullscreen-only and steps the log/input font size, persisted.
+  const input = page.getByLabel("Anzan expression");
+  const px = () => input.evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
+  const base = await px();
+  await repl.getByRole("button", { name: "Larger text" }).click();
+  await repl.getByRole("button", { name: "Larger text" }).click();
+  expect(await px()).toBeGreaterThan(base);
+
+  // The engine still runs from inside fullscreen.
+  await evaluate(page, "6 * 7");
+  await expect(repl.locator(".repl-entry").last().locator(".repl-out")).toHaveText("= 42");
+
+  // The ⋯ overflow reaches Examples as a centered sheet.
+  await repl.getByRole("button", { name: "More" }).click();
+  await repl.getByRole("menuitem", { name: "Examples…" }).click();
+  await expect(repl.locator(".repl-sheet")).toBeVisible();
+  await page.locator(".repl-backdrop").click({ position: { x: 8, y: 8 } });
+  await expect(repl.locator(".repl-sheet")).toBeHidden();
+
+  // Escape leaves fullscreen; the zoom persists across a reload.
+  await page.keyboard.press("Escape");
+  await expect(repl).not.toHaveClass(/is-fullscreen/);
+
+  await page.reload();
+  await page.getByRole("tab", { name: "Live · try it" }).click();
+  await expect(page.locator('.repl[data-status="ready"]')).toBeVisible({ timeout: 30_000 });
+  await page.locator(".repl").getByRole("button", { name: "Enter fullscreen" }).click();
+  expect(await px()).toBeGreaterThan(base); // remembered
+});
+
+test("fullscreen adapts to a mobile viewport (keyboard-aware height)", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 }); // iPhone-ish
+  await openLiveRepl(page);
+  const repl = page.locator(".repl");
+  await repl.getByRole("button", { name: "Enter fullscreen" }).click();
+  await expect(repl).toHaveClass(/is-fullscreen/);
+  // The overlay fills the viewport (origin-pinned, input on-screen at the bottom).
+  await assertCoversViewport(page, repl);
+  await evaluate(page, "$10 * 5%");
+  await expect(repl.locator(".repl-entry").last().locator(".repl-out")).toHaveText("= $0.50");
 });

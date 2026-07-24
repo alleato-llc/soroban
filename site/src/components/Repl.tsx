@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { createPortal } from "preact/compat";
 import { ensureWasm, WasmCalculator, reference } from "../lib/anzan";
 
 // The live REPL — the real engine (Rust → WASM), shaped like the desktop
@@ -44,6 +45,12 @@ interface RefEntry {
 
 type Mode = "normal" | "scientific" | "programmer";
 type Panel = "none" | "env" | "help";
+
+// Text-size zoom (fullscreen only) — steps the REPL font, clamped, persisted.
+const ZOOM_MIN = 0.8;
+const ZOOM_MAX = 1.8;
+const ZOOM_STEP = 0.15;
+const ZOOM_KEY = "anzan-repl-zoom";
 
 // The app's input-bar mode affordance: # Normal · π Scientific · </> Programmer.
 const MODE_CYCLE: Mode[] = ["normal", "scientific", "programmer"];
@@ -171,13 +178,63 @@ export default function Repl() {
   const [search, setSearch] = useState("");
   const [examplesOpen, setExamplesOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
+  const [overflowOpen, setOverflowOpen] = useState(false);
+  const [zoom, setZoom] = useState(1);
   const [status, setStatus] = useState<"loading" | "ready" | "failed">("loading");
   const calc = useRef<WasmCalculator | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
 
   // The welcome picks — the app shuffles its pool on launch; ten here.
   const welcome = useMemo(() => shuffled(EXAMPLE_POOL).slice(0, 10), []);
+
+  // Restore the persisted zoom once (fullscreen text size).
+  useEffect(() => {
+    const stored = Number(localStorage.getItem(ZOOM_KEY));
+    if (stored >= ZOOM_MIN && stored <= ZOOM_MAX) setZoom(stored);
+  }, []);
+
+  // Fullscreen is a CSS immersive overlay (NOT the Fullscreen API — iOS Safari
+  // won't grant it to a non-video element, and mobile is the point). While it's
+  // up: lock the page behind it, Esc leaves, and — the mobile crux — track the
+  // visual viewport so the input bar sits just above the on-screen keyboard
+  // (the keyboard shrinks visualViewport.height; we mirror it into --repl-vh).
+  useEffect(() => {
+    if (!fullscreen) return;
+    const root = document.documentElement;
+    const prevOverflow = root.style.overflow;
+    root.style.overflow = "hidden";
+
+    const el = rootRef.current;
+    const vv = window.visualViewport;
+    const syncViewport = () => {
+      if (el && vv) el.style.setProperty("--repl-vh", `${vv.height}px`);
+    };
+    syncViewport();
+    vv?.addEventListener("resize", syncViewport);
+    vv?.addEventListener("scroll", syncViewport);
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setOverflowOpen(false);
+        setExamplesOpen(false);
+        setPanel("none");
+        setFullscreen(false);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+
+    return () => {
+      root.style.overflow = prevOverflow;
+      vv?.removeEventListener("resize", syncViewport);
+      vv?.removeEventListener("scroll", syncViewport);
+      window.removeEventListener("keydown", onKey);
+      el?.style.removeProperty("--repl-vh");
+    };
+  }, [fullscreen]);
 
   useEffect(() => {
     let alive = true;
@@ -260,6 +317,26 @@ export default function Repl() {
     setPanel((current) => (current === which ? "none" : which));
   }
 
+  function stepZoom(delta: number) {
+    setZoom((z) => {
+      const next = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round((z + delta) * 100) / 100));
+      localStorage.setItem(ZOOM_KEY, String(next));
+      return next;
+    });
+  }
+
+  function enterFullscreen() {
+    setFullscreen(true);
+    // Focus the input so a mobile tap on "expand" brings the keyboard straight up.
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }
+
+  function closeMenus() {
+    setOverflowOpen(false);
+    setExamplesOpen(false);
+    setAboutOpen(false);
+  }
+
   // Open — run a local .anzan script through the session (halts at the
   // first error, like the CLIs).
   function openFile(file: File) {
@@ -304,8 +381,90 @@ export default function Repl() {
 
   const ready = status === "ready";
 
-  return (
-    <div class="repl" data-status={status}>
+  // Shared by the inline dropdown and the fullscreen examples sheet.
+  const exampleGroups = EXAMPLE_CATEGORIES.map((group) => (
+    <div key={group.name}>
+      <h3>{group.name}</h3>
+      {group.examples.map((example) => (
+        <button
+          key={example}
+          class="repl-dropdown-item"
+          role="menuitem"
+          onClick={() => {
+            closeMenus();
+            runExample(example);
+          }}
+        >
+          {example}
+        </button>
+      ))}
+    </div>
+  ));
+
+  const tree = (
+    <div
+      ref={rootRef}
+      class={`repl ${fullscreen ? "is-fullscreen" : ""}`}
+      data-status={status}
+      style={fullscreen ? `--repl-zoom:${zoom}` : undefined}
+    >
+      {/* The immersive top bar — replaces the menu bar in fullscreen. Minimal
+          by design: leave, text size, and one ⋯ for everything else. */}
+      {fullscreen && (
+        <div class="repl-fsbar">
+          <button class="repl-fs-icon" onClick={() => setFullscreen(false)} title="Exit fullscreen" aria-label="Exit fullscreen">
+            ✕
+          </button>
+          <div class="repl-zoom" role="group" aria-label="Text size">
+            <button class="repl-fs-icon" onClick={() => stepZoom(-ZOOM_STEP)} disabled={zoom <= ZOOM_MIN} aria-label="Smaller text">
+              −
+            </button>
+            <span class="repl-zoom-label" aria-hidden="true">A</span>
+            <button class="repl-fs-icon" onClick={() => stepZoom(ZOOM_STEP)} disabled={zoom >= ZOOM_MAX} aria-label="Larger text">
+              +
+            </button>
+          </div>
+          <div class="repl-menu-wrap">
+            <button
+              class={`repl-fs-icon ${overflowOpen ? "is-active" : ""}`}
+              onClick={() => setOverflowOpen((o) => !o)}
+              aria-expanded={overflowOpen}
+              aria-label="More"
+            >
+              ⋯
+            </button>
+            {overflowOpen && (
+              <div class="repl-dropdown repl-overflow" role="menu">
+                <button class="repl-dropdown-item" role="menuitem" onClick={() => { setOverflowOpen(false); setExamplesOpen(true); }}>
+                  Examples…
+                </button>
+                <button class="repl-dropdown-item" role="menuitem" onClick={() => { setOverflowOpen(false); togglePanel("env"); }}>
+                  Environment
+                </button>
+                <button class="repl-dropdown-item" role="menuitem" onClick={() => { setOverflowOpen(false); togglePanel("help"); }}>
+                  Reference (?)
+                </button>
+                <button class="repl-dropdown-item" role="menuitem" onClick={() => { setOverflowOpen(false); fileRef.current?.click(); }}>
+                  Open…
+                </button>
+                <button class="repl-dropdown-item" role="menuitem" disabled={lines.length === 0} onClick={() => { setOverflowOpen(false); saveAs(); }}>
+                  Save As…
+                </button>
+                <button class="repl-dropdown-item" role="menuitem" onClick={() => { setOverflowOpen(false); setAboutOpen(true); }}>
+                  About
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+      {/* Fullscreen examples open as a centered sheet (the menu bar's anchored
+          dropdown is hidden with it). */}
+      {fullscreen && examplesOpen && (
+        <div class="repl-sheet" role="menu" aria-label="Examples">
+          {exampleGroups}
+        </div>
+      )}
       <div class="repl-menubar">
         <button class="repl-menu-btn" onClick={() => setAboutOpen(true)} disabled={!ready}>
           About
@@ -330,26 +489,9 @@ export default function Repl() {
           >
             Examples ▾
           </button>
-          {examplesOpen && (
+          {examplesOpen && !fullscreen && (
             <div class="repl-dropdown" role="menu">
-              {EXAMPLE_CATEGORIES.map((group) => (
-                <div key={group.name}>
-                  <h3>{group.name}</h3>
-                  {group.examples.map((example) => (
-                    <button
-                      key={example}
-                      class="repl-dropdown-item"
-                      role="menuitem"
-                      onClick={() => {
-                        setExamplesOpen(false);
-                        runExample(example);
-                      }}
-                    >
-                      {example}
-                    </button>
-                  ))}
-                </div>
-              ))}
+              {exampleGroups}
             </div>
           )}
         </div>
@@ -371,6 +513,15 @@ export default function Repl() {
             title="Every built-in function, searchable"
           >
             ?
+          </button>
+          <button
+            class="repl-tool"
+            onClick={enterFullscreen}
+            disabled={!ready}
+            title="Fullscreen — an immersive, zoomable calculator (great on mobile)"
+            aria-label="Enter fullscreen"
+          >
+            ⛶
           </button>
         </div>
         <input
@@ -485,6 +636,7 @@ export default function Repl() {
           &gt;
         </span>
         <input
+          ref={inputRef}
           class="repl-input"
           value={draft}
           onInput={(e) => setDraft((e.target as HTMLInputElement).value)}
@@ -505,13 +657,14 @@ export default function Repl() {
           {MODE_BADGE[mode]} {mode}
         </button>
       </form>
-      {(examplesOpen || aboutOpen) && (
+      {(examplesOpen || aboutOpen || overflowOpen) && (
         <button
           class="repl-backdrop"
           aria-label="Close"
           onClick={() => {
             setExamplesOpen(false);
             setAboutOpen(false);
+            setOverflowOpen(false);
           }}
         />
       )}
@@ -536,4 +689,9 @@ export default function Repl() {
       )}
     </div>
   );
+
+  // In fullscreen, portal the whole tree to <body> — the hero carousel has a
+  // transformed ancestor, which would trap `position: fixed` inside the frame
+  // instead of the viewport. Escaping to body makes the overlay truly full.
+  return fullscreen ? createPortal(tree, document.body) : tree;
 }
