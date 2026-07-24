@@ -210,8 +210,15 @@ export default function Repl() {
 
     const el = rootRef.current;
     const vv = window.visualViewport;
+    // Mirror the visible viewport into CSS: --repl-vh is its height (shrinks
+    // when the keyboard opens) and --repl-top its offset from the layout top
+    // (iOS shifts the visual viewport up as the keyboard animates). Together
+    // they keep the overlay exactly over the visible area — input bar just
+    // above the keyboard, nothing bleeding through.
     const syncViewport = () => {
-      if (el && vv) el.style.setProperty("--repl-vh", `${vv.height}px`);
+      if (!el || !vv) return;
+      el.style.setProperty("--repl-vh", `${vv.height}px`);
+      el.style.setProperty("--repl-top", `${vv.offsetTop}px`);
     };
     syncViewport();
     vv?.addEventListener("resize", syncViewport);
@@ -233,6 +240,7 @@ export default function Repl() {
       vv?.removeEventListener("scroll", syncViewport);
       window.removeEventListener("keydown", onKey);
       el?.style.removeProperty("--repl-vh");
+      el?.style.removeProperty("--repl-top");
     };
   }, [fullscreen]);
 

@@ -1253,7 +1253,16 @@ footer.site .wrap {
    just above the on-screen keyboard; --repl-zoom steps the reading text. */
 .repl.is-fullscreen {
   position: fixed;
-  inset: 0;
+  /* `position: fixed` is relative to the LAYOUT viewport. When the iOS keyboard
+     opens it shrinks the VISUAL viewport AND scrolls it down (offsetTop > 0),
+     but a `top: 0` overlay stays at the layout top — so it scrolls above the
+     visible area (top bar gone) while its bottom ends mid-screen, and the page
+     bleeds through below the input. Track the visual viewport: --repl-top =
+     offsetTop keeps the overlay's top at the visible top, --repl-vh = its
+     height ends it just above the keyboard. */
+  top: var(--repl-top, 0);
+  left: 0;
+  right: 0;
   z-index: 1000;
   width: 100%;
   height: var(--repl-vh, 100dvh);
@@ -1262,6 +1271,7 @@ footer.site .wrap {
   border-radius: 0;
   box-shadow: none;
   background: var(--bg);
+  overscroll-behavior: contain;
 }
 .repl.is-fullscreen .repl-menubar { display: none; }
 .repl.is-fullscreen .repl-log,

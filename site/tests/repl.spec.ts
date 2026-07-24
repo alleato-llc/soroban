@@ -262,4 +262,19 @@ test("fullscreen adapts to a mobile viewport (keyboard-aware height)", async ({ 
   await assertCoversViewport(page, repl);
   await evaluate(page, "$10 * 5%");
   await expect(repl.locator(".repl-entry").last().locator(".repl-out")).toHaveText("= $0.50");
+
+  // Regression (the iOS keyboard bug): the overlay must track the VISUAL
+  // viewport — top at its offset, height at its size — so the input sits just
+  // above the keyboard with nothing bleeding through. The bug was a fixed
+  // top:0 ignoring the viewport's offsetTop, so simulate the keyboard by
+  // setting both vars and assert the overlay's box follows them.
+  await repl.evaluate((el) => {
+    el.style.setProperty("--repl-top", "120px"); // keyboard scrolled the visual vp down
+    el.style.setProperty("--repl-vh", "500px"); // …to 500px tall
+  });
+  const box = (await repl.boundingBox())!;
+  expect(box.y).toBeGreaterThan(115); // top follows --repl-top (was pinned at 0)
+  expect(box.y).toBeLessThan(125);
+  expect(box.height).toBeGreaterThan(490); // height follows --repl-vh
+  expect(box.height).toBeLessThan(520);
 });
