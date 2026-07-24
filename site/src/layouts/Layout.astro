@@ -14,16 +14,7 @@ const { title, description } = Astro.props;
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <!-- interactive-widget=resizes-content: when the on-screen keyboard opens,
-         resize the LAYOUT viewport (and 100dvh) to the space above it, instead
-         of iOS's default of leaving the layout full-height and just scrolling
-         the visual viewport. This is what lets the fullscreen REPL overlay fit
-         exactly above the keyboard on mobile (paired with the visualViewport
-         tracking in Repl.tsx as a fallback for browsers without it). -->
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1, interactive-widget=resizes-content"
-    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{title}</title>
     <meta name="description" content={description} />
     <meta property="og:title" content={title} />
