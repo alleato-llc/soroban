@@ -6,16 +6,17 @@ name: CI
 # quartet (ci.yml [swift], rust-ci.yml, ts-ci.yml, site-ci.yml) whose
 # workflow-level path gates meant a check simply NEVER REPORTED on a PR that
 # didn't touch its paths — leaving branch protection's required checks
-# "Expected" forever and every such merge needing an admin bypass. With the
-# gate moved inside the workflow (dorny/paths-filter + a job-level `if`), a
-# job whose paths didn't change is SKIPPED, which GitHub's required checks
-# treat as passing — so all six required checks resolve on every PR.
+# "Expected" forever and every such merge needing an admin bypass.
 #
-# The six job names below are load-bearing: branch protection requires them
-# byte-for-byte ("Engine tests", "App compiles + session tests",
-# "cargo test (ubuntu-latest)", "cargo test (macos-14)",
-# "npm test + spec (ubuntu-latest)", "playwright (ubuntu-latest)").
-# Do not rename them without updating the protection rule.
+# The gate is the single `ci-passed` job at the bottom: it always runs and is
+# the ONLY branch-protection-required check. Each real job below stays
+# cheaply SKIPPABLE (dorny/paths-filter + a job-level `if`) so a site-only PR
+# never spins up a macOS runner; `ci-passed` needs them all with `if:
+# always()` and fails only if one genuinely FAILED (a skipped dependency is
+# fine). This is robust where the earlier "a skipped required check counts as
+# passing" was not — a skipped MATRIX job never even creates its per-OS
+# contexts (cargo test (ubuntu-latest)/(macos-14)), so requiring those names
+# directly left the merge BLOCKED forever.
 #
 # Releases are separate: release.yml (macOS) and release-rust.yml run on
 # path-gated pushes to main; deploy-site.yml ships site/**.
@@ -280,3 +281,27 @@ jobs:
           name: playwright-report
           path: site/playwright-report/
           retention-days: 7
+
+  # ---- The gate ------------------------------------------------------------
+  # The ONLY branch-protection-required check. It always runs (cheap, ubuntu)
+  # and needs every real job with `if: always()`, so it reports even when some
+  # of them skipped. It FAILS only if a dependency genuinely failed or was
+  # cancelled — a skipped dependency (its paths didn't change) is a pass. This
+  # is what lets a partial-path PR (site-only, docs-only, .claude-only) merge
+  # on a green gate without spinning up the macOS runners, and without the
+  # per-OS matrix-context reporting gap that blocked the direct-require setup.
+  ci-passed:
+    name: CI passed
+    needs: [changes, engine, session, rust, ts, site]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require no failure among the suites
+        run: |
+          results='${{ join(needs.*.result, ',') }}'
+          echo "dependency results: $results"
+          case "$results" in
+            *failure*|*cancelled*)
+              echo "::error::a CI suite failed or was cancelled"; exit 1;;
+            *) echo "all suites passed or were skipped";;
+          esac
