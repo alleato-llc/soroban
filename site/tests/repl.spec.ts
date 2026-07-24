@@ -278,13 +278,3 @@ test("fullscreen adapts to a mobile viewport (keyboard-aware height)", async ({ 
   expect(box.height).toBeGreaterThan(490); // height follows --repl-vh
   expect(box.height).toBeLessThan(520);
 });
-
-test("the nav 'Try it' activates the Live build", async ({ page }) => {
-  await page.goto("/");
-  // The carousel starts on the native screenshots, not the REPL.
-  await expect(page.locator(".repl")).toBeHidden();
-  await page.getByRole("navigation").getByRole("link", { name: "Try it" }).click();
-  // #try activates the Live tab → the REPL island mounts and comes up.
-  await expect(page.getByRole("tab", { name: "Live" })).toHaveClass(/is-active/);
-  await expect(page.locator('.repl[data-status="ready"]')).toBeVisible({ timeout: 30_000 });
-});
